@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="a461964d-f6a3-4e0b-a3fa-4fab913d5a3e" name="Changes" comment="push. beta" />
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="TypeScript File" />
+        <option value="CSS File" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;ventilia&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/aimly-ai/aimly.git&quot;,
+    &quot;accountId&quot;: &quot;6fcb4844-a5bf-4cc7-9756-4552e65ce664&quot;
+  }
+}</component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 8
+}</component>
+  <component name="ProjectId" id="3A5LrlKMUPk8gBM4ZyEe8BfmjMU" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
+    "git-widget-placeholder": "master",
+    "ignore.virus.scanning.warn.message": "true",
+    "javascript.preferred.runtime.type.id": "node",
+    "junie.onboarding.icon.badge.shown": "true",
+    "last_opened_file_path": "C:/Users/GAMER/aimly_dev",
+    "list.type.of.created.stylesheet": "CSS",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "org.jetbrains.plugins.github.ui.GithubSettingsConfigurable",
+    "to.speed.mode.migration.done": "true",
+    "ts.external.directory.path": "C:\\Users\\GAMER\\aimly\\frontend\\node_modules\\typescript\\lib",
+    "vue.rearranger.settings.migration": "true"
+  }
+}]]></component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\GAMER\aimly\frontend\public" />
+    </key>
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="C:\Users\GAMER\aimly\frontend\src\dashboard" />
+      <recent name="C:\Users\GAMER\aimly\frontend\src\pages" />
+      <recent name="C:\Users\GAMER\aimly\frontend\src\components" />
+      <recent name="C:\Users\GAMER\aimly\frontend" />
+      <recent name="C:\Users\GAMER\aimly\frontend\src" />
+    </key>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-js-predefined-d6986cc7102b-9b0f141eb926-JavaScript-WS-253.31033.133" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="a461964d-f6a3-4e0b-a3fa-4fab913d5a3e" name="Changes" comment="" />
+      <created>1771877685881</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1771877685881</updated>
+      <workItem from="1771877686858" duration="86000" />
+      <workItem from="1771877774639" duration="10699000" />
+      <workItem from="1771924640354" duration="3207000" />
+      <workItem from="1771961298264" duration="129000" />
+      <workItem from="1771968328481" duration="13302000" />
+      <workItem from="1771983618968" duration="4223000" />
+      <workItem from="1772111123989" duration="54000" />
+      <workItem from="1772111182991" duration="14085000" />
+      <workItem from="1772224377616" duration="7345000" />
+      <workItem from="1772236716439" duration="256000" />
+      <workItem from="1772273831353" duration="25959000" />
+      <workItem from="1772480340143" duration="20175000" />
+      <workItem from="1772637967163" duration="14311000" />
+      <workItem from="1772716799814" duration="11088000" />
+      <workItem from="1773092100092" duration="185000" />
+      <workItem from="1773092409674" duration="900000" />
+    </task>
+    <task id="LOCAL-00001" summary="Fix version">
+      <option name="closed" value="true" />
+      <created>1772111444551</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1772111444551</updated>
+    </task>
+    <task id="LOCAL-00002" summary=".env">
+      <option name="closed" value="true" />
+      <created>1772228616888</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1772228616888</updated>
+    </task>
+    <task id="LOCAL-00003" summary="Закончен блок с авторизацией. Реализован личный кабинет">
+      <option name="closed" value="true" />
+      <created>1772228678325</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1772228678325</updated>
+    </task>
+    <task id="LOCAL-00004" summary="GO init">
+      <option name="closed" value="true" />
+      <created>1772236890659</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1772236890659</updated>
+    </task>
+    <task id="LOCAL-00005" summary="Добавление полей в бд, добавление админ роли, админ панели (сырой), баланс, уведомление только для бота. перех на другой апи для почты">
+      <option name="closed" value="true" />
+      <created>1772291241128</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1772291241128</updated>
+    </task>
+    <task id="LOCAL-00006" summary="push. beta">
+      <option name="closed" value="true" />
+      <created>1773089633887</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1773089633888</updated>
+    </task>
+    <option name="localTasksCounter" value="7" />
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="OPEN_GENERIC_TABS">
+      <map>
+        <entry key="ead0514a-2c52-4ca5-be1d-63a6744e009f" value="TOOL_WINDOW" />
+      </map>
+    </option>
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State>
+              <option name="FILTERS">
+                <map>
+                  <entry key="branch">
+                    <value>
+                      <list>
+                        <option value="main" />
+                      </list>
+                    </value>
+                  </entry>
+                </map>
+              </option>
+            </State>
+          </value>
+        </entry>
+        <entry key="ead0514a-2c52-4ca5-be1d-63a6744e009f">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="Fix version" />
+    <MESSAGE value=".env" />
+    <MESSAGE value="Закончен блок с авторизацией. Реализован личный кабинет" />
+    <MESSAGE value="GO init" />
+    <MESSAGE value="Добавление полей в бд, добавление админ роли, админ панели (сырой), баланс, уведомление только для бота. перех на другой апи для почты" />
+    <MESSAGE value="push. beta" />
+    <option name="LAST_COMMIT_MESSAGE" value="push. beta" />
+  </component>
+</project>

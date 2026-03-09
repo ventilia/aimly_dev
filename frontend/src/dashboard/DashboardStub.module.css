@@ -1,0 +1,87 @@
+.page {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 60vh;
+}
+
+.card {
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: 20px;
+    padding: 52px 48px;
+    text-align: center;
+    max-width: 460px;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.05);
+}
+
+.icon {
+    font-size: 40px;
+    width: 72px;
+    height: 72px;
+    background: var(--c-accent-soft);
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--c-accent);
+    margin-bottom: 8px;
+}
+
+.badge {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--c-accent);
+    background: var(--c-accent-soft);
+    padding: 4px 12px;
+    border-radius: 100px;
+}
+
+.title {
+    font-family: var(--font-head);
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--c-ink);
+    letter-spacing: -.4px;
+    margin: 0;
+}
+
+.sub {
+    font-size: 14.5px;
+    color: var(--c-ink-3);
+    line-height: 1.6;
+    margin: 0;
+    max-width: 340px;
+}
+
+.shimmerRow {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.shimmer {
+    height: 14px;
+    border-radius: 7px;
+    background: linear-gradient(90deg, var(--c-bg) 25%, var(--c-border) 50%, var(--c-bg) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    width: 100%;
+}
+
+.shimmerShort { width: 55%; align-self: center; }
+.shimmerMed   { width: 75%; align-self: center; }
+
+@keyframes shimmer {
+    0%   { background-position: 200% 0 }
+    100% { background-position: -200% 0 }
+}

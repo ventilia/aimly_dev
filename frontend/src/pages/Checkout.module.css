@@ -1,0 +1,384 @@
+.root {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: #111;
+    font-family: var(--font-body);
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 36px;
+    border-bottom: 1px solid rgba(255, 255, 255, .07);
+    flex-shrink: 0;
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-family: var(--font-head);
+    font-size: 19px;
+    font-weight: 800;
+    color: #fff;
+    text-decoration: none;
+    letter-spacing: -.4px;
+    opacity: .9;
+    transition: opacity .15s;
+}
+.logo:hover { opacity: 1; }
+
+.logoImg {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.headerRight {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.langBtn {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 5px;
+    border: none;
+    background: rgba(255, 255, 255, .06);
+    color: rgba(255, 255, 255, .4);
+    cursor: pointer;
+    font-family: var(--font-body);
+    transition: all .15s;
+}
+
+.langActive {
+    background: rgba(255, 255, 255, .14);
+    color: #fff;
+}
+
+.backBtn {
+    font-size: 13px;
+    color: rgba(255, 255, 255, .4);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: var(--font-body);
+    transition: color .15s;
+    padding: 0;
+}
+.backBtn:hover { color: rgba(255, 255, 255, .75); }
+
+.main {
+    flex: 1;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 52px 24px 60px;
+}
+
+.wrap {
+    display: flex;
+    gap: 32px;
+    width: 100%;
+    max-width: 900px;
+    align-items: flex-start;
+}
+
+.left {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.title {
+    font-family: var(--font-head);
+    font-size: 30px;
+    font-weight: 900;
+    color: #fff;
+    margin: 0;
+    letter-spacing: -.6px;
+    line-height: 1.1;
+}
+
+.sub {
+    font-size: 15px;
+    color: rgba(255, 255, 255, .45);
+    margin: 0;
+}
+
+.plansGrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.planCard {
+    background: #1a1a1a;
+    border: 1.5px solid rgba(255, 255, 255, .08);
+    border-radius: 20px;
+    padding: 28px 24px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    transition: border-color .2s, box-shadow .2s;
+    box-shadow: 0 2px 16px rgba(0, 0, 0, .3);
+}
+.planCard:hover {
+    border-color: rgba(92, 57, 223, .5);
+    box-shadow: 0 8px 32px rgba(92, 57, 223, .2);
+}
+
+.planBadge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 100px;
+    background: var(--c-accent, #5c39df);
+    color: #fff !important;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+    width: fit-content;
+    margin-bottom: 12px;
+}
+
+.planName {
+    font-family: var(--font-head);
+    font-size: 20px;
+    font-weight: 800;
+    color: #f0f0f0;
+    margin: 0 0 4px;
+}
+
+.planDesc {
+    font-size: 13px;
+    color: #999;
+    margin: 0 0 18px;
+    line-height: 1.45;
+}
+
+.planPrice {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    margin-bottom: 16px;
+}
+
+.priceVal {
+    font-family: var(--font-head);
+    font-size: 34px;
+    font-weight: 900;
+    color: #f0f0f0;
+    letter-spacing: -1px;
+    line-height: 1;
+}
+
+.currency {
+    font-size: 17px;
+    font-weight: 700;
+    color: #ccc;
+    padding-bottom: 2px;
+}
+
+.period {
+    font-size: 13px;
+    color: #777;
+    padding-bottom: 2px;
+}
+
+.planFeatures {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+}
+
+.planFeatures li {
+    font-size: 13px;
+    color: #ccc;
+    line-height: 1.4;
+}
+
+.buyBtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 13px 0;
+    border-radius: 12px;
+    border: none;
+    background: var(--c-accent, #5c39df);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: var(--font-body);
+    transition: opacity .15s;
+    line-height: 1;
+    box-sizing: border-box;
+}
+.buyBtn:hover:not(:disabled) { opacity: .85; }
+.buyBtn:disabled { opacity: .45; cursor: default; }
+
+.successMsg {
+    font-size: 13px;
+    color: #10b981;
+    background: rgba(16, 185, 129, .15);
+    border-radius: 8px;
+    padding: 9px 12px;
+    line-height: 1.4;
+    margin-top: 10px;
+}
+
+.errorMsg {
+    font-size: 13px;
+    color: #f87171;
+    background: rgba(239, 68, 68, .15);
+    border-radius: 8px;
+    padding: 9px 12px;
+    line-height: 1.4;
+    margin-top: 10px;
+}
+
+.supportBlock {
+    background: rgba(255, 255, 255, .04);
+    border: 1px solid rgba(255, 255, 255, .08);
+    border-radius: 14px;
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.supportBtnText {
+    font-size: 14px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, .7);
+    margin: 0;
+}
+
+.supportLink {
+    font-size: 14px;
+    color: #a78bfa;
+    text-decoration: none;
+    font-weight: 600;
+    transition: opacity .15s;
+}
+.supportLink:hover { opacity: .75; }
+
+.supportNote {
+    font-size: 12px;
+    color: rgba(255, 255, 255, .3);
+    margin: 0;
+}
+
+.right {
+    width: 280px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 80px;
+}
+
+.summaryCard {
+    background: #1a1a1a;
+    border: 1px solid rgba(255, 255, 255, .1);
+    border-radius: 18px;
+    padding: 24px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.summaryTitle {
+    font-family: var(--font-head);
+    font-size: 16px;
+    font-weight: 700;
+    color: #fff;
+    margin: 0;
+}
+
+.balanceRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.balanceLabel {
+    font-size: 22px;
+    font-weight: 800;
+    color: #fff;
+    font-family: var(--font-head);
+    letter-spacing: -.5px;
+}
+
+.lockedNote {
+    font-size: 13px;
+    color: rgba(255, 255, 255, .4);
+    margin: 0;
+    line-height: 1.45;
+}
+
+.topUpLink {
+    display: block;
+    text-align: center;
+    padding: 11px 0;
+    border-radius: 10px;
+    background: rgba(92, 57, 223, .2);
+    border: 1px solid rgba(92, 57, 223, .3);
+    color: #a78bfa;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background .15s;
+}
+.topUpLink:hover { background: rgba(92, 57, 223, .3); }
+
+.planFeature {
+    font-size: 14px;
+    color: #ccc;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    line-height: 1.5;
+}
+
+.planDivider {
+    border: none;
+    border-top: 1px solid rgba(255, 255, 255, .07);
+    margin: 18px 0;
+}
+
+.planCardActive {
+    border-color: rgba(92, 57, 223, .7) !important;
+    background: #1e1a2e !important;
+}
+
+@media (max-width: 760px) {
+    .wrap {
+        flex-direction: column;
+    }
+    .right {
+        width: 100%;
+        position: static;
+    }
+    .plansGrid {
+        grid-template-columns: 1fr;
+    }
+    .header {
+        padding: 14px 18px;
+    }
+    .main {
+        padding: 28px 16px 48px;
+    }
+}

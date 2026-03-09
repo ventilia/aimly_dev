@@ -1,0 +1,91 @@
+spring:
+  application:
+    name: aimly-backend
+
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.mail.MailSenderAutoConfiguration
+
+  security:
+    user:
+      name: disabled
+      password: disabled
+
+
+
+jwt:
+  secret: ${JWT_SECRET}
+  expiration-ms: ${JWT_EXPIRATION_MS}
+
+resend:
+  api-key: ${RESEND_API_KEY}
+  from-email: noreply@getaimly.io
+  from-name: AIMLY
+
+telegram:
+  bot:
+    token: ${TELEGRAM_BOT_TOKEN}
+    username: ${TELEGRAM_BOT_USERNAME}
+
+rate-limit:
+  login:
+    max-attempts: 5
+    window-minutes: 15
+    block-minutes: 30
+
+app:
+  allowed-origins: ${APP_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
+  cookie:
+    secure: false     # для localhost — false, для прода — true
+    domain: ""
+
+
+userbot:
+  url: ${USERBOT_URL:http://localhost:9090}
+
+
+internal:
+  api-secret: ${INTERNAL_API_SECRET:aimly_internal_secret_change_in_prod}
+
+server:
+  port: 8080
+
+
+
+groq:
+  api-key: REDACTED_GROQ_KEY
+
+
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    io.getaimly: DEBUG
+    org.springframework.security: DEBUG
