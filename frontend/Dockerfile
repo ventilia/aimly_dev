@@ -1,21 +1,17 @@
-FROM node:20-alpine
+FROM golang:1.26-alpine AS build
+# или используйте более новую версию, если доступна:
+# FROM golang:1.27-alpine AS build
+# FROM golang:latest-alpine AS build
 
 WORKDIR /app
-
-COPY package*.json ./
-RUN npm install
-
+COPY go.mod go.sum ./
+RUN go mod download
 COPY . .
+RUN go build -o userbot ./cmd/...
 
-ARG VITE_API_URL
-ARG VITE_GOOGLE_CLIENT_ID
-ENV VITE_API_URL=$VITE_API_URL
-ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
-
-# Для Vite - включаем polling для hot reload в Docker
-ENV CHOKIDAR_USEPOLLING=true
-ENV WATCHPACK_POLLING=true
-
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
-
-EXPOSE 5173
+FROM alpine:latest
+RUN apk --no-cache add ca-certificates
+WORKDIR /app
+COPY --from=build /app/userbot .
+EXPOSE 9090
+CMD ["./userbot"]
