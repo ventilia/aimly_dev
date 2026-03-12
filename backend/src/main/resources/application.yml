@@ -56,11 +56,9 @@ rate-limit:
     block-minutes: 30
 
 app:
-  allowed-origins: ${APP_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
   cookie:
-    secure: false     # для localhost — false, для прода — true
-    domain: ""
-
+    secure: ${COOKIE_SECURE:false}
+    domain: ${COOKIE_DOMAIN:}
 
 userbot:
   url: ${USERBOT_URL:http://localhost:9090}
