@@ -94,7 +94,7 @@ export default function KeywordsPage() {
     const [bizSaving, setBizSaving]             = useState(false)
     const [bizError, setBizError]               = useState('')
     const [bizSuccess, setBizSuccess]           = useState(false)
-    const [bizLoading, setBizLoading]           = useState(true)
+    const [, setBizLoading]           = useState(true)
 
 
     const [aiGenerating, setAiGenerating]   = useState(false)

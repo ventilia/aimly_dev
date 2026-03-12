@@ -249,7 +249,7 @@ export default function ProfilePage({ lang }: Props) {
                 : s.progressFillBad
 
     let planBadgeClass = s.planBadgeNone
-    let planBadgeText  = l.noPlan
+    let planBadgeText: string = l.noPlan
     if (sub.status === 'ACTIVE') { planBadgeClass = s.planBadgeActive; planBadgeText = l.active }
     if (sub.status === 'TRIAL')  { planBadgeClass = s.planBadgeTrial;  planBadgeText = l.trial  }
 
