@@ -1,13 +1,9 @@
-FROM golang:1.26-alpine AS build
-# или используйте более новую версию, если доступна:
-# FROM golang:1.27-alpine AS build
-# FROM golang:latest-alpine AS build
-
+FROM golang:1.22-alpine AS build
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN go build -o userbot ./cmd/...
+RUN go build -o userbot ./cmd/userbot
 
 FROM alpine:latest
 RUN apk --no-cache add ca-certificates
