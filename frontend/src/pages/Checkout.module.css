@@ -130,9 +130,46 @@
     transition: border-color .2s, box-shadow .2s;
     box-shadow: 0 2px 16px rgba(0, 0, 0, .3);
 }
-.planCard:hover {
+.planCard:not(.planCardDisabled):hover {
     border-color: rgba(92, 57, 223, .5);
     box-shadow: 0 8px 32px rgba(92, 57, 223, .2);
+}
+
+/* ── Карточка "В разработке" ── */
+.planCardDisabled {
+    opacity: 0.55;
+    pointer-events: none;
+    border-style: dashed;
+    border-color: rgba(255, 255, 255, .1);
+}
+
+.comingSoonBlock {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1;
+    padding-top: 16px;
+}
+
+.comingSoonLabel {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .6px;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, .4);
+    background: rgba(255, 255, 255, .06);
+    border: 1px solid rgba(255, 255, 255, .1);
+    border-radius: 6px;
+    padding: 4px 10px;
+    width: fit-content;
+}
+
+.comingSoonText {
+    font-size: 13px;
+    color: rgba(255, 255, 255, .35);
+    line-height: 1.55;
+    margin: 0;
 }
 
 .planBadge {

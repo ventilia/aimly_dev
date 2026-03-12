@@ -12,7 +12,7 @@ interface EmailVerificationRepository : JpaRepository<EmailVerification, Long> {
         type: VerificationType,
     ): Optional<EmailVerification>
 
-    // последний неиспользованный актуальный код для пользователя
+
     fun findFirstByUserIdAndTypeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
         userId: Long,
         type: VerificationType,

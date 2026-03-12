@@ -1,5 +1,6 @@
 package io.getaimly.backend.lead
 
+import io.getaimly.backend.ai.AiService
 import io.getaimly.backend.user.User
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
@@ -32,7 +33,6 @@ class LeadController(private val service: LeadService) {
         ResponseEntity.ok(service.updateLeadStatus(user, id, req.status))
 }
 
-// го
 
 @RestController
 @RequestMapping("/internal")
@@ -70,7 +70,6 @@ class ChatSubscriptionController(private val service: LeadService) {
         return try {
             ResponseEntity.ok(service.addSubscription(user, req.chatLink))
         } catch (e: IllegalArgumentException) {
-            // Дубликат чата
             ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(mapOf("error" to (e.message ?: "Чат уже добавлен")))
         }
@@ -88,10 +87,15 @@ class ChatSubscriptionController(private val service: LeadService) {
 
 
 data class AddKeywordRequest(val keyword: String)
+data class GenerateKeywordsRequest(val businessContext: String)
+data class GenerateKeywordsResponse(val keywords: List<String>)
 
 @RestController
 @RequestMapping("/api/v1/keywords")
-class KeywordController(private val service: LeadService) {
+class KeywordController(
+    private val service: LeadService,
+    private val aiService: AiService,
+) {
 
     @GetMapping
     fun list(@AuthenticationPrincipal user: User): ResponseEntity<List<KeywordDto>> =
@@ -105,7 +109,6 @@ class KeywordController(private val service: LeadService) {
         return try {
             ResponseEntity.ok(service.addKeyword(user, req.keyword))
         } catch (e: IllegalArgumentException) {
-            // Дубликат ключевого слова
             ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(mapOf("error" to (e.message ?: "Ключевое слово уже существует")))
         }
@@ -118,6 +121,40 @@ class KeywordController(private val service: LeadService) {
     ): ResponseEntity<Void> {
         service.removeKeyword(user, id)
         return ResponseEntity.noContent().build()
+    }
+
+
+    @PostMapping("/generate")
+    fun generate(
+        @AuthenticationPrincipal user: User,
+        @RequestBody req: GenerateKeywordsRequest,
+    ): ResponseEntity<*> {
+
+        val plan   = user.subscriptionPlan
+        val status = user.subscriptionStatus
+        val hasAccess = plan in setOf("MINIMUM", "START") || status == "TRIAL"
+
+        if (!hasAccess) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(mapOf("error" to "AI-генерация ключевых слов доступна на тарифе MINIMUM"))
+        }
+
+        if (req.businessContext.isBlank() || req.businessContext.trim().length < 20) {
+            return ResponseEntity.badRequest()
+                .body(mapOf("error" to "Описание бизнеса слишком короткое (минимум 20 символов)"))
+        }
+
+        return try {
+            val keywords = aiService.generateKeywords(req.businessContext)
+            ResponseEntity.ok(GenerateKeywordsResponse(keywords))
+        } catch (e: IllegalStateException) {
+
+            ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(mapOf("error" to "AI-сервис временно недоступен"))
+        } catch (e: Exception) {
+            ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(mapOf("error" to "Ошибка генерации ключевых слов: ${e.message}"))
+        }
     }
 }
 

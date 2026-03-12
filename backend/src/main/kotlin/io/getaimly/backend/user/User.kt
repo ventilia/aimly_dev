@@ -52,7 +52,7 @@ class User(
     var subscriptionStatus: String? = null,
 
     @Column(name = "subscription_plan")
-    var subscriptionPlan: String? = null,
+    var subscriptionPlan: String? = null,  
 
     @Column(name = "leads_count", nullable = false)
     var leadsCount: Int = 0,

@@ -34,7 +34,6 @@ data class ChangePlanRequest(
     val status: String = "ACTIVE",
 )
 
-// изменить дату окончания подписки
 data class SetExpiryRequest(
     val userId: Long,
     val plan: String,
@@ -91,9 +90,9 @@ class SubscriptionService(
             log.debug("пропускаем trial для ${user.email} — статус ${user.subscriptionStatus}")
             return
         }
-        val expiresAt = LocalDateTime.now().plusDays(7)
+        val expiresAt = LocalDateTime.now().plusDays(5)
         user.subscriptionStatus = "TRIAL"
-        user.subscriptionPlan   = "START"   // trial даёт полный START
+        user.subscriptionPlan   = "MINIMUM"
         userRepository.save(user)
         val expiry = expiryRepository.findByUserId(user.id)
             ?.apply { this.expiresAt = expiresAt; this.notifiedRenewal = false }
@@ -208,7 +207,7 @@ class SubscriptionService(
             val wasTrial = user.subscriptionStatus == "TRIAL"
             if (user.subscriptionStatus in setOf("ACTIVE", "TRIAL")) {
                 user.subscriptionStatus = "INACTIVE"
-                user.subscriptionPlan   = null  // очищаем план при истечении
+                user.subscriptionPlan   = null
                 userRepository.save(user)
                 log.info("подписка истекла: ${user.email} (был ${if (wasTrial) "TRIAL" else "ACTIVE"})")
                 user.telegramId?.let { tgId ->
@@ -229,20 +228,22 @@ class SubscriptionService(
     private fun buildGrantMessage(plan: String, expiresAt: LocalDateTime) = when (plan) {
         "TRIAL"   ->
             "🎉 Пробный период AIMLY активирован!\n" +
-                    "✅ 7 дней бесплатно — все функции START\n" +
+                    "✅ 5 дней бесплатно — все функции включая AI\n" +
+                    "✅ AI-семантический поиск лидов\n" +
+                    "✅ AI-фильтрация контекста сообщений\n" +
+                    "✅ Персонализация под ваш бизнес\n" +
                     "Действует до: ${expiresAt.toLocalDate()}\nДля продолжения: t.me/yar0309"
         "MINIMUM" ->
-            "🎉 Подписка AIMLY MINIMUM активирована!\n" +
+            "🎉 Подписка AIMLY МИНИМУМ активирована!\n" +
                     "✅ Мониторинг по ключевым словам\n" +
                     "✅ Лиды без ограничений\n" +
+                    "✅ AI-семантический поиск лидов\n" +
+                    "✅ AI-фильтрация контекста сообщений\n" +
+                    "✅ Персонализация под ваш бизнес\n" +
                     "✅ Уведомления в Telegram\n" +
                     "Действует до: ${expiresAt.toLocalDate()}"
-        else      -> // START
-            "🚀 Подписка AIMLY START активирована!\n" +
-                    "✅ Все функции без ограничений\n" +
-                    "✅ AI-фильтрация нерелевантных лидов\n" +
-                    "✅ Семантический поиск и синонимы\n" +
-                    "✅ Персонализация под ваш бизнес\n" +
+        else      -> // START — в разработке
+            "🚀 Подписка AIMLY СТАРТ активирована!\n" +
                     "Действует до: ${expiresAt.toLocalDate()}"
     }
 
@@ -251,12 +252,12 @@ class SubscriptionService(
         "MINIMUM" ->
             "✅ Мониторинг по ключевым словам\n" +
                     "✅ Лиды без ограничений\n" +
+                    "✅ AI-семантический поиск лидов\n" +
+                    "✅ AI-фильтрация контекста сообщений\n" +
+                    "✅ Персонализация под ваш бизнес\n" +
                     "✅ Уведомления в Telegram"
         else ->
-            "✅ Всё из тарифа Минимум\n" +
-                    "✅ AI-фильтрация нерелевантных лидов\n" +
-                    "✅ Семантический поиск и синонимы\n" +
-                    "✅ Персонализация под бизнес"
+            "В разработке"
     }
 
     private fun User.toDto() = SubscriptionDto(

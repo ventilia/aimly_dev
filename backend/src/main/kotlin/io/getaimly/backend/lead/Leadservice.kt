@@ -82,7 +82,7 @@ class LeadService(
     private val log = LoggerFactory.getLogger(LeadService::class.java)
 
 
-    private val AI_PLANS = setOf("START", "BUSINESS")
+    private val AI_PLANS = setOf("MINIMUM", "START", "BUSINESS")
 
     private val restTemplate: RestTemplate = RestTemplate(
         SimpleClientHttpRequestFactory().apply {
@@ -179,7 +179,7 @@ class LeadService(
         user.leadsCount = user.leadsCount + 1
         userRepo.save(user)
 
-        log.info("лид #${saved.id} userId=${user.id} keyword=${req.matchedKeyword} chat=${req.chatTitle} aiEnabled=$hasAiPlan")
+        log.info("лид #${saved.id} userId=${user.id} keyword=${req.matchedKeyword} chat=${req.chatTitle} aiEnabled=$hasAiPlan historical=${req.isHistorical}")
 
         if (hasAiPlan) {
 
@@ -233,6 +233,7 @@ class LeadService(
                                 keyword         = req.matchedKeyword,
                                 authorUsername  = req.authorUsername,
                                 authorName      = req.authorName,
+                                isHistorical    = req.isHistorical,
                             )
                         }.onFailure { log.warn("ошибка telegram уведомления: ${it.message}") }
                     }
@@ -248,9 +249,9 @@ class LeadService(
                         text            = req.messageText.take(200),
                         link            = req.messageLink,
                         keyword         = req.matchedKeyword,
-
                         authorUsername  = req.authorUsername,
                         authorName      = req.authorName,
+                        isHistorical    = req.isHistorical,
                     )
                 }.onFailure { log.warn("ошибка telegram уведомления: ${it.message}") }
             }
@@ -270,28 +271,41 @@ class LeadService(
             throw IllegalArgumentException("Вы уже подписаны на этот чат")
         }
 
-        val inactiveExisting = subscriptionRepo.findByUserIdAndChatLink(user.id, normalized)
-        return if (inactiveExisting != null) {
-            inactiveExisting.isActive = true
-            val saved = subscriptionRepo.save(inactiveExisting)
-            val tgInfo = notifyUserbotSubscribeSync(user, saved, getKeywords(user).map { it.keyword })
-            if (tgInfo != null && tgInfo.chatTgId != 0L) {
-                saved.chatTgId  = tgInfo.chatTgId
-                saved.chatTitle = tgInfo.chatTitle.ifBlank { saved.chatTitle }
-                subscriptionRepo.save(saved)
-            }
-            saved.toDto()
+        val saved = if (subscriptionRepo.findByUserIdAndChatLink(user.id, normalized) != null) {
+            val existing = subscriptionRepo.findByUserIdAndChatLink(user.id, normalized)!!
+            existing.isActive = true
+            subscriptionRepo.save(existing)
         } else {
-            val sub = ChatSubscription(user = user, chatLink = normalized)
-            val saved = subscriptionRepo.save(sub)
-            val tgInfo = notifyUserbotSubscribeSync(user, saved, getKeywords(user).map { it.keyword })
-            if (tgInfo != null && tgInfo.chatTgId != 0L) {
-                saved.chatTgId  = tgInfo.chatTgId
-                saved.chatTitle = tgInfo.chatTitle.ifBlank { saved.chatTitle }
-                subscriptionRepo.save(saved)
-            }
-            saved.toDto()
+            subscriptionRepo.save(ChatSubscription(user = user, chatLink = normalized))
         }
+
+        // Уведомляем userbot асинхронно — не блокируем HTTP-запрос пользователя
+        val keywords = getKeywords(user).map { it.keyword }
+        userbotExecutor.submit {
+            runCatching {
+                val h = httpHeaders()
+                val resp = restTemplate.postForEntity(
+                    "$userbotUrl/chats/subscribe",
+                    HttpEntity(mapOf("userId" to user.id, "chatLink" to saved.chatLink, "keywords" to keywords), h),
+                    Map::class.java,
+                )
+                val body    = resp.body
+                val tgId    = (body?.get("chatTgID") as? Number)?.toLong() ?: 0L
+                val tgTitle = body?.get("title") as? String ?: ""
+                if (tgId != 0L) {
+                    subscriptionRepo.findById(saved.id).ifPresent { sub ->
+                        sub.chatTgId  = tgId
+                        sub.chatTitle = tgTitle.ifBlank { sub.chatTitle }
+                        subscriptionRepo.save(sub)
+                    }
+                }
+                log.info("userbot subscribe OK (async): userId=${user.id} chat=${saved.chatLink} tgId=$tgId")
+            }.onFailure {
+                log.warn("userbot subscribe failed (async): userId=${user.id} chat=${saved.chatLink} — ${it.message}")
+            }
+        }
+
+        return saved.toDto()
     }
 
     @Transactional
@@ -321,6 +335,9 @@ class LeadService(
         val trimmed = keyword.trim().lowercase()
         if (trimmed.isBlank()) throw IllegalArgumentException("ключевое слово не может быть пустым")
         if (trimmed.length > 100) throw IllegalArgumentException("слишком длинное ключевое слово")
+
+        val currentCount = keywordRepo.findByUserIdAndIsActiveTrue(user.id).size
+        if (currentCount >= 50) throw IllegalArgumentException("Достигнут лимит — максимум 50 ключевых слов")
 
         val existing = keywordRepo.findByUserIdAndKeywordAndIsActiveTrue(user.id, trimmed)
         if (existing != null) {

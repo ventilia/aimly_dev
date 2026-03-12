@@ -9,7 +9,7 @@ import s from './Checkout.module.css'
 interface Props { lang: Lang; setLang: (l: Lang) => void }
 
 
-const PRICES = { MINIMUM: 2900, START: 19990 }
+const PRICES = { MINIMUM: 4999, START: 4999 }  // было MINIMUM: 2900 — исправлено
 
 const txt = {
     ru: {
@@ -24,6 +24,8 @@ const txt = {
         title:       'Оформление подписки',
         sub:         'Выберите подходящий тариф',
         perMonth:    '/мес',
+        comingSoon:  'В разработке',
+        comingSoonDesc: 'Тариф находится в разработке и будет доступен в ближайшее время.',
     },
     en: {
         back:        '← Back',
@@ -37,6 +39,8 @@ const txt = {
         title:       'Checkout',
         sub:         'Choose the right plan',
         perMonth:    '/month',
+        comingSoon:  'Coming soon',
+        comingSoonDesc: 'This plan is in development and will be available soon.',
     },
 } as const
 
@@ -45,74 +49,60 @@ const PLANS = {
         {
             id: 'MINIMUM',
             name: 'Минимум',
-            price: 2900,
-            badge: null,
-            desc: 'Базовый мониторинг по ключевым словам',
+            price: 4999,  // было 2900 — исправлено
+            badge: 'РЕКОМЕНДУЕМ',
+            desc: 'Мониторинг с AI и персонализацией',
             features: [
                 '✔ Добавление Telegram-чатов',
                 '✔ Мониторинг по ключевым словам',
                 '✔ Telegram-уведомления о лидах',
                 '✔ Лиды без ограничений',
-                '✗ AI-фильтрация и проверка лидов',
-                '✗ Семантический поиск и синонимы',
-                '✗ Персонализация под ваш бизнес',
-                '✗ AI-расширение ключевых слов',
+                '✔ AI-семантический поиск лидов',
+                '✔ AI-фильтрация контекста сообщений',
+                '✔ Персонализация под ваш бизнес',
             ],
-            accent: false,
+            accent: true,
+            disabled: false,
         },
         {
             id: 'START',
             name: 'Старт',
-            price: 19990,
-            badge: 'РЕКОМЕНДУЕМ',
-            desc: 'Умный поиск с AI-фильтрацией',
-            features: [
-                '✔ Всё из тарифа Минимум',
-                '✔ AI-фильтрация нерелевантных лидов',
-                '✔ Семантический поиск (синонимы, морфология)',
-                '✔ AI-расширение ключевых слов',
-                '✔ Персонализация под ваш бизнес',
-                '✔ Умная фильтрация контекста',
-                '✔ Telegram-уведомления с AI-оценкой',
-            ],
-            accent: true,
+            price: 4990,
+            badge: null,
+            desc: null,
+            features: [],
+            accent: false,
+            disabled: true,
         },
     ],
     en: [
         {
             id: 'MINIMUM',
             name: 'Minimum',
-            price: 2900,
-            badge: null,
-            desc: 'Basic keyword monitoring',
+            price: 4999,
+            badge: 'RECOMMENDED',
+            desc: 'Monitoring with AI and personalization',
             features: [
                 '✔ Add Telegram chats',
                 '✔ Keyword monitoring',
                 '✔ Telegram lead notifications',
                 '✔ Unlimited leads',
-                '✗ AI filtering and lead validation',
-                '✗ Semantic search and synonyms',
-                '✗ Business personalization',
-                '✗ AI keyword expansion',
+                '✔ AI semantic lead search',
+                '✔ AI context message filtering',
+                '✔ Business personalization',
             ],
-            accent: false,
+            accent: true,
+            disabled: false,
         },
         {
             id: 'START',
             name: 'Start',
-            price: 19990,
-            badge: 'RECOMMENDED',
-            desc: 'Smart search with AI filtering',
-            features: [
-                '✔ Everything in Minimum',
-                '✔ AI filtering of irrelevant leads',
-                '✔ Semantic search (synonyms, morphology)',
-                '✔ AI keyword expansion',
-                '✔ Business personalization',
-                '✔ Smart context filtering',
-                '✔ Telegram notifications with AI score',
-            ],
-            accent: true,
+            price: 4990,
+            badge: null,
+            desc: null,
+            features: [],
+            accent: false,
+            disabled: true,
         },
     ],
 }
@@ -187,8 +177,8 @@ export default function Checkout({ lang, setLang }: Props) {
                             {plans.map(plan => (
                                 <div
                                     key={plan.id}
-                                    className={s.planCard}
-                                    style={plan.accent ? {
+                                    className={`${s.planCard} ${plan.disabled ? s.planCardDisabled : ''}`}
+                                    style={plan.accent && !plan.disabled ? {
                                         borderColor: 'rgba(92,57,223,.5)',
                                         boxShadow: '0 8px 32px rgba(92,57,223,.18)',
                                     } : undefined}
@@ -197,39 +187,50 @@ export default function Checkout({ lang, setLang }: Props) {
                                         <div className={s.planBadge}>{plan.badge}</div>
                                     )}
                                     <h3 className={s.planName}>{plan.name}</h3>
-                                    <p className={s.planDesc}>{plan.desc}</p>
-                                    <div className={s.planPrice}>
-                                        <span className={s.priceVal}>
-                                            {plan.price.toLocaleString(lang === 'ru' ? 'ru-RU' : 'en-US')}
-                                        </span>
-                                        <span className={s.currency}>₽</span>
-                                        <span className={s.period}>{l.perMonth}</span>
-                                    </div>
-                                    <ul className={s.planFeatures}>
-                                        {plan.features.map((f, i) => (
-                                            <li key={i} style={{
-                                                color: f.startsWith('✗') ? '#6b7280' : '#ccc',
-                                                opacity: f.startsWith('✗') ? 0.65 : 1,
-                                            }}>
-                                                {f}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                    <button
-                                        className={s.buyBtn}
-                                        onClick={() => handleBuy(plan.id)}
-                                        disabled={buying === plan.id}
-                                        style={!plan.accent ? {
-                                            background: 'rgba(255,255,255,.08)',
-                                            color: 'rgba(255,255,255,.7)',
-                                        } : undefined}
-                                    >
-                                        {buying === plan.id ? l.buying : l.balanceBtn(plan.price)}
-                                    </button>
-                                    {msg[plan.id] && (
-                                        <div className={isError[plan.id] ? s.errorMsg : s.successMsg}>
-                                            {msg[plan.id]}
+
+                                    {plan.disabled ? (
+
+                                        <div className={s.comingSoonBlock}>
+                                            <span className={s.comingSoonLabel}>{l.comingSoon}</span>
+                                            <p className={s.comingSoonText}>{l.comingSoonDesc}</p>
                                         </div>
+                                    ) : (
+                                        <>
+                                            {plan.desc && <p className={s.planDesc}>{plan.desc}</p>}
+                                            <div className={s.planPrice}>
+                                                <span className={s.priceVal}>
+                                                    {plan.price.toLocaleString(lang === 'ru' ? 'ru-RU' : 'en-US')}
+                                                </span>
+                                                <span className={s.currency}>₽</span>
+                                                <span className={s.period}>{l.perMonth}</span>
+                                            </div>
+                                            <ul className={s.planFeatures}>
+                                                {plan.features.map((f, i) => (
+                                                    <li key={i} style={{
+                                                        color: f.startsWith('✗') ? '#6b7280' : '#ccc',
+                                                        opacity: f.startsWith('✗') ? 0.65 : 1,
+                                                    }}>
+                                                        {f}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                            <button
+                                                className={s.buyBtn}
+                                                onClick={() => handleBuy(plan.id)}
+                                                disabled={buying === plan.id}
+                                                style={!plan.accent ? {
+                                                    background: 'rgba(255,255,255,.08)',
+                                                    color: 'rgba(255,255,255,.7)',
+                                                } : undefined}
+                                            >
+                                                {buying === plan.id ? l.buying : l.balanceBtn(plan.price)}
+                                            </button>
+                                            {msg[plan.id] && (
+                                                <div className={isError[plan.id] ? s.errorMsg : s.successMsg}>
+                                                    {msg[plan.id]}
+                                                </div>
+                                            )}
+                                        </>
                                     )}
                                 </div>
                             ))}

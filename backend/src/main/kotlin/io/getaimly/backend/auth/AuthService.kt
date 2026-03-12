@@ -47,6 +47,7 @@ class AuthService(
         log.info("telegram отвязан: userId=$userId")
         return MessageResponse("Telegram успешно отвязан")
     }
+
     @Transactional
     fun register(request: RegisterRequest): RegisterResponse {
         if (!request.passwordsMatch()) {
@@ -114,9 +115,9 @@ class AuthService(
             throw BadRequestException("Код истёк, запросите новый")
         }
 
-        verification.used  = true
-        user.emailVerified  = true
-        user.updatedAt      = LocalDateTime.now()
+        verification.used = true
+        user.emailVerified = true
+        user.updatedAt     = LocalDateTime.now()
 
         log.info("email подтверждён для пользователя $userId")
         return buildAuthResponse(user)
@@ -222,7 +223,7 @@ class AuthService(
     }
 
 
-    // привязка Telegram через токен (ссылка из личного кабинета)
+
     @Transactional
     fun linkTelegram(token: String, telegramId: Long, telegramUsername: String?): Boolean {
         val verification = verificationRepository
@@ -249,8 +250,8 @@ class AuthService(
             }
         }
 
-        val user              = verification.user
-        val isFirstLink       = user.telegramId == null
+        val user        = verification.user
+        val isFirstLink = user.telegramId == null
 
         user.telegramId       = telegramId
         user.telegramUsername = telegramUsername
@@ -258,7 +259,7 @@ class AuthService(
         user.updatedAt        = LocalDateTime.now()
         verification.used     = true
 
-        // выдаём trial при первой привязке telegram
+
         if (isFirstLink) {
             runCatching { subscriptionService.grantTrial(user) }
                 .onFailure { log.warn("не удалось выдать trial для ${user.email}: ${it.message}") }
@@ -292,14 +293,14 @@ class AuthService(
             return
         }
 
-        val isFirstLink       = user.telegramId == null
+        val isFirstLink = user.telegramId == null
 
         user.telegramId       = telegramId
         user.telegramUsername = telegramUsername
         user.telegramLinkedAt = LocalDateTime.now()
         user.updatedAt        = LocalDateTime.now()
 
-        // выдаём trial при первой привязке telegram
+
         if (isFirstLink) {
             runCatching { subscriptionService.grantTrial(user) }
                 .onFailure { log.warn("не удалось выдать trial для ${user.email}: ${it.message}") }
@@ -353,7 +354,6 @@ class AuthService(
         subscriptionStatus    = user.subscriptionStatus,
         subscriptionPlan      = user.subscriptionPlan,
         createdAt             = user.createdAt?.toString(),
-
     )
 }
 

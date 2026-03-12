@@ -43,6 +43,7 @@ type IncomingMessage struct {
 	MessageLink     string   `json:"messageLink"`
 	MatchedKeyword  string   `json:"matchedKeyword"`
 	ContextMessages []string `json:"contextMessages"`
+	IsHistorical    bool     `json:"isHistorical"`
 }
 
 type SubscribeRequest struct {

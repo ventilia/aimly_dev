@@ -14,8 +14,8 @@ import org.springframework.web.bind.annotation.*
 import java.time.LocalDateTime
 
 
-private const val PRICE_MINIMUM = 2900
-private const val PRICE_START   = 19990
+private const val PRICE_MINIMUM = 4990
+private const val PRICE_START   = 4999
 private const val DURATION_DAYS = 30
 
 data class PurchaseRequest(
@@ -33,7 +33,6 @@ data class PurchaseResponse(
 @RestController
 @RequestMapping("/api/v1/subscriptions")
 class UserSubscriptionController(private val service: UserSubscriptionService) {
-
 
     @PostMapping("/purchase")
     fun purchase(
@@ -57,13 +56,11 @@ class UserSubscriptionService(
     fun purchase(caller: User, req: PurchaseRequest): PurchaseResponse {
         val plan = req.plan.uppercase()
 
-        // ✅ ИСПРАВЛЕНО: правильные имена тарифов и цены
         val price = when (plan) {
             "MINIMUM" -> PRICE_MINIMUM
             "START"   -> PRICE_START
             else      -> throw BadRequestException("неизвестный тариф: ${req.plan}")
         }
-
 
         val user = userRepository.findById(caller.id)
             .orElseThrow { NotFoundException("пользователь не найден") }
@@ -74,9 +71,7 @@ class UserSubscriptionService(
             )
         }
 
-
         user.balance = user.balance - price
-
 
         val existing  = expiryRepository.findByUserId(user.id)
         val base      = if (
@@ -98,12 +93,11 @@ class UserSubscriptionService(
 
         log.info("покупка тарифа $plan пользователем ${user.email}, баланс: ${user.balance} ₽, активна до $expiresAt")
 
-
         user.telegramId?.let { tgId ->
             runCatching {
                 bot.sendText(
                     tgId,
-                    "✅ Тариф $plan активирован!\n\nСписано: $price ₽\nОстаток баланса: ${user.balance} ₽\nДействует до: ${expiresAt.toLocalDate()}"
+                    "✅ Тариф $plan активирован!\n\nСписано: $price ₽\nОсталок баланса: ${user.balance} ₽\nДействует до: ${expiresAt.toLocalDate()}"
                 )
             }.onFailure { log.warn("telegram notify purchase: ${it.message}") }
         }

@@ -197,43 +197,24 @@ export function Compare({ lang }: { lang: Lang }) {
 
 
 
-
 const MINIMUM_FEATURES: Record<Lang, string[]> = {
     ru: [
         'Мониторинг чатов по ключевым словам',
         'Чаты без ограничений',
         'Лиды без ограничений',
-        'Точное совпадение ключевых слов',
+        'AI-семантический поиск лидов',
+        'AI-фильтрация контекста сообщений',
+        'Персонализация под ваш бизнес',
     ],
     en: [
         'Chat monitoring by keywords',
         'Unlimited chats',
         'Unlimited leads',
-        'Exact keyword matching',
-    ],
-}
-
-
-const START_FEATURES: Record<Lang, string[]> = {
-    ru: [
-        'Всё из тарифа Минимум',
-        'AI-семантический поиск лидов',
-        'AI-фильтрация контекста сообщений',
-        'Персонализация под ваш бизнес',
-        'Приоритетная поддержка',
-    ],
-    en: [
-        'Everything in Minimum',
         'AI semantic lead search',
-        'AI context filtering',
+        'AI context message filtering',
         'Business personalization',
-        'Priority support',
     ],
 }
-
-const START_NAMES: Record<Lang, string> = { ru: 'Старт', en: 'Start' }
-const START_DESCS: Record<Lang, string> = { ru: 'С AI-обработкой и персонализацией', en: 'With AI processing and personalization' }
-const START_PRICES: Record<Lang, string> = { ru: '19 990', en: '$199' }
 
 export function Pricing({ lang }: { lang: Lang }) {
     const _ = tr(lang)
@@ -248,10 +229,11 @@ export function Pricing({ lang }: { lang: Lang }) {
                 </div>
 
                 <div className={s.pricingWrap}>
-                    {/* ── тариф Минимум ── */}
-                    <div className={`${s.pricingCard} fade-in`}>
+                    {}
+                    <div className={`${s.pricingCard} ${s.pricingCardFeatured} fade-in`}>
+                        <div className={s.pricingBadge}>{_('plan.badge')}</div>
                         <h3 className={s.pricingName}>{ru ? 'Минимум' : 'Minimum'}</h3>
-                        <p className={s.pricingDesc}>{ru ? 'Мониторинг без AI' : 'Monitoring without AI'}</p>
+                        <p className={s.pricingDesc}>{ru ? 'Мониторинг с AI и персонализацией' : 'Monitoring with AI and personalization'}</p>
 
                         <div className={s.priceRow}>
                             <span className={s.priceOld}>{_('plan.old')}</span>
@@ -268,36 +250,23 @@ export function Pricing({ lang }: { lang: Lang }) {
 
                         <Link
                             to="/checkout"
-                            className={`${s.pricingCta} ${s.pricingCtaGhost}`}
+                            className={`${s.pricingCta} ${s.pricingCtaPrimary}`}
                         >
-                            {ru ? 'Начать' : 'Start'}
+                            {ru ? 'Начать' : 'Get started'}
                         </Link>
                     </div>
 
-                    {/* ── тариф Старт (с AI) ── */}
-                    <div className={`${s.pricingCard} ${s.pricingCardFeatured} fade-in`} style={{ animationDelay: '.1s' }}>
-                        <div className={s.pricingBadge}>{_('plan.badge')}</div>
-                        <h3 className={s.pricingName}>{START_NAMES[lang]}</h3>
-                        <p className={s.pricingDesc}>{START_DESCS[lang]}</p>
-
-                        <div className={s.priceRow}>
-                            <span className={s.price}>{START_PRICES[lang]}</span>
-                            <span className={s.priceCurrency}>{_('plan.currency')}</span>
-                            <span className={s.pricePeriod}>{_('plan.period')}</span>
+                    {}
+                    <div className={`${s.pricingCard} ${s.pricingCardDisabled} fade-in`} style={{ animationDelay: '.1s' }}>
+                        <h3 className={s.pricingName}>{ru ? 'Старт' : 'Start'}</h3>
+                        <div className={s.pricingComingSoonBadge}>
+                            {ru ? 'В разработке' : 'Coming soon'}
                         </div>
-
-                        <ul className={s.pricingFeatures}>
-                            {START_FEATURES[lang].map((f, i) => (
-                                <li key={i} className={s.pricingFeature}>✓ {f}</li>
-                            ))}
-                        </ul>
-
-                        <Link
-                            to="/checkout"
-                            className={`${s.pricingCta} ${s.pricingCtaPrimary}`}
-                        >
-                            {ru ? 'Начать' : 'Start'}
-                        </Link>
+                        <p className={s.pricingComingSoonText}>
+                            {ru
+                                ? 'Тариф находится в разработке и будет доступен в ближайшее время.'
+                                : 'This plan is in development and will be available soon.'}
+                        </p>
                     </div>
                 </div>
             </div>
@@ -318,7 +287,6 @@ const REVIEWS = [
 ]
 
 const VISIBLE = 3
-
 
 export function Reviews({ lang }: { lang: Lang }) {
     const _ = tr(lang)
@@ -342,13 +310,14 @@ export function Reviews({ lang }: { lang: Lang }) {
                     <div className={s.reviewsTrack} style={{ transform: `translateX(${offset})` }}>
                         {REVIEWS.map(r => (
                             <div key={r.name} className={s.reviewCard}>
-                                <div className={s.stars} aria-label="5 звёзд">★★★★★</div>
+                                <div className={s.stars} aria-hidden="true">★★★★★</div>
                                 <p className={s.reviewText}>{r.text}</p>
                                 <div className={s.reviewAuthor}>
-                                    <span className={s.reviewAvatar} aria-hidden="true">{r.emoji}</span>
+                                    <span className={s.reviewEmoji} aria-hidden="true">{r.emoji}</span>
                                     <div>
-                                        <div className={s.reviewName}>{r.name}, {r.role}</div>
-                                        <div className={s.reviewRole}>{r.niche}</div>
+                                        <p className={s.reviewName}>{r.name}</p>
+                                        <p className={s.reviewRole}>{r.role}</p>
+                                        <p className={s.reviewNiche}>{r.niche}</p>
                                     </div>
                                 </div>
                             </div>
@@ -357,18 +326,21 @@ export function Reviews({ lang }: { lang: Lang }) {
                 </div>
 
                 <div className={s.reviewsNav}>
-                    <button className={s.navBtn} onClick={prev} disabled={idx === 0} aria-label="Назад">←</button>
-                    <div className={s.dots}>
+                    <button className={s.navBtn} onClick={prev} disabled={idx === 0} aria-label="Назад">
+                        ←
+                    </button>
+                    <span className={s.navDots}>
                         {Array.from({ length: max + 1 }).map((_, i) => (
-                            <button
+                            <span
                                 key={i}
-                                className={`${s.dot} ${i === idx ? s.dotActive : ''}`}
+                                className={`${s.navDot} ${i === idx ? s.navDotActive : ''}`}
                                 onClick={() => setIdx(i)}
-                                aria-label={`Показать отзыв ${i + 1}`}
                             />
                         ))}
-                    </div>
-                    <button className={s.navBtn} onClick={next} disabled={idx === max} aria-label="Вперёд">→</button>
+                    </span>
+                    <button className={s.navBtn} onClick={next} disabled={idx === max} aria-label="Вперёд">
+                        →
+                    </button>
                 </div>
             </div>
         </section>
@@ -380,14 +352,10 @@ export function Faq({ lang }: { lang: Lang }) {
     const _ = tr(lang)
     const [open, setOpen] = useState<number | null>(null)
 
-    const items = [
-        { q: _('faq.q1'), a: _('faq.a1') },
-        { q: _('faq.q2'), a: _('faq.a2') },
-        { q: _('faq.q3'), a: _('faq.a3') },
-        { q: _('faq.q4'), a: _('faq.a4') },
-        { q: _('faq.q5'), a: _('faq.a5') },
-        { q: _('faq.q6'), a: _('faq.a6') },
-    ]
+    const items = [1, 2, 3, 4, 5, 6].map(n => ({
+        q: _(`faq.q${n}`),
+        a: _(`faq.a${n}`),
+    }))
 
     return (
         <section className="section" id="faq">
@@ -395,28 +363,21 @@ export function Faq({ lang }: { lang: Lang }) {
                 <div className="section__head center">
                     <h2 className="section__title">{_('faq.title')}</h2>
                 </div>
-                <ul className={s.faqList}>
+                <div className={s.faqList}>
                     {items.map((item, i) => (
-                        <li key={i} className={s.faqItem}>
-                            <button
-                                className={s.faqQ}
-                                onClick={() => setOpen(open === i ? null : i)}
-                                aria-expanded={open === i}
-                            >
-                                {item.q}
-                                <span
-                                    className={`${s.faqIcon} ${open === i ? s.faqIconOpen : ''}`}
-                                    aria-hidden="true"
-                                >
-                                    +
-                                </span>
-                            </button>
-                            {open === i && (
-                                <div className={s.faqA}>{item.a}</div>
-                            )}
-                        </li>
+                        <div
+                            key={i}
+                            className={`${s.faqItem} ${open === i ? s.faqItemOpen : ''}`}
+                            onClick={() => setOpen(open === i ? null : i)}
+                        >
+                            <div className={s.faqQ}>
+                                <span>{item.q}</span>
+                                <span className={s.faqArrow} aria-hidden="true">{open === i ? '−' : '+'}</span>
+                            </div>
+                            {open === i && <p className={s.faqA}>{item.a}</p>}
+                        </div>
                     ))}
-                </ul>
+                </div>
             </div>
         </section>
     )

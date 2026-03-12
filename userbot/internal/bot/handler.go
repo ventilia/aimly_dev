@@ -233,7 +233,6 @@ func (h *MessageHandler) HandleMessage(
 	}
 
 	if len(subs) == 0 {
-
 		h.addToMsgBuffer(chatTgID, text)
 		return
 	}
@@ -246,7 +245,6 @@ func (h *MessageHandler) HandleMessage(
 		h.mu.RUnlock()
 
 		if !hasKeywords {
-
 			continue
 		}
 
@@ -281,6 +279,7 @@ func (h *MessageHandler) HandleMessage(
 			MessageLink:     messageLink,
 			MatchedKeyword:  matched,
 			ContextMessages: contextMsgs,
+			IsHistorical:    false,
 		}
 
 		h.log.Info("🎯 совпадение в реальном времени",
@@ -346,7 +345,8 @@ func (h *MessageHandler) ProcessHistoricalMessages(
 	)
 
 	for i, hm := range messages {
-		matched := h.findMatch(ctx, userID, hm.Text)
+
+		matched := h.findMatchExact(userID, hm.Text)
 		if matched == "" {
 			h.addToMsgBuffer(chatTgID, hm.Text)
 			continue
@@ -361,19 +361,12 @@ func (h *MessageHandler) ProcessHistoricalMessages(
 			rawContext = append(rawContext, sanitize(prev.Text))
 		}
 
-		var contextMsgs []string
-		if len(rawContext) > 0 {
-			filterCtx, filterCancel := context.WithTimeout(ctx, 5*time.Second)
-			contextMsgs = h.groq.FilterRelevantContext(filterCtx, hm.Text, rawContext)
-			filterCancel()
-		}
-
 		h.log.Info("🎯 совпадение в истории",
 			zap.Int64("userID", userID),
 			zap.String("keyword", matched),
 			zap.String("chat", chatTitle),
 			zap.Int64("messageID", hm.MessageID),
-			zap.Int("contextFiltered", len(contextMsgs)),
+			zap.Int("contextRaw", len(rawContext)),
 		)
 
 		messageLink := hm.MessageLink
@@ -392,7 +385,8 @@ func (h *MessageHandler) ProcessHistoricalMessages(
 			MessageText:     sanitize(hm.Text),
 			MessageLink:     messageLink,
 			MatchedKeyword:  matched,
-			ContextMessages: contextMsgs,
+			ContextMessages: rawContext,
+			IsHistorical:    true,
 		}
 
 		if err := h.sendToSpringBoot(ctx, msg); err != nil {

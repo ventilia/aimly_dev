@@ -14,8 +14,8 @@ export const t: Record<Lang, Record<string, string>> = {
         'hero.badge':   'Ранний доступ открыт',
         'hero.title1':  'Получайте клиентов из Telegram-чатов,',
         'hero.title2':  'пока вы спите',
-        'hero.sub':     'AIMLY мониторит Telegram-чаты 24/7 и вытаскивает только целевые запросы по вашим темам. Вы видите готовый список лидов и отвечаете сами, без автоответов и рассылок.',
-        'hero.callout': 'AIMLY это как «радар» по чатам: AI отслеживает Telegram 24/7 и приносит вам готовые лиды. Подключите рабочий аккаунт и отвечаете вручную, никаких сообщений от сервиса.',
+        'hero.sub':     'AIMLY мониторит Telegram-чаты 24/7 и вытаскивает только целевые запросы по вашим темам. Вы видите готовый список лидов, без автоответов и спама.',
+        'hero.callout': 'AIMLY это как «радар» по чатам: AI отслеживает Telegram чаты 24/7 и приносит вам готовые лиды.',
         'hero.social':  'Уже тестируют десятки бизнесов в раннем доступе',
         'hero.live':    'Новые лиды каждый день',
 
@@ -34,22 +34,22 @@ export const t: Record<Lang, Record<string, string>> = {
 
         // фичи
         'features.title': 'Как AIMLY экономит ваше время',
-        'feat1.title': 'Ответы от вашего живого аккаунта',
-        'feat1.adv':   'Выглядит как обычный участник чата, не бот',
+        'feat1.title': 'Не приходится тратить время на поиск лидов',
+        'feat1.adv':   'AI персонализация автоматизирует даже ключевые слова',
         'feat1.ben':   'Доверие как к живому человеку',
         'feat2.title': 'AI-радар по запросам',
         'feat2.adv':   'AIMLY 24/7 сканирует чаты и умно выделяет запросы',
         'feat2.ben':   'Только целевые лиды, без шума',
         'feat3.title': 'Готовый список лидов в кабинете',
         'feat3.adv':   'Все запросы в одном месте с быстрым доступом',
-        'feat3.ben':   'Экономия часов на мониторинг',
+        'feat3.ben':   'Экономия часов на анализ статистики',
 
         // как работает
         'how.label': '',
         'how.title': 'Настройка за 15 минут',
-        'how.sub':   'Подключите аккаунт, выберите чаты и настройте триггеры. AIMLY начнёт приносить лиды.',
-        'step1.title': 'Подключите аккаунт',
-        'step1.desc':  'Войдите через ваш рабочий Telegram-аккаунт. AIMLY работает в режиме чтения — без отправки сообщений.',
+        'how.sub':   'Запустите бота, выберите чаты и настройте триггеры. AIMLY начнёт приносить лиды.',
+        'step1.title': 'Запустите бота',
+        'step1.desc':  'Запустите бота. AIMLY работает в режиме чтения — без отправки сообщений.',
         'step2.title': 'Выберите чаты',
         'step2.desc':  'Добавьте Telegram-чаты, где сидят ваши клиенты. AIMLY мониторит их 24/7.',
         'step3.title': 'Настройте триггеры',
@@ -67,7 +67,7 @@ export const t: Record<Lang, Record<string, string>> = {
         'aud4.title': 'Маркетологи',
         'aud4.desc':  'Специалисты по трафику — тестируйте новые каналы без ручного поиска.',
 
-        // ─── сравнение (обновлено под скриншот) ───────────────────────
+        // сравнение
         'compare.title': 'AIMLY vs альтернативы',
         'cmp.crit':   'Критерий',
         'cmp.manual': 'Вручную 😤',
@@ -94,7 +94,6 @@ export const t: Record<Lang, Record<string, string>> = {
         'r4.b': 'Средний–высокий',
         'r4.a': 'Отсутствует',
 
-
         'cabinet.title': 'Всё в одном кабинете',
         'cabinet.sub':   'Лента лидов, статистика и быстрые ссылки на чаты.',
         'cab1.title': 'Лента лидов',
@@ -108,23 +107,23 @@ export const t: Record<Lang, Record<string, string>> = {
         'pricing.title':   'Тарифы',
         'pricing.sub':     'Тариф можно сменить в любой момент.',
         'plan.badge':      'РЕКОМЕНДУЕМ',
-        'plan.name':       'Старт',
-        'plan.desc':       'Для старта',
-        'plan.old':   '3500',
-        'plan.price': '2490',
+        'plan.name':       'Минимум',
+        'plan.desc':       'Мониторинг с AI и персонализацией',
+        'plan.old':        '7 000',
+        'plan.price':      '4 990',
         'plan.currency':   '₽',
         'plan.period':     '/мес',
         'plan.note':       'Цена для первых пользователей',
-        'plan.f1':         'Аккаунты без ограничений',
-        'plan.f2':         'Чаты без ограничений',
-        'plan.f3':         'Лиды без ограничений',
+        'plan.f1':         'Чаты без ограничений',
+        'plan.f2':         'Лиды без ограничений',
+        'plan.f3':         'AI-семантический поиск лидов',
+        'plan.f4':         'AI-фильтрация контекста сообщений',
+        'plan.f5':         'Персонализация под ваш бизнес',
         'plan.cta':        'Подключить',
         'plan.pay':        'Оплата картами РФ, Visa/Mastercard или криптовалютой — любым удобным способом.',
 
-
         'reviews.title': 'Что говорят первые пользователи',
         'reviews.sub':   'Реальный опыт тех, кто уже тестирует AIMLY в раннем доступе.',
-
 
         'faq.title': 'Частые вопросы',
         'faq.q1': 'Это безопасно? Зачем вообще авторизовывать Telegram-аккаунт?',
@@ -352,20 +351,22 @@ export const t: Record<Lang, Record<string, string>> = {
         'cab3.title': 'Statistics',
         'cab3.desc':  'How many leads per chat, response conversion.',
 
-        // pricing
+        // ─── pricing ────────────────────────────────
         'pricing.title':   'Pricing',
         'pricing.sub':     'You can change the plan at any time.',
         'plan.badge':      'RECOMMENDED',
-        'plan.name':       'Starter',
-        'plan.desc':       'For getting started',
-         'plan.old':   '$300',
-            'plan.price': '$255',
-        'plan.currency':   '',
+        'plan.name':       'Minimum',
+        'plan.desc':       'Monitoring with AI and personalization',
+        'plan.old':        '70',
+        'plan.price':      '49',
+        'plan.currency':   '$',
         'plan.period':     '/mo',
         'plan.note':       'Early user price',
-        'plan.f1':         'Unlimited accounts',
-        'plan.f2':         'Unlimited chats',
-        'plan.f3':         'Unlimited leads',
+        'plan.f1':         'Unlimited chats',
+        'plan.f2':         'Unlimited leads',
+        'plan.f3':         'AI semantic lead search',
+        'plan.f4':         'AI context message filtering',
+        'plan.f5':         'Business personalization',
         'plan.cta':        'Connect',
         'plan.pay':        'Pay by card, Visa/Mastercard or crypto — any way you prefer.',
 

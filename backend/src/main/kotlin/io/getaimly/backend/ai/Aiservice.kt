@@ -21,8 +21,7 @@ class AiService(
     private val log = LoggerFactory.getLogger(AiService::class.java)
     private val restTemplate = RestTemplate()
 
-
-    private val MAIN_MODEL = "llama-3.1-8b-instant"
+    private val MAIN_MODEL   = "llama-3.1-8b-instant"
     private val EXPAND_MODEL = "llama-3.3-70b-versatile"
 
     private val queue = ArrayBlockingQueue<ValidationTask>(50)
@@ -135,7 +134,7 @@ $contextList
             indices.map { rawContext[it - 1] }
         } catch (e: Exception) {
             log.warn("filterRelevantContext ошибка: ${e.message}")
-            rawContext // при ошибке возвращаем оригинал
+            rawContext
         }
     }
 
@@ -164,6 +163,77 @@ $contextList
             log.warn("keyword expand: ошибка для \"$keyword\" — ${e.message}. Используем только оригинал.")
             listOf(keyword)
         }
+    }
+
+
+
+    fun generateKeywords(businessContext: String): List<String> {
+        if (apiKey.isBlank()) {
+            log.warn("generateKeywords: groq api key не задан — генерация невозможна")
+            throw IllegalStateException("AI-генерация недоступна: groq api key не задан")
+        }
+
+        val trimmed = businessContext.trim()
+        if (trimmed.length < 20) {
+            throw IllegalArgumentException("Описание бизнеса слишком короткое")
+        }
+
+        val prompt = "Ты — AI-помощник для генерации ключевых слов для мониторинга Telegram-чатов.\n\n" +
+                "Описание бизнеса пользователя:\n" +
+                trimmed + "\n\n" +
+                "Сгенерируй ключевые слова и фразы, которые потенциальные клиенты пишут в Telegram-чатах, " +
+                "когда ищут услуги/продукты этого бизнеса.\n\n" +
+                "Требования:\n" +
+                "- Фразы должны быть реальными запросами от клиентов (не рекламные слоганы)\n" +
+                "- Включи разные варианты формулировок одного запроса\n" +
+                "- Включи фразы-сигналы намерения: \"ищу\", \"нужен\", \"требуется\", \"посоветуйте\", \"порекомендуйте\"\n" +
+                "- 15-25 ключевых фраз\n" +
+                "- Только то, что реально пишут люди в чатах\n\n" +
+                "Верни ТОЛЬКО JSON без пояснений и markdown:\n" +
+                "{\"keywords\": [\"фраза 1\", \"фраза 2\", \"фраза 3\"]}"
+
+        val headers = HttpHeaders().apply {
+            contentType = MediaType.APPLICATION_JSON
+            setBearerAuth(apiKey)
+        }
+
+        val body = mapOf(
+            "model" to EXPAND_MODEL,
+            "messages" to listOf(
+                mapOf("role" to "system", "content" to "Отвечай только JSON. Никаких пояснений, никаких markdown-блоков."),
+                mapOf("role" to "user", "content" to prompt),
+            ),
+            "max_tokens" to 1000,
+            "temperature" to 0.4,
+        )
+
+        val response = restTemplate.postForObject(
+            "https://api.groq.com/openai/v1/chat/completions",
+            HttpEntity(body, headers),
+            GroqResponse::class.java,
+        ) ?: throw RuntimeException("пустой ответ от groq при генерации ключевых слов")
+
+        val raw = response.choices.firstOrNull()?.message?.content
+            ?: throw RuntimeException("нет content в ответе groq")
+
+        val clean = raw.replace(Regex("```json|```"), "").trim()
+
+        val keywordsJson = Regex("\"keywords\"\\s*:\\s*\\[([^]]*)]")
+            .find(clean)
+            ?.groupValues?.get(1)
+            ?: run {
+                log.warn("generateKeywords: не удалось распарсить ответ: $clean")
+                throw RuntimeException("Некорректный формат ответа от AI")
+            }
+
+        val keywords = Regex("\"([^\"]+)\"")
+            .findAll(keywordsJson)
+            .map { it.groupValues[1].trim() }
+            .filter { it.isNotBlank() }
+            .toList()
+
+        log.info("generateKeywords: сгенерировано ${keywords.size} ключевых слов для бизнеса (${trimmed.take(60)}...)")
+        return keywords
     }
 
 
@@ -303,7 +373,6 @@ $contextList
             """.trimMargin()
         } else ""
 
-
         val leadsBlock = if (recentLeads.isNotEmpty()) {
             val leads = recentLeads.take(5).joinToString("\n") { l ->
                 "    - @${l.authorUsername}: \"${l.messageText}\" (${l.foundAt})"
@@ -318,7 +387,6 @@ $contextList
             |дубль только если: тот же автор + та же услуга + практически то же сообщение.
             """.trimMargin()
         } else ""
-
 
         val businessBlock = if (!businessContext.isNullOrBlank()) {
             """

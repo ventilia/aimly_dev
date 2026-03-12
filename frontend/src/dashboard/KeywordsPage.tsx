@@ -3,6 +3,8 @@ import { keywordsApi, businessContextApi, type Keyword } from '../api/leads.ts'
 import { useAuthContext } from '../context/AuthContext'
 import s from './Keywordspage.module.css'
 
+const MAX_KEYWORDS = 50
+
 const SUGGESTIONS = [
     'ищу дизайнера', 'нужен разработчик', 'ищу smm', 'нужен копирайтер',
     'требуется верстальщик', 'ищем маркетолога', 'нужна реклама', 'ищу таргетолога',
@@ -40,16 +42,6 @@ function AlertIcon() {
     )
 }
 
-function LockIcon() {
-    return (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-             stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-        </svg>
-    )
-}
-
 function SparkleIcon() {
     return (
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
@@ -57,6 +49,35 @@ function SparkleIcon() {
             <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17 5.8 21.3l2.4-7.4L2 9.4h7.6z"/>
         </svg>
     )
+}
+
+function CloseIcon() {
+    return (
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+    )
+}
+
+
+const BASE: string = import.meta.env.VITE_API_URL || ''
+
+async function generateKeywordsFromContext(businessContext: string): Promise<string[]> {
+    const res = await fetch(`${BASE}/api/v1/keywords/generate`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ businessContext }),
+    })
+
+    if (!res.ok) {
+        const body = await res.json().catch(() => ({ message: `Ошибка ${res.status}` })) as { message?: string; error?: string }
+        throw new Error(body.error ?? body.message ?? `Ошибка ${res.status}`)
+    }
+
+    const data = await res.json() as { keywords: string[] }
+    return data.keywords
 }
 
 export default function KeywordsPage() {
@@ -68,17 +89,28 @@ export default function KeywordsPage() {
     const [error, setError]                 = useState('')
     const [removing, setRemoving]           = useState<number | null>(null)
 
-
-    const [bizContext, setBizContext]       = useState('')
+    const [bizContext, setBizContext]           = useState('')
     const [bizContextSaved, setBizContextSaved] = useState('')
-    const [bizSaving, setBizSaving]         = useState(false)
-    const [bizError, setBizError]           = useState('')
-    const [bizSuccess, setBizSuccess]       = useState(false)
-    const [bizLoading, setBizLoading]       = useState(true)
+    const [bizSaving, setBizSaving]             = useState(false)
+    const [bizError, setBizError]               = useState('')
+    const [bizSuccess, setBizSuccess]           = useState(false)
+    const [bizLoading, setBizLoading]           = useState(true)
 
-    // Тариф: MINIMUM = без AI; START/BUSINESS = с AI
-    const plan = user?.subscriptionPlan ?? null
-    const hasAiFeatures = plan === 'START' || plan === 'BUSINESS'
+
+    const [aiGenerating, setAiGenerating]   = useState(false)
+    const [aiSuggestions, setAiSuggestions] = useState<string[]>([])
+    const [aiError, setAiError]             = useState('')
+    const [addingAi, setAddingAi]           = useState(false)
+
+    const plan   = user?.subscriptionPlan   ?? null
+    const status = user?.subscriptionStatus ?? null
+    const hasAiFeatures = (
+        plan === 'MINIMUM' ||
+        plan === 'START'   ||
+        status === 'TRIAL'
+    )
+
+    const atLimit = keywords.length >= MAX_KEYWORDS
 
     useEffect(() => {
         keywordsApi
@@ -87,7 +119,6 @@ export default function KeywordsPage() {
             .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Ошибка загрузки'))
             .finally(() => setLoading(false))
 
-        // Загружаем бизнес-контекст только если есть AI-тариф
         if (hasAiFeatures) {
             businessContextApi
                 .get()
@@ -106,6 +137,10 @@ export default function KeywordsPage() {
     const add = async (kw?: string) => {
         const word = (kw ?? input).trim()
         if (!word) return
+        if (keywords.length >= MAX_KEYWORDS) {
+            setError(`Достигнут лимит — максимум ${MAX_KEYWORDS} ключевых слов`)
+            return
+        }
         setAdding(true)
         setError('')
         try {
@@ -131,10 +166,13 @@ export default function KeywordsPage() {
         }
     }
 
+
     const saveBizContext = async () => {
         setBizSaving(true)
         setBizError('')
         setBizSuccess(false)
+        setAiSuggestions([])
+        setAiError('')
         try {
             const res = await businessContextApi.save(bizContext)
             const v = res.businessContext ?? ''
@@ -142,6 +180,19 @@ export default function KeywordsPage() {
             setBizContextSaved(v)
             setBizSuccess(true)
             setTimeout(() => setBizSuccess(false), 2500)
+
+
+            if (v.trim().length > 20) {
+                setAiGenerating(true)
+                try {
+                    const generated = await generateKeywordsFromContext(v)
+                    setAiSuggestions(generated)
+                } catch (e: unknown) {
+                    setAiError(e instanceof Error ? e.message : 'Не удалось сгенерировать ключевые слова')
+                } finally {
+                    setAiGenerating(false)
+                }
+            }
         } catch (e: unknown) {
             setBizError(e instanceof Error ? e.message : 'Ошибка сохранения')
         } finally {
@@ -149,42 +200,122 @@ export default function KeywordsPage() {
         }
     }
 
+
+    const generateKeywords = async () => {
+        if (!bizContextSaved.trim() || bizContextSaved.trim().length < 20) {
+            setAiError('Сначала заполните и сохраните описание бизнеса')
+            return
+        }
+        setAiGenerating(true)
+        setAiError('')
+        setAiSuggestions([])
+        try {
+            const generated = await generateKeywordsFromContext(bizContextSaved)
+            setAiSuggestions(generated)
+        } catch (e: unknown) {
+            setAiError(e instanceof Error ? e.message : 'Не удалось сгенерировать ключевые слова')
+        } finally {
+            setAiGenerating(false)
+        }
+    }
+
+    const addAiSuggestion = async (kw: string) => {
+        if (keywords.length >= MAX_KEYWORDS) {
+            setError(`Достигнут лимит — максимум ${MAX_KEYWORDS} ключевых слов`)
+            return
+        }
+        setError('')
+
+        setAiSuggestions(prev => prev.filter(s => s !== kw))
+        try {
+            const added = await keywordsApi.add(kw)
+            setKeywords(prev => prev.find(k => k.id === added.id) ? prev : [...prev, added])
+        } catch (e: unknown) {
+
+            setAiSuggestions(prev => [kw, ...prev])
+            setError(e instanceof Error ? e.message : 'Не удалось добавить')
+        }
+    }
+
+
+    const dismissAiSuggestion = (kw: string) => {
+        setAiSuggestions(prev => prev.filter(s => s !== kw))
+    }
+
+
+    const addAllAiSuggestions = async () => {
+        const available = MAX_KEYWORDS - keywords.length
+        if (available <= 0) {
+            setError(`Достигнут лимит — максимум ${MAX_KEYWORDS} ключевых слов`)
+            return
+        }
+
+        const toAdd = aiSuggestions.slice(0, available)
+        if (toAdd.length === 0) return
+
+        setAddingAi(true)
+        setError('')
+
+        const tempItems: Keyword[] = toAdd.map((kw, i) => ({
+            id: -(Date.now() + i), // отрицательный временный id
+            keyword: kw,
+            isActive: true,
+            variants: [],
+        }))
+        setKeywords(prev => [...prev, ...tempItems])
+        setAiSuggestions([])
+
+        const results = await Promise.allSettled(
+            toAdd.map(kw => keywordsApi.add(kw))
+        )
+
+        setKeywords(prev => {
+            const withoutTemp = prev.filter(k => k.id >= 0)
+            const added = results
+                .filter((r): r is PromiseFulfilledResult<Keyword> => r.status === 'fulfilled')
+                .map(r => r.value)
+
+            const existingIds = new Set(withoutTemp.map(k => k.id))
+            const newItems = added.filter(k => !existingIds.has(k.id))
+            return [...withoutTemp, ...newItems]
+        })
+
+
+        const failed = results.filter(r => r.status === 'rejected')
+        if (failed.length > 0) {
+            setError(`Не удалось добавить ${failed.length} слов — возможно, они уже существуют`)
+        }
+
+        setAddingAi(false)
+    }
+
+    // Отклоняем все AI-предложения сразу
+    const dismissAllAiSuggestions = () => {
+        setAiSuggestions([])
+    }
+
     const unused = SUGGESTIONS.filter(sg => !keywords.find(k => k.keyword.toLowerCase() === sg.toLowerCase()))
     const bizContextChanged = bizContext !== bizContextSaved
 
     return (
         <div className={s.page}>
-            <div className={s.pageHead}>
-                <div>
-                    <h1 className={s.title}>Ключевые слова и персонализация</h1>
-                    <p className={s.sub}>
-                        Бот ищет совпадения в каждом сообщении и присылает лид при нахождении
-                    </p>
-                </div>
-                {keywords.length > 0 && (
-                    <div className={s.counter}>
-                        <span className={s.counterNum}>{keywords.length}</span>
-                        <span className={s.counterLabel}>слов</span>
-                    </div>
-                )}
-            </div>
 
-            {/* ─── Блок персонализации ─── */}
-            <div className={s.section} style={{ marginBottom: 24 }}>
-                <div className={s.sectionHead}>
-                    <span className={s.sectionTitle} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                        <SparkleIcon />
-                        Персонализация для AI
-                    </span>
-                    {!hasAiFeatures && (
+            {/* ─── Персонализация AI ─── */}
+            <div className={s.bizBlock}>
+                <div className={s.bizHeader}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ color: 'var(--c-accent)', display: 'flex' }}><SparkleIcon /></span>
+                        <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--c-ink)' }}>
+                            Персонализация AI
+                        </span>
+                    </div>
+                    {hasAiFeatures && (
                         <span style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 4,
-                            fontSize: 11, fontWeight: 600,
-                            background: 'rgba(92,57,223,.12)', color: 'var(--c-accent)',
-                            padding: '2px 8px', borderRadius: 100,
+                            fontSize: 11, fontWeight: 700, padding: '3px 8px',
+                            borderRadius: 6, background: 'var(--c-accent-soft)',
+                            color: 'var(--c-accent)', letterSpacing: '0.5px',
                         }}>
-                            <LockIcon />
-                            Тариф СТАРТ
+                            AI-функция
                         </span>
                     )}
                 </div>
@@ -192,7 +323,7 @@ export default function KeywordsPage() {
                 {hasAiFeatures ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                         <p style={{ fontSize: 13, color: 'var(--c-ink-2)', margin: 0, lineHeight: 1.5 }}>
-                            Опишите ваш бизнес, услуги и целевую аудиторию. AI будет учитывать это при фильтрации лидов — отбирая только тех, кто ищет именно то, что вы предлагаете.
+                            Опишите ваш бизнес, услуги и целевую аудиторию. AI будет учитывать это при фильтрации лидов и автоматически сгенерирует ключевые слова для мониторинга и дополнительные варианты к нему.
                         </p>
                         <textarea
                             value={bizContext}
@@ -234,6 +365,29 @@ export default function KeywordsPage() {
                             >
                                 {bizSaving ? 'Сохраняем...' : bizSuccess ? '✓ Сохранено' : 'Сохранить'}
                             </button>
+
+                            {}
+                            {bizContextSaved.trim().length > 20 && (
+                                <button
+                                    onClick={generateKeywords}
+                                    disabled={aiGenerating || bizSaving}
+                                    style={{
+                                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                                        padding: '9px 18px', borderRadius: 9,
+                                        background: aiGenerating ? 'var(--c-surface)' : 'var(--c-green-soft)',
+                                        border: '1.5px solid var(--c-green)',
+                                        color: 'var(--c-green)',
+                                        fontSize: 13, fontWeight: 600,
+                                        cursor: aiGenerating ? 'default' : 'pointer',
+                                        fontFamily: 'var(--font-body)', transition: 'all .15s',
+                                        opacity: aiGenerating ? 0.7 : 1,
+                                    }}
+                                >
+                                    <SparkleIcon />
+                                    {aiGenerating ? 'Генерируем...' : 'Сгенерировать ключевые слова'}
+                                </button>
+                            )}
+
                             <span style={{ fontSize: 12, color: 'var(--c-ink-3)' }}>
                                 {bizContext.length} / 2000
                             </span>
@@ -244,9 +398,164 @@ export default function KeywordsPage() {
                                 <span>{bizError}</span>
                             </div>
                         )}
+
+                        {}
+                        {aiGenerating && (
+                            <div style={{
+                                padding: '16px 18px',
+                                background: 'var(--c-accent-soft)',
+                                borderRadius: 10,
+                                border: '1.5px solid rgba(92,57,223,.15)',
+                                display: 'flex', alignItems: 'center', gap: 10,
+                                fontSize: 13, color: 'var(--c-accent)',
+                            }}>
+                                <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>✦</span>
+                                AI анализирует ваш бизнес и подбирает ключевые слова...
+                            </div>
+                        )}
+
+                        {aiError && (
+                            <div className={s.error}>
+                                <span className={s.errorIcon}><AlertIcon /></span>
+                                <span>Ошибка генерации: {aiError}</span>
+                            </div>
+                        )}
+
+                        {aiSuggestions.length > 0 && (
+                            <div style={{
+                                padding: '16px 18px',
+                                background: 'var(--c-surface)',
+                                border: '1.5px solid var(--c-green)',
+                                borderRadius: 12,
+                                display: 'flex', flexDirection: 'column', gap: 12,
+                            }}>
+                                {}
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--c-ink)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                        <span style={{ color: 'var(--c-green)' }}><SparkleIcon /></span>
+                                        AI сгенерировал {aiSuggestions.length} ключевых слов
+                                    </span>
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                        <button
+                                            onClick={addAllAiSuggestions}
+                                            disabled={atLimit || addingAi}
+                                            title={atLimit ? `Лимит ${MAX_KEYWORDS} слов достигнут` : undefined}
+                                            style={{
+                                                padding: '6px 14px', borderRadius: 8,
+                                                background: (atLimit || addingAi) ? 'var(--c-border)' : 'var(--c-green)',
+                                                color: '#fff',
+                                                border: 'none', fontSize: 12, fontWeight: 600,
+                                                cursor: (atLimit || addingAi) ? 'default' : 'pointer',
+                                                fontFamily: 'var(--font-body)',
+                                                opacity: (atLimit || addingAi) ? 0.5 : 1,
+                                            }}
+                                        >
+                                            {addingAi ? 'Добавляем...' : 'Добавить все'}
+                                        </button>
+                                        <button
+                                            onClick={dismissAllAiSuggestions}
+                                            disabled={addingAi}
+                                            style={{
+                                                padding: '6px 14px', borderRadius: 8,
+                                                background: 'transparent',
+                                                color: 'var(--c-ink-3)',
+                                                border: '1.5px solid var(--c-border)',
+                                                fontSize: 12, fontWeight: 600,
+                                                cursor: 'pointer',
+                                                fontFamily: 'var(--font-body)',
+                                                transition: 'all .15s',
+                                            }}
+                                            onMouseEnter={e => {
+                                                (e.currentTarget as HTMLButtonElement).style.borderColor = '#ef4444'
+                                                ;(e.currentTarget as HTMLButtonElement).style.color = '#ef4444'
+                                            }}
+                                            onMouseLeave={e => {
+                                                (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--c-border)'
+                                                ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--c-ink-3)'
+                                            }}
+                                        >
+                                            Отклонить все
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {}
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                    {aiSuggestions.map(kw => (
+                                        <div
+                                            key={kw}
+                                            style={{
+                                                display: 'inline-flex', alignItems: 'center',
+                                                borderRadius: 20,
+                                                background: 'var(--c-green-soft)',
+                                                border: '1.5px solid var(--c-green)',
+                                                overflow: 'hidden',
+                                            }}
+                                        >
+                                            {}
+                                            <button
+                                                onClick={() => addAiSuggestion(kw)}
+                                                disabled={atLimit}
+                                                title={atLimit ? `Лимит ${MAX_KEYWORDS} слов достигнут` : 'Добавить'}
+                                                style={{
+                                                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                                                    padding: '6px 10px 6px 12px',
+                                                    background: 'transparent', border: 'none',
+                                                    color: 'var(--c-green)',
+                                                    fontSize: 12, fontWeight: 600,
+                                                    cursor: atLimit ? 'default' : 'pointer',
+                                                    fontFamily: 'var(--font-body)',
+                                                    transition: 'all .15s',
+                                                    opacity: atLimit ? 0.5 : 1,
+                                                }}
+                                                onMouseEnter={e => {
+                                                    if (!atLimit) {
+                                                        (e.currentTarget as HTMLButtonElement).style.background = 'rgba(16,185,129,.15)'
+                                                    }
+                                                }}
+                                                onMouseLeave={e => {
+                                                    (e.currentTarget as HTMLButtonElement).style.background = 'transparent'
+                                                }}
+                                            >
+                                                + {kw}
+                                            </button>
+                                            {}
+                                            <button
+                                                onClick={() => dismissAiSuggestion(kw)}
+                                                title="Отклонить"
+                                                style={{
+                                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                                    width: 24, height: '100%',
+                                                    padding: '0 6px 0 2px',
+                                                    background: 'transparent', border: 'none',
+                                                    color: 'var(--c-green)',
+                                                    cursor: 'pointer',
+                                                    transition: 'color .15s',
+                                                    opacity: 0.6,
+                                                }}
+                                                onMouseEnter={e => {
+                                                    (e.currentTarget as HTMLButtonElement).style.opacity = '1'
+                                                    ;(e.currentTarget as HTMLButtonElement).style.color = '#ef4444'
+                                                }}
+                                                onMouseLeave={e => {
+                                                    (e.currentTarget as HTMLButtonElement).style.opacity = '0.6'
+                                                    ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--c-green)'
+                                                }}
+                                            >
+                                                <CloseIcon />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <p style={{ fontSize: 12, color: 'var(--c-ink-3)', margin: 0 }}>
+                                    Нажмите на фразу чтобы добавить, × чтобы отклонить одну, или используйте кнопки выше
+                                </p>
+                            </div>
+                        )}
                     </div>
                 ) : (
-                    /* Заглушка для тарифа MINIMUM */
+
                     <div style={{
                         background: 'var(--c-surface)',
                         border: '1.5px dashed var(--c-border)',
@@ -256,14 +565,9 @@ export default function KeywordsPage() {
                         flexDirection: 'column',
                         gap: 10,
                     }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ color: 'var(--c-accent)' }}><LockIcon /></span>
-                            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--c-ink)' }}>
-                                Персонализация AI недоступна на тарифе MINIMUM
-                            </span>
-                        </div>
                         <p style={{ fontSize: 13, color: 'var(--c-ink-2)', margin: 0, lineHeight: 1.5 }}>
-                            Тариф <b>СТАРТ</b> включает персонализацию для AI: опишите ваш бизнес один раз, и система будет автоматически отбирать лиды, подходящие именно вам — отсеивая нерелевантные запросы.
+                            Персонализация AI и генерация ключевых слов доступны на тарифе <b>МИНИМУМ</b>.
+                            Опишите ваш бизнес один раз, и система будет автоматически подбирать релевантные лиды.
                         </p>
                         <a
                             href="/checkout"
@@ -277,13 +581,13 @@ export default function KeywordsPage() {
                             onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.opacity = '0.85'}
                             onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.opacity = '1'}
                         >
-                            Улучшить тариф →
+                            Подключить тариф →
                         </a>
                     </div>
                 )}
             </div>
 
-            {/* ─── Добавление ключевых слов ─── */}
+            {}
             <div className={s.addBlock}>
                 <div className={s.addRow}>
                     <div className={s.inputWrap}>
@@ -293,21 +597,22 @@ export default function KeywordsPage() {
                             value={input}
                             onChange={e => setInput(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && add()}
-                            placeholder="Введите слово или фразу..."
-                            disabled={adding}
+                            placeholder={atLimit ? `Достигнут лимит ${MAX_KEYWORDS} слов` : 'Введите слово или фразу...'}
+                            disabled={adding || atLimit}
                             autoComplete="off"
                         />
                     </div>
                     <button
                         className={s.addBtn}
                         onClick={() => add()}
-                        disabled={adding || !input.trim()}
+                        disabled={adding || !input.trim() || atLimit}
+                        title={atLimit ? `Максимум ${MAX_KEYWORDS} ключевых слов` : undefined}
                     >
                         {adding ? <span className={s.spinner} /> : <>+ Добавить</>}
                     </button>
                 </div>
 
-                {unused.length > 0 && (
+                {unused.length > 0 && !atLimit && (
                     <div className={s.suggestions}>
                         <span className={s.sugLabel}>Популярные:</span>
                         <div className={s.sugChips}>
@@ -347,7 +652,7 @@ export default function KeywordsPage() {
                 <div className={s.section}>
                     <div className={s.sectionHead}>
                         <span className={s.sectionTitle}>Активные слова</span>
-                        <span className={s.badge}>{keywords.length}</span>
+                        <span className={s.badge}>{keywords.length} / {MAX_KEYWORDS}</span>
                     </div>
                     <div className={s.chips}>
                         {keywords.map(kw => (
@@ -376,8 +681,8 @@ export default function KeywordsPage() {
                 <span className={s.hintIcon}><InfoIcon /></span>
                 <span>
                     {hasAiFeatures
-                        ? 'Поиск нечувствителен к регистру. AI автоматически расширяет каждое ключевое слово вариантами и синонимами.'
-                        : 'Поиск нечувствителен к регистру. Фразы из нескольких слов работают лучше — они дают меньше ложных совпадений.'}
+                        ? 'Поиск нечувствителен к регистру. AI автоматически расширяет каждое ключевое слово вариантами и синонимами. Максимум 50 слов.'
+                        : 'Поиск нечувствителен к регистру. Фразы из нескольких слов работают лучше — они дают меньше ложных совпадений. Максимум 50 слов.'}
                 </span>
             </div>
         </div>

@@ -14,4 +14,5 @@ data class IncomingMessageRequest(
     val messageLink: String,
     val matchedKeyword: String,
     val contextMessages: List<String> = emptyList(),
+    val isHistorical: Boolean = false,
 )

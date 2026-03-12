@@ -2,9 +2,17 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Lang } from '../i18n/translations'
 import { authApi } from '../api/auth'
-import { leadsApi } from '../api/leads'
+import { leadsApi, businessContextApi } from '../api/leads'
 import { useAuthContext } from '../context/AuthContext'
 import s from './ProfilePage.module.css'
+
+function SparkleIcon() {
+    return (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
+        </svg>
+    )
+}
 
 const txt = {
     ru: {
@@ -26,7 +34,7 @@ const txt = {
         memberSince:   'В сервисе с',
         tgCard:        'Telegram',
         tgConnected:   'Аккаунт привязан',
-        tgConnect:     'Привязать Telegram',
+        tgConnect:     'Запустить бота',
         tgUnlink:      'Отвязать Telegram',
         tgUnlinkConfirm: 'Отвязать аккаунт? Мониторинг остановится.',
         linkHint:      'Откройте ссылку и нажмите Start в боте:',
@@ -38,6 +46,14 @@ const txt = {
         unlinkError:   'Не удалось отвязать Telegram',
         daysLeft:      (n: number) => `Осталось ${n} дн.`,
         expired:       'Истекла',
+        aiCard:        'AI-персонализация',
+        aiCardSub:     'Опишите ваш бизнес — AI будет точнее находить лидов и фильтровать сообщения',
+        aiPlaceholder: 'Например: продаём CRM-системы для малого бизнеса, целевая аудитория — владельцы интернет-магазинов...',
+        aiSave:        'Сохранить',
+        aiSaving:      'Сохраняем...',
+        aiSaved:       '✓ Сохранено',
+        aiError:       'Ошибка сохранения',
+        aiNeedPlan:    'Доступно на тарифе Minimum и выше',
     },
     en: {
         title:         'Profile',
@@ -70,6 +86,14 @@ const txt = {
         unlinkError:   'Failed to unlink Telegram',
         daysLeft:      (n: number) => `${n} days left`,
         expired:       'Expired',
+        aiCard:        'AI Personalization',
+        aiCardSub:     'Describe your business — AI will find better leads and filter messages more accurately',
+        aiPlaceholder: 'E.g.: we sell CRM systems for small businesses, targeting online store owners...',
+        aiSave:        'Save',
+        aiSaving:      'Saving...',
+        aiSaved:       '✓ Saved',
+        aiError:       'Save error',
+        aiNeedPlan:    'Available on Minimum plan and above',
     },
 } as const
 
@@ -99,12 +123,58 @@ export default function ProfilePage({ lang }: Props) {
     const [unlinking,    setUnlinking]    = useState(false)
     const [unlinkError,  setUnlinkError]  = useState<string | null>(null)
 
+    // AI персонализация (только сохранение описания, без генерации ключевых слов)
+    const [bizContext,      setBizContext]      = useState('')
+    const [bizContextSaved, setBizContextSaved] = useState('')
+    const [bizSaving,       setBizSaving]       = useState(false)
+    const [bizSuccess,      setBizSuccess]      = useState(false)
+    const [bizError,        setBizError]        = useState('')
+    const [bizLoading,      setBizLoading]      = useState(true)
+
+    const plan   = user?.subscriptionPlan   ?? null
+    const status = user?.subscriptionStatus ?? null
+    const hasAiFeatures = (
+        plan === 'MINIMUM' ||
+        plan === 'START'   ||
+        status === 'TRIAL'
+    )
+
     useEffect(() => {
         leadsApi.list({ size: 1 }).then(p => {
             setTotalLeads(p.totalElements)
             setNewLeads(p.newCount)
         }).catch(() => {})
-    }, [])
+
+        if (hasAiFeatures) {
+            businessContextApi.get().then(r => {
+                const v = r.businessContext ?? ''
+                setBizContext(v)
+                setBizContextSaved(v)
+            }).catch(() => {}).finally(() => setBizLoading(false))
+        } else {
+            setBizLoading(false)
+        }
+    }, [hasAiFeatures])
+
+    const saveBizContext = async () => {
+        setBizSaving(true)
+        setBizError('')
+        setBizSuccess(false)
+        try {
+            const res = await businessContextApi.save(bizContext)
+            const v   = res.businessContext ?? ''
+            setBizContext(v)
+            setBizContextSaved(v)
+            setBizSuccess(true)
+            setTimeout(() => setBizSuccess(false), 2500)
+        } catch (e: unknown) {
+            setBizError(e instanceof Error ? e.message : l.aiError)
+        } finally {
+            setBizSaving(false)
+        }
+    }
+
+    const bizContextChanged = bizContext !== bizContextSaved
 
     if (!user) return null
 
@@ -113,7 +183,6 @@ export default function ProfilePage({ lang }: Props) {
         : user.email.charAt(0).toUpperCase()
     const displayName = user.firstName ?? user.email.split('@')[0]
 
-    // FIX: memberSince из createdAt
     const memberSince = user.createdAt
         ? new Date(user.createdAt).toLocaleDateString(lang === 'ru' ? 'ru-RU' : 'en-US', {
             day: 'numeric', month: 'short', year: 'numeric',
@@ -145,7 +214,6 @@ export default function ProfilePage({ lang }: Props) {
         }
     }
 
-    // FIX: отвязка Telegram
     const handleUnlinkTg = async () => {
         if (!confirm(l.tgUnlinkConfirm)) return
         setUnlinking(true)
@@ -194,7 +262,7 @@ export default function ProfilePage({ lang }: Props) {
 
             <div className={s.grid}>
 
-                {/* карточка аккаунта */}
+                {}
                 <div className={s.card}>
                     <p className={s.cardTitle}>{l.accountCard}</p>
                     <div className={s.userBlock}>
@@ -280,12 +348,113 @@ export default function ProfilePage({ lang }: Props) {
                             <span className={s.statVal}>{newLeads === null ? '—' : newLeads}</span>
                             <span className={s.statLabel}>{l.newLeads}</span>
                         </div>
-                        {/* FIX: memberSince из createdAt */}
                         <div className={s.statItem}>
                             <span className={s.statVal} style={{ fontSize: 15, paddingTop: 5 }}>{memberSince}</span>
                             <span className={s.statLabel}>{l.memberSince}</span>
                         </div>
                     </div>
+                </div>
+
+                {}
+                <div className={`${s.card} ${s.gridFull}`}>
+                    <p className={s.cardTitle}>{l.aiCard}</p>
+
+                    {!hasAiFeatures ? (
+                        <div style={{
+                            padding: '14px 16px',
+                            borderRadius: 10,
+                            background: 'var(--c-surface)',
+                            border: '1.5px solid var(--c-border)',
+                            fontSize: 13,
+                            color: 'var(--c-ink-3)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                        }}>
+                            <SparkleIcon />
+                            {l.aiNeedPlan}
+                            <button
+                                onClick={() => navigate('/checkout')}
+                                style={{
+                                    marginLeft: 8,
+                                    padding: '4px 12px',
+                                    borderRadius: 7,
+                                    background: 'var(--c-accent)',
+                                    border: 'none',
+                                    color: '#fff',
+                                    fontSize: 12,
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    fontFamily: 'var(--font-body)',
+                                }}
+                            >
+                                {l.choosePlan}
+                            </button>
+                        </div>
+                    ) : bizLoading ? (
+                        <div style={{ height: 80, background: 'var(--c-surface)', borderRadius: 10, animation: 'pulse 1.5s ease-in-out infinite' }} />
+                    ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                            <p style={{ fontSize: 13, color: 'var(--c-ink-3)', margin: 0 }}>{l.aiCardSub}</p>
+
+                            <textarea
+                                value={bizContext}
+                                onChange={e => setBizContext(e.target.value.slice(0, 2000))}
+                                placeholder={l.aiPlaceholder}
+                                rows={4}
+                                style={{
+                                    width: '100%',
+                                    border: '1.5px solid var(--c-border)',
+                                    borderRadius: 10,
+                                    padding: '12px 14px',
+                                    fontSize: 13,
+                                    color: 'var(--c-ink)',
+                                    fontFamily: 'var(--font-body)',
+                                    lineHeight: 1.55,
+                                    resize: 'vertical',
+                                    outline: 'none',
+                                    boxSizing: 'border-box',
+                                    background: 'var(--c-surface)',
+                                    transition: 'border-color .15s',
+                                }}
+                                onFocus={e => (e.target.style.borderColor = 'var(--c-accent)')}
+                                onBlur={e => (e.target.style.borderColor = 'var(--c-border)')}
+                            />
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                                <button
+                                    onClick={saveBizContext}
+                                    disabled={bizSaving || !bizContextChanged}
+                                    style={{
+                                        padding: '9px 20px', borderRadius: 9,
+                                        background: bizContextChanged ? 'var(--c-accent)' : 'var(--c-surface)',
+                                        border: `1.5px solid ${bizContextChanged ? 'var(--c-accent)' : 'var(--c-border)'}`,
+                                        color: bizContextChanged ? '#fff' : 'var(--c-ink-3)',
+                                        fontSize: 13, fontWeight: 600,
+                                        cursor: bizContextChanged ? 'pointer' : 'default',
+                                        fontFamily: 'var(--font-body)', transition: 'all .15s',
+                                    }}
+                                >
+                                    {bizSaving ? l.aiSaving : bizSuccess ? l.aiSaved : l.aiSave}
+                                </button>
+
+                                <span style={{ fontSize: 12, color: 'var(--c-ink-3)' }}>
+                                    {bizContext.length} / 2000
+                                </span>
+                            </div>
+
+                            {bizError && (
+                                <div style={{
+                                    padding: '10px 14px', borderRadius: 9,
+                                    background: 'rgba(239,68,68,.08)',
+                                    border: '1.5px solid rgba(239,68,68,.25)',
+                                    color: '#dc2626', fontSize: 13,
+                                }}>
+                                    {bizError}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 {/* Telegram — не привязан */}
@@ -315,7 +484,7 @@ export default function ProfilePage({ lang }: Props) {
                     </div>
                 )}
 
-                {/* Telegram — привязан: FIX добавлена кнопка отвязки */}
+                {/* Telegram — привязан */}
                 {user.telegramLinked && (
                     <div className={s.card}>
                         <p className={s.cardTitle}>{l.tgCard}</p>
@@ -331,7 +500,6 @@ export default function ProfilePage({ lang }: Props) {
                                     </div>
                                 </div>
                             </div>
-                            {/* FIX: кнопка отвязки */}
                             <button
                                 onClick={handleUnlinkTg}
                                 disabled={unlinking}
