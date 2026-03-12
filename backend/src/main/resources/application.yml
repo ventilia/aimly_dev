@@ -3,9 +3,9 @@ spring:
     name: aimly-backend
 
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/railway}
-    username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
+    url: ${SPRING_DATASOURCE_URL:${DB_URL:jdbc:postgresql://localhost:5432/aimly}}
+    username: ${SPRING_DATASOURCE_USERNAME:${DB_USERNAME:aimly}}
+    password: ${SPRING_DATASOURCE_PASSWORD:${DB_PASSWORD:aimly_dev_password}}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10
