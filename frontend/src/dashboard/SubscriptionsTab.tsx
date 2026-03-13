@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { Lang } from '../i18n/translations'
 import { adminSubsApi, type SubscriptionInfo } from '../api/leads'
-import s from '../pages/Adminpanel.module.css'
+import s from '../pages/AdminPanel.module.css'
 
 
 const PLANS    = ['MINIMUM', 'START', 'TRIAL']

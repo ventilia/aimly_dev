@@ -153,8 +153,8 @@ class AuthController(
             append("; Path=/")
             append("; Max-Age=$maxAge")
             append("; HttpOnly")
-            if (cookieSecure) append("; Secure")
-            append("; SameSite=Lax")
+            append("; Secure")
+            append("; SameSite=None")
             if (cookieDomain.isNotBlank()) append("; Domain=$cookieDomain")
         }
 

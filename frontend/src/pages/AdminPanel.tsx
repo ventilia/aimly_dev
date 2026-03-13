@@ -7,7 +7,7 @@ import {
     type AdminUserDto, type NotificationDto,
 } from '../api/auth'
 import { useAuthContext } from '../context/AuthContext'
-import s from './Adminpanel.module.css'
+import s from './AdminPanel.module.css'
 
 interface Props { lang: Lang; setLang: (l: Lang) => void }
 
@@ -40,7 +40,7 @@ function sortUsers(users: AdminUserDto[], key: SortKey, dir: SortDir): AdminUser
     })
 }
 
-
+//
 
 interface UserbotSessionStats {
     sessionId:  number
