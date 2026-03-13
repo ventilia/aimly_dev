@@ -9,8 +9,8 @@ const txt = {
         nav: {
             overview: 'Главная',
             leads:    'Лиды',
-            chats:    'Чаты',
             keywords: 'Ключевые слова',
+            chats:    'Чаты',
             profile:  'Профиль',
         },
         logout:     'Выход',
@@ -24,8 +24,8 @@ const txt = {
         nav: {
             overview: 'Home',
             leads:    'Leads',
-            chats:    'Chats',
             keywords: 'Keywords',
+            chats:    'Chats',
             profile:  'Profile',
         },
         logout:     'Sign out',
@@ -42,16 +42,17 @@ interface Props { lang: Lang; onLang: (l: Lang) => void }
 interface NavLabels {
     overview: string
     leads: string
-    chats: string
     keywords: string
+    chats: string
     profile: string
 }
 
+// Ключевые слова идут перед Чатами
 const NAV_ITEMS = (l: NavLabels) => [
     { to: '/dashboard',          label: l.overview, exact: true  },
     { to: '/dashboard/leads',    label: l.leads,    exact: false },
-    { to: '/dashboard/chats',    label: l.chats,    exact: false },
     { to: '/dashboard/keywords', label: l.keywords, exact: false },
+    { to: '/dashboard/chats',    label: l.chats,    exact: false },
     { to: '/dashboard/profile',  label: l.profile,  exact: false },
 ]
 

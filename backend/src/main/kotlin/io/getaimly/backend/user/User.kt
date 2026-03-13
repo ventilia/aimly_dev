@@ -52,14 +52,21 @@ class User(
     var subscriptionStatus: String? = null,
 
     @Column(name = "subscription_plan")
-    var subscriptionPlan: String? = null,  
+    var subscriptionPlan: String? = null,
 
     @Column(name = "leads_count", nullable = false)
     var leadsCount: Int = 0,
 
-
     @Column(name = "business_context", columnDefinition = "TEXT")
     var businessContext: String? = null,
+
+    /**
+     * Когда true — AI также будет реагировать на сообщения, в которых
+     * кто-то ПРЕДЛАГАЕТ услугу (исполнитель ищет заказы).
+     * По умолчанию false — такие сообщения игнорируются.
+     */
+    @Column(name = "respond_to_service_offers", nullable = false)
+    var respondToServiceOffers: Boolean = false,
 
     @Column(name = "created_at", nullable = true, updatable = false)
     val createdAt: LocalDateTime? = LocalDateTime.now(),

@@ -166,7 +166,12 @@ $contextList
     }
 
 
-
+    /**
+     * Генерация ключевых слов на основе описания бизнеса.
+     *
+     * ВАЖНО: город включается в ключевые слова ТОЛЬКО если он явно упомянут
+     * в businessContext. Модель не придумывает географию самостоятельно.
+     */
     fun generateKeywords(businessContext: String): List<String> {
         if (apiKey.isBlank()) {
             log.warn("generateKeywords: groq api key не задан — генерация невозможна")
@@ -176,6 +181,16 @@ $contextList
         val trimmed = businessContext.trim()
         if (trimmed.length < 20) {
             throw IllegalArgumentException("Описание бизнеса слишком короткое")
+        }
+
+        // Извлекаем город из описания бизнеса, если он там есть
+        val cityHint = extractCityFromContext(trimmed)
+        val cityInstruction = if (cityHint != null) {
+            "- В описании бизнеса упомянут город: \"$cityHint\". " +
+                    "Добавь несколько фраз с этим городом (например: \"ищу дизайнера $cityHint\", \"нужен разработчик в $cityHint\")."
+        } else {
+            "- Город или регион в описании НЕ упомянут — НЕ добавляй никаких городов или географических уточнений в ключевые слова. " +
+                    "Генерируй универсальные фразы без географической привязки."
         }
 
         val prompt = "Ты — AI-помощник для генерации ключевых слов для мониторинга Telegram-чатов.\n\n" +
@@ -188,7 +203,8 @@ $contextList
                 "- Включи разные варианты формулировок одного запроса\n" +
                 "- Включи фразы-сигналы намерения: \"ищу\", \"нужен\", \"требуется\", \"посоветуйте\", \"порекомендуйте\"\n" +
                 "- 15-25 ключевых фраз\n" +
-                "- Только то, что реально пишут люди в чатах\n\n" +
+                "- Только то, что реально пишут люди в чатах\n" +
+                "- $cityInstruction\n\n" +
                 "Верни ТОЛЬКО JSON без пояснений и markdown:\n" +
                 "{\"keywords\": [\"фраза 1\", \"фраза 2\", \"фраза 3\"]}"
 
@@ -234,6 +250,123 @@ $contextList
 
         log.info("generateKeywords: сгенерировано ${keywords.size} ключевых слов для бизнеса (${trimmed.take(60)}...)")
         return keywords
+    }
+
+    /**
+     * Извлекает город из текста бизнес-контекста.
+     * Возвращает null, если город не упомянут.
+     */
+    private fun extractCityFromContext(context: String): String? {
+        if (apiKey.isBlank()) return null
+
+        return try {
+            val prompt = """
+Определи, упоминается ли в тексте конкретный город, регион или страна как место работы/предоставления услуг.
+
+Текст:
+"$context"
+
+Если город/регион упомянут — верни его название. Если нет — верни пустую строку.
+
+Ответь строго JSON: {"city": "Киев"} или {"city": ""}
+""".trimIndent()
+
+            val body = mapOf(
+                "model" to MAIN_MODEL,
+                "messages" to listOf(
+                    mapOf("role" to "system", "content" to "Отвечай только JSON. Никаких пояснений."),
+                    mapOf("role" to "user", "content" to prompt),
+                ),
+                "max_tokens" to 30,
+                "temperature" to 0.0,
+            )
+
+            val response = restTemplate.postForObject(
+                "https://api.groq.com/openai/v1/chat/completions",
+                HttpEntity(body, HttpHeaders().apply {
+                    contentType = MediaType.APPLICATION_JSON
+                    setBearerAuth(apiKey)
+                }),
+                GroqResponse::class.java,
+            ) ?: return null
+
+            val raw = response.choices.firstOrNull()?.message?.content ?: return null
+            val clean = raw.replace(Regex("```json|```"), "").trim()
+            val city = Regex("\"city\"\\s*:\\s*\"([^\"]*)\"").find(clean)?.groupValues?.get(1)?.trim()
+            if (city.isNullOrBlank()) null else city
+        } catch (e: Exception) {
+            log.warn("extractCityFromContext ошибка: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Генерирует поисковые запросы для TGStat на основе описания бизнеса или произвольного текста.
+     * Возвращает список из 2-4 коротких запросов для поиска подходящих Telegram-чатов.
+     */
+    fun generateTgstatQueries(input: String): List<String> {
+        if (apiKey.isBlank()) {
+            log.warn("generateTgstatQueries: groq api key не задан")
+            return listOf(input.trim().take(50))
+        }
+
+        val trimmed = input.trim()
+
+        val prompt = """
+Ты — AI-помощник. Пользователь ищет Telegram-чаты, где обитает его целевая аудитория.
+
+Описание пользователя:
+"$trimmed"
+
+Задача: сгенерируй 3-4 коротких поисковых запроса для поиска релевантных Telegram-чатов и групп.
+Запросы должны быть такими, как их вводят в поисковике:
+- Короткие (1-4 слова)
+- На русском языке (и 1-2 на английском если тематика международная)
+- Описывают тематику чата, а не услугу пользователя
+- Примеры: "дизайн интерьера", "ремонт квартир", "freelance developers", "smm маркетинг"
+
+Верни ТОЛЬКО JSON без пояснений:
+{"queries": ["запрос 1", "запрос 2", "запрос 3"]}
+""".trimIndent()
+
+        return try {
+            val body = mapOf(
+                "model" to MAIN_MODEL,
+                "messages" to listOf(
+                    mapOf("role" to "system", "content" to "Отвечай только JSON. Никаких пояснений, никаких markdown-блоков."),
+                    mapOf("role" to "user", "content" to prompt),
+                ),
+                "max_tokens" to 200,
+                "temperature" to 0.3,
+            )
+
+            val response = restTemplate.postForObject(
+                "https://api.groq.com/openai/v1/chat/completions",
+                HttpEntity(body, HttpHeaders().apply {
+                    contentType = MediaType.APPLICATION_JSON
+                    setBearerAuth(apiKey)
+                }),
+                GroqResponse::class.java,
+            ) ?: return listOf(trimmed.take(50))
+
+            val raw = response.choices.firstOrNull()?.message?.content ?: return listOf(trimmed.take(50))
+            val clean = raw.replace(Regex("```json|```"), "").trim()
+
+            val queriesJson = Regex("\"queries\"\\s*:\\s*\\[([^]]*)]")
+                .find(clean)?.groupValues?.get(1) ?: return listOf(trimmed.take(50))
+
+            val queries = Regex("\"([^\"]+)\"")
+                .findAll(queriesJson)
+                .map { it.groupValues[1].trim() }
+                .filter { it.isNotBlank() }
+                .toList()
+
+            log.info("generateTgstatQueries: сгенерировано ${queries.size} запросов для \"${trimmed.take(40)}\"")
+            queries.ifEmpty { listOf(trimmed.take(50)) }
+        } catch (e: Exception) {
+            log.warn("generateTgstatQueries ошибка: ${e.message}")
+            listOf(trimmed.take(50))
+        }
     }
 
 
@@ -424,7 +557,7 @@ valid=true если:
 
 valid=false если:
 - спам, реклама, оффтоп, шутка
-- автор сам предлагает услуги (исполнитель ищет клиентов)
+- автор сам предлагает услуги (исполнитель ищет клиентов) — ЕСЛИ тумблер "реагировать на предложения услуг" НЕ включён
 - ключевое слово упомянуто случайно или в другом контексте
 - это ответ на чужой запрос (не инициирует диалог)
 - слишком общее упоминание без намерения купить

@@ -31,7 +31,6 @@ class BotKeywordsHandler(
     }
 
 
-
     fun showKeywords(chatId: Long, msgId: Int, tgUserId: Long, page: Int = 0) {
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
         if (user == null) { sender.editText(chatId, msgId, "Нужно войти. /start"); return }
@@ -46,6 +45,12 @@ class BotKeywordsHandler(
             if (hasAi && !user.businessContext.isNullOrBlank()) {
                 rows.add(row(btn("✨ Сгенерировать AI-слова", "kw:ai:generate")))
             }
+            // Тумблер «реагировать на предложения услуг»
+            val toggleLabel = if (user.respondToServiceOffers)
+                "🟢 Реагировать на предложения услуг: ВКЛ"
+            else
+                "⚫️ Реагировать на предложения услуг: ВЫКЛ"
+            rows.add(row(btn(toggleLabel, "kw:toggle_service_offers")))
             rows.add(row(btn("◀️ Главное меню", "menu:back")))
             sender.editText(
                 chatId, msgId,
@@ -80,7 +85,6 @@ class BotKeywordsHandler(
             rows.add(row(btn("🗑 «${kw.keyword.take(30)}»", "kw:del:${kw.id}")))
         }
 
-
         if (totalPages > 1) {
             val navBtns = mutableListOf<InlineKeyboardButton>()
             if (safePage > 0)              navBtns.add(btn("◀️", "kw:page:${safePage - 1}"))
@@ -89,16 +93,50 @@ class BotKeywordsHandler(
             rows.add(InlineKeyboardRow(navBtns))
         }
 
-
         val actionBtns = mutableListOf<InlineKeyboardButton>()
         actionBtns.add(btn("➕ Добавить", "kw:add"))
         if (hasAi && !user.businessContext.isNullOrBlank()) {
             actionBtns.add(btn("✨ AI", "kw:ai:generate"))
         }
         rows.add(InlineKeyboardRow(actionBtns))
+
+        // Тумблер «реагировать на предложения услуг»
+        val toggleLabel = if (user.respondToServiceOffers)
+            "🟢 Предложения услуг: ВКЛ"
+        else
+            "⚫️ Предложения услуг: ВЫКЛ"
+        rows.add(row(btn(toggleLabel, "kw:toggle_service_offers")))
         rows.add(row(btn("◀️ Главное меню", "menu:back")))
 
         sender.editText(chatId, msgId, sb.toString(), InlineKeyboardMarkup(rows), parseMarkdown = true)
+    }
+
+
+    /**
+     * Переключает флаг respondToServiceOffers и обновляет экран ключевых слов.
+     */
+    fun toggleServiceOffers(chatId: Long, msgId: Int, tgUserId: Long) {
+        val user = userRepository.findByTelegramId(tgUserId).orElse(null)
+        if (user == null) { sender.editText(chatId, msgId, "Нужно войти. /start"); return }
+
+        user.respondToServiceOffers = !user.respondToServiceOffers
+        userRepository.save(user)
+
+        val statusText = if (user.respondToServiceOffers) {
+            "🟢 *Включено*\n\nТеперь AI будет реагировать на сообщения, в которых люди ПРЕДЛАГАЮТ услуги — " +
+                    "например, фрилансеры ищут заказы.\n\n" +
+                    "_Полезно, если вы ищете подрядчиков, а не клиентов._"
+        } else {
+            "⚫️ *Выключено*\n\nAI будет игнорировать сообщения, в которых кто-то предлагает услуги.\n\n" +
+                    "_Стандартный режим — подходит для поиска клиентов._"
+        }
+
+        sender.editText(
+            chatId, msgId,
+            "🔀 *Реагировать на предложения услуг*\n\n$statusText",
+            keyboard(row(btn("◀️ К ключевым словам", "menu:keywords"))),
+            parseMarkdown = true,
+        )
     }
 
 
@@ -174,7 +212,6 @@ class BotKeywordsHandler(
     }
 
 
-
     fun showDeleteKeywordConfirm(chatId: Long, msgId: Int, tgUserId: Long, kwId: Long) {
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
         if (user == null) { sender.editText(chatId, msgId, "Нужно войти. /start"); return }
@@ -241,7 +278,6 @@ class BotKeywordsHandler(
             return
         }
 
-
         sender.editText(
             chatId, msgId,
             "✨ *AI генерирует ключевые слова…*\n\n" +
@@ -249,7 +285,6 @@ class BotKeywordsHandler(
                     "_Обычно это занимает 5–15 секунд._",
             parseMarkdown = true,
         )
-
 
         aiWorker.submit {
             runCatching {
@@ -266,7 +301,6 @@ class BotKeywordsHandler(
                     )
                     return@submit
                 }
-
 
                 sessions[chatId] = UserSession(
                     step                  = BotStep.WAITING_AI_KEYWORD_CONFIRM,
@@ -336,7 +370,6 @@ class BotKeywordsHandler(
 
         val rows = mutableListOf<InlineKeyboardRow>()
 
-
         pageSuggestions.forEachIndexed { idx, kw ->
             val globalIdx = from + idx
             rows.add(row(
@@ -345,7 +378,6 @@ class BotKeywordsHandler(
             ))
         }
 
-
         if (available > 0) {
             rows.add(row(
                 btn("✅ Принять страницу", "kw:ai:accept_page:$safePage"),
@@ -353,7 +385,6 @@ class BotKeywordsHandler(
             ))
         }
         rows.add(row(btn("🗑 Отклонить все", "kw:ai:reject_all")))
-
 
         if (totalPages > 1) {
             val navBtns = mutableListOf<InlineKeyboardButton>()
@@ -380,10 +411,8 @@ class BotKeywordsHandler(
         runCatching { leadService.addKeyword(user, kw) }
             .onFailure { log.warn("acceptAiSuggestion failed kw='$kw': ${it.message}") }
 
-
         val updated = suggestions.toMutableList().also { it.removeAt(globalIdx) }
         session.aiKeywordSuggestions = updated
-
 
         if (updated.isEmpty()) {
             sessions.remove(chatId)
@@ -394,7 +423,6 @@ class BotKeywordsHandler(
             )
             return
         }
-
 
         val totalPages = (updated.size + AI_SUGGEST_SHOW - 1) / AI_SUGGEST_SHOW
         if (session.aiKeywordPage >= totalPages) session.aiKeywordPage = totalPages - 1
