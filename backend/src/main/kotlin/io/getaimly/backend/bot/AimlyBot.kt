@@ -240,6 +240,9 @@ class AimlyBot(
             data.startsWith("kw:ai:reject:")      -> keywordsHandler.rejectAiSuggestion(chatId, msgId, from.id, data.removePrefix("kw:ai:reject:").toIntOrNull() ?: 0)
             data.startsWith("kw:ai:page:")        -> keywordsHandler.setAiPage(chatId, msgId, from.id, data.removePrefix("kw:ai:page:").toIntOrNull() ?: 0)
 
+            // Тумблер "реагировать на предложения услуг"
+            data == "kw:toggle_service_offers"   -> keywordsHandler.toggleServiceOffers(chatId, msgId, from.id)
+
             data == "profile:edit_context"      -> profileHandler.startEditContext(chatId, msgId, from.id)
             data == "profile:clear_context"     -> profileHandler.clearContext(chatId, msgId, from.id)
             data == "profile:unlink_tg"         -> profileHandler.showUnlinkConfirm(chatId, msgId)

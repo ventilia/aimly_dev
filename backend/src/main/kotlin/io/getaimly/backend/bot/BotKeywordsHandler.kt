@@ -115,29 +115,7 @@ class BotKeywordsHandler(
     /**
      * Переключает флаг respondToServiceOffers и обновляет экран ключевых слов.
      */
-    fun toggleServiceOffers(chatId: Long, msgId: Int, tgUserId: Long) {
-        val user = userRepository.findByTelegramId(tgUserId).orElse(null)
-        if (user == null) { sender.editText(chatId, msgId, "Нужно войти. /start"); return }
 
-        user.respondToServiceOffers = !user.respondToServiceOffers
-        userRepository.save(user)
-
-        val statusText = if (user.respondToServiceOffers) {
-            "🟢 *Включено*\n\nТеперь AI будет реагировать на сообщения, в которых люди ПРЕДЛАГАЮТ услуги — " +
-                    "например, фрилансеры ищут заказы.\n\n" +
-                    "_Полезно, если вы ищете подрядчиков, а не клиентов._"
-        } else {
-            "⚫️ *Выключено*\n\nAI будет игнорировать сообщения, в которых кто-то предлагает услуги.\n\n" +
-                    "_Стандартный режим — подходит для поиска клиентов._"
-        }
-
-        sender.editText(
-            chatId, msgId,
-            "🔀 *Реагировать на предложения услуг*\n\n$statusText",
-            keyboard(row(btn("◀️ К ключевым словам", "menu:keywords"))),
-            parseMarkdown = true,
-        )
-    }
 
 
     fun startAddKeyword(chatId: Long, msgId: Int, tgUserId: Long) {
@@ -540,5 +518,23 @@ class BotKeywordsHandler(
         val session = sessions[chatId] ?: return
         session.aiKeywordPage = page
         showAiSuggestions(chatId, msgId, tgUserId)
+    }
+
+    fun toggleServiceOffers(chatId: Long, msgId: Int, tgUserId: Long) {
+        val user = userRepository.findByTelegramId(tgUserId).orElse(null)
+            ?: run { sender.editText(chatId, msgId, "Нужно войти. /start"); return }
+
+        // Перечитываем пользователя из БД, чтобы получить актуальное значение флага
+        val freshUser = userRepository.findById(user.id).orElse(null) ?: return
+        freshUser.respondToServiceOffers = !freshUser.respondToServiceOffers
+        userRepository.save(freshUser)
+
+        log.info(
+            "toggleServiceOffers: userId=${freshUser.id} " +
+                    "respondToServiceOffers=${freshUser.respondToServiceOffers}"
+        )
+
+        // Обновляем страницу ключевых слов, чтобы кнопка-тумблер отразила новое состояние
+        showKeywords(chatId, msgId, tgUserId)
     }
 }

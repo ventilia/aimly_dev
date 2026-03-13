@@ -75,8 +75,11 @@ server:
 
 
 groq:
-  api-key: REDACTED_GROQ_KEY
+  api-key: ${GROQ_API_KEY:REDACTED_GROQ_KEY}
 
+# TGStat API токен для поиска чатов
+tgstat:
+  api-token: ${TGSTAT_TOKEN:f689280073b8ffcdc81df6337db794fc}
 
 
 management:

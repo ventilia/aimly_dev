@@ -4,38 +4,19 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="a461964d-f6a3-4e0b-a3fa-4fab913d5a3e" name="Changes" comment="push. beta">
-      <change afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/BotKeywordsHandler.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/Botauthhandler.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/Botchatshandler.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/Botleadshandler.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/Botprofilehandler.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/Botsender.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/src/main/resources/db/migration/V13__fix_chat_subscriptions_unique_index.sql" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/backend/src/main/resources/db/migration/V14__fix_chat_subscriptions_unique_index.sql" afterDir="false" />
+    <list default="true" id="a461964d-f6a3-4e0b-a3fa-4fab913d5a3e" name="Changes" comment="проверка тг статс">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/backend/.env" beforeDir="false" afterPath="$PROJECT_DIR$/backend/.env" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/gradle/wrapper/gradle-wrapper.jar" beforeDir="false" afterPath="$PROJECT_DIR$/backend/gradle/wrapper/gradle-wrapper.jar" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/ai/Aiservice.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/ai/Aiservice.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/auth/AuthController.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/auth/AuthController.kt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/auth/AuthService.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/auth/AuthService.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/auth/EmailVerificationRepository.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/auth/EmailVerificationRepository.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/auth/dto/AuthResponse.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/auth/dto/AuthResponse.kt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/AimlyBot.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/AimlyBot.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/Botsession.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/Botsession.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/Botutils.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/Botutils.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/Controllers.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/Controllers.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/IncomingMessageRequest.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/IncomingMessageRequest.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/BotKeywordsHandler.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/BotKeywordsHandler.kt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/Leadservice.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/Leadservice.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/subscription/Subscriptionservice.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/subscription/Subscriptionservice.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/subscription/Usersubscriptioncontroller.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/subscription/Usersubscriptioncontroller.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/user/User.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/user/User.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/components/Sections.module.css" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/components/Sections.module.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/components/Sections.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/components/Sections.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/dashboard/KeywordsPage.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/dashboard/KeywordsPage.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/dashboard/ProfilePage.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/dashboard/ProfilePage.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/i18n/translations.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/i18n/translations.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/pages/Checkout.module.css" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/pages/Checkout.module.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/pages/Checkout.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/pages/Checkout.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/userbot/internal/bot/handler.go" beforeDir="false" afterPath="$PROJECT_DIR$/userbot/internal/bot/handler.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/userbot/internal/model/models.go" beforeDir="false" afterPath="$PROJECT_DIR$/userbot/internal/model/models.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/main/resources/application.yml" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/resources/application.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/.env" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/.env" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/src/api/auth.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/api/auth.ts" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -59,12 +40,12 @@
     &quot;assignee&quot;: &quot;ventilia&quot;
   }
 }</component>
-  <component name="GithubPullRequestsUISettings"><![CDATA[{
-  "selectedUrlAndAccountId": {
-    "url": "https://github.com/ventilia/aimly_dev.git",
-    "accountId": "6fcb4844-a5bf-4cc7-9756-4552e65ce664"
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/ventilia/aimly_dev.git&quot;,
+    &quot;accountId&quot;: &quot;6fcb4844-a5bf-4cc7-9756-4552e65ce664&quot;
   }
-}]]></component>
+}</component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 8
 }</component>
@@ -73,31 +54,32 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
-    &quot;com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
-    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
-    &quot;javascript.preferred.runtime.type.id&quot;: &quot;node&quot;,
-    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/GAMER/aimly_dev&quot;,
-    &quot;list.type.of.created.stylesheet&quot;: &quot;CSS&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;org.jetbrains.plugins.github.ui.GithubSettingsConfigurable&quot;,
-    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
-    &quot;ts.external.directory.path&quot;: &quot;C:\\Users\\GAMER\\aimly\\frontend\\node_modules\\typescript\\lib&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Docker.frontend/Dockerfile.executor": "Run",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
+    "git-widget-placeholder": "master",
+    "ignore.virus.scanning.warn.message": "true",
+    "javascript.preferred.runtime.type.id": "node",
+    "junie.onboarding.icon.badge.shown": "true",
+    "last_opened_file_path": "C:/Users/GAMER/aimly_dev",
+    "list.type.of.created.stylesheet": "CSS",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "org.jetbrains.plugins.github.ui.GithubSettingsConfigurable",
+    "to.speed.mode.migration.done": "true",
+    "ts.external.directory.path": "C:\\Users\\GAMER\\aimly_dev\\frontend\\node_modules\\typescript\\lib",
+    "vue.rearranger.settings.migration": "true"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="C:\Users\GAMER\aimly_dev\userbot" />
@@ -113,6 +95,27 @@
       <recent name="C:\Users\GAMER\aimly\frontend" />
       <recent name="C:\Users\GAMER\aimly\frontend\src" />
     </key>
+  </component>
+  <component name="RunManager">
+    <configuration default="true" type="docker-deploy" factoryName="dockerfile" temporary="true">
+      <deployment type="dockerfile">
+        <settings />
+      </deployment>
+      <method v="2" />
+    </configuration>
+    <configuration name="frontend/Dockerfile" type="docker-deploy" factoryName="dockerfile" temporary="true" server-name="Docker">
+      <deployment type="dockerfile">
+        <settings>
+          <option name="sourceFilePath" value="frontend/Dockerfile" />
+        </settings>
+      </deployment>
+      <method v="2" />
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Docker.frontend/Dockerfile" />
+      </list>
+    </recent_temporary>
   </component>
   <component name="SharedIndexes">
     <attachedChunks>
@@ -144,7 +147,8 @@
       <workItem from="1772716799814" duration="11088000" />
       <workItem from="1773092100092" duration="185000" />
       <workItem from="1773092409674" duration="900000" />
-      <workItem from="1773333237414" duration="282000" />
+      <workItem from="1773333237414" duration="10981000" />
+      <workItem from="1773438883580" duration="4929000" />
     </task>
     <task id="LOCAL-00001" summary="Fix version">
       <option name="closed" value="true" />
@@ -194,7 +198,159 @@
       <option name="project" value="LOCAL" />
       <updated>1773089633888</updated>
     </task>
-    <option name="localTasksCounter" value="7" />
+    <task id="LOCAL-00007" summary="push. beta">
+      <option name="closed" value="true" />
+      <created>1773333566111</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1773333566111</updated>
+    </task>
+    <task id="LOCAL-00008" summary="push. beta">
+      <option name="closed" value="true" />
+      <created>1773333723196</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1773333723196</updated>
+    </task>
+    <task id="LOCAL-00009" summary="push. beta">
+      <option name="closed" value="true" />
+      <created>1773335214596</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1773335214596</updated>
+    </task>
+    <task id="LOCAL-00010" summary="push. beta">
+      <option name="closed" value="true" />
+      <created>1773336423748</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1773336423748</updated>
+    </task>
+    <task id="LOCAL-00011" summary="push. beta">
+      <option name="closed" value="true" />
+      <created>1773338548391</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1773338548391</updated>
+    </task>
+    <task id="LOCAL-00012" summary="push. beta">
+      <option name="closed" value="true" />
+      <created>1773338646562</created>
+      <option name="number" value="00012" />
+      <option name="presentableId" value="LOCAL-00012" />
+      <option name="project" value="LOCAL" />
+      <updated>1773338646562</updated>
+    </task>
+    <task id="LOCAL-00013" summary="push. beta">
+      <option name="closed" value="true" />
+      <created>1773338707800</created>
+      <option name="number" value="00013" />
+      <option name="presentableId" value="LOCAL-00013" />
+      <option name="project" value="LOCAL" />
+      <updated>1773338707800</updated>
+    </task>
+    <task id="LOCAL-00014" summary="push. нпм дев">
+      <option name="closed" value="true" />
+      <created>1773339136360</created>
+      <option name="number" value="00014" />
+      <option name="presentableId" value="LOCAL-00014" />
+      <option name="project" value="LOCAL" />
+      <updated>1773339136360</updated>
+    </task>
+    <task id="LOCAL-00015" summary="push. бета">
+      <option name="closed" value="true" />
+      <created>1773339275755</created>
+      <option name="number" value="00015" />
+      <option name="presentableId" value="LOCAL-00015" />
+      <option name="project" value="LOCAL" />
+      <updated>1773339275755</updated>
+    </task>
+    <task id="LOCAL-00016" summary="push. бета">
+      <option name="closed" value="true" />
+      <created>1773339296478</created>
+      <option name="number" value="00016" />
+      <option name="presentableId" value="LOCAL-00016" />
+      <option name="project" value="LOCAL" />
+      <updated>1773339296478</updated>
+    </task>
+    <task id="LOCAL-00017" summary="push. бета">
+      <option name="closed" value="true" />
+      <created>1773339349439</created>
+      <option name="number" value="00017" />
+      <option name="presentableId" value="LOCAL-00017" />
+      <option name="project" value="LOCAL" />
+      <updated>1773339349439</updated>
+    </task>
+    <task id="LOCAL-00018" summary="push. бета1">
+      <option name="closed" value="true" />
+      <created>1773339725490</created>
+      <option name="number" value="00018" />
+      <option name="presentableId" value="LOCAL-00018" />
+      <option name="project" value="LOCAL" />
+      <updated>1773339725490</updated>
+    </task>
+    <task id="LOCAL-00019" summary="push.">
+      <option name="closed" value="true" />
+      <created>1773339860410</created>
+      <option name="number" value="00019" />
+      <option name="presentableId" value="LOCAL-00019" />
+      <option name="project" value="LOCAL" />
+      <updated>1773339860410</updated>
+    </task>
+    <task id="LOCAL-00020" summary="push.">
+      <option name="closed" value="true" />
+      <created>1773340003789</created>
+      <option name="number" value="00020" />
+      <option name="presentableId" value="LOCAL-00020" />
+      <option name="project" value="LOCAL" />
+      <updated>1773340003789</updated>
+    </task>
+    <task id="LOCAL-00021" summary="push.">
+      <option name="closed" value="true" />
+      <created>1773340411370</created>
+      <option name="number" value="00021" />
+      <option name="presentableId" value="LOCAL-00021" />
+      <option name="project" value="LOCAL" />
+      <updated>1773340411370</updated>
+    </task>
+    <task id="LOCAL-00022" summary="push.">
+      <option name="closed" value="true" />
+      <created>1773347252284</created>
+      <option name="number" value="00022" />
+      <option name="presentableId" value="LOCAL-00022" />
+      <option name="project" value="LOCAL" />
+      <updated>1773347252284</updated>
+    </task>
+    <task id="LOCAL-00023" summary="push.">
+      <option name="closed" value="true" />
+      <created>1773350976604</created>
+      <option name="number" value="00023" />
+      <option name="presentableId" value="LOCAL-00023" />
+      <option name="project" value="LOCAL" />
+      <updated>1773350976604</updated>
+    </task>
+    <task id="LOCAL-00024" summary="push.">
+      <option name="closed" value="true" />
+      <created>1773438979862</created>
+      <option name="number" value="00024" />
+      <option name="presentableId" value="LOCAL-00024" />
+      <option name="project" value="LOCAL" />
+      <updated>1773438979862</updated>
+    </task>
+    <task id="LOCAL-00025" summary="проверка тг статс">
+      <option name="closed" value="true" />
+      <created>1773442268511</created>
+      <option name="number" value="00025" />
+      <option name="presentableId" value="LOCAL-00025" />
+      <option name="project" value="LOCAL" />
+      <updated>1773442268511</updated>
+    </task>
+    <option name="localTasksCounter" value="26" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -240,6 +396,11 @@
     <MESSAGE value="GO init" />
     <MESSAGE value="Добавление полей в бд, добавление админ роли, админ панели (сырой), баланс, уведомление только для бота. перех на другой апи для почты" />
     <MESSAGE value="push. beta" />
-    <option name="LAST_COMMIT_MESSAGE" value="push. beta" />
+    <MESSAGE value="push. нпм дев" />
+    <MESSAGE value="push. бета" />
+    <MESSAGE value="push. бета1" />
+    <MESSAGE value="push." />
+    <MESSAGE value="проверка тг статс" />
+    <option name="LAST_COMMIT_MESSAGE" value="проверка тг статс" />
   </component>
 </project>

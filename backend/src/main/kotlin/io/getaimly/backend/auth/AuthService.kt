@@ -354,6 +354,7 @@ class AuthService(
         subscriptionStatus    = user.subscriptionStatus,
         subscriptionPlan      = user.subscriptionPlan,
         createdAt             = user.createdAt?.toString(),
+        businessContext       = user.businessContext,
     )
 }
 

@@ -195,15 +195,17 @@ class LeadService(
                 )
             }
 
-
             val businessContext = user.businessContext
+            // Передаём флаг тумблера "реагировать на предложения услуг" в AI-валидацию
+            val respondToServiceOffers = user.respondToServiceOffers
 
             aiService.validateAsync(
-                messageText     = req.messageText,
-                keyword         = req.matchedKeyword,
-                contextMessages = req.contextMessages.take(3),
-                recentLeads     = recentLeads,
-                businessContext = businessContext,
+                messageText            = req.messageText,
+                keyword                = req.matchedKeyword,
+                contextMessages        = req.contextMessages.take(3),
+                recentLeads            = recentLeads,
+                businessContext        = businessContext,
+                respondToServiceOffers = respondToServiceOffers,
             ) { result ->
                 if (result != null) {
                     runCatching {
@@ -279,7 +281,6 @@ class LeadService(
             subscriptionRepo.save(ChatSubscription(user = user, chatLink = normalized))
         }
 
-        // Уведомляем userbot асинхронно — не блокируем HTTP-запрос пользователя
         val keywords = getKeywords(user).map { it.keyword }
         userbotExecutor.submit {
             runCatching {

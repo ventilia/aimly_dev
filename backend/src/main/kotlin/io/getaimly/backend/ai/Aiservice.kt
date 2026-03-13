@@ -47,12 +47,18 @@ class AiService(
         val foundAt: String,
     )
 
+    /**
+     * respondToServiceOffers:
+     * false (по умолчанию) — игнорируем сообщения, где автор сам ПРЕДЛАГАЕТ услугу.
+     * true — такие сообщения тоже помечаем как valid (исполнитель ищет заказы).
+     */
     data class ValidationTask(
         val messageText: String,
         val keyword: String,
         val contextMessages: List<String>,
         val recentLeads: List<RecentLead> = emptyList(),
         val businessContext: String? = null,
+        val respondToServiceOffers: Boolean = false,
         val callback: (ValidationResult?) -> Unit,
     )
 
@@ -62,6 +68,7 @@ class AiService(
         contextMessages: List<String> = emptyList(),
         recentLeads: List<RecentLead> = emptyList(),
         businessContext: String? = null,
+        respondToServiceOffers: Boolean = false,
         callback: (ValidationResult?) -> Unit,
     ) {
         if (apiKey.isBlank()) {
@@ -69,7 +76,15 @@ class AiService(
             callback(null)
             return
         }
-        val task = ValidationTask(messageText, keyword, contextMessages, recentLeads, businessContext, callback)
+        val task = ValidationTask(
+            messageText            = messageText,
+            keyword                = keyword,
+            contextMessages        = contextMessages,
+            recentLeads            = recentLeads,
+            businessContext        = businessContext,
+            respondToServiceOffers = respondToServiceOffers,
+            callback               = callback,
+        )
         val offered = queue.offer(task)
         if (!offered) {
             log.warn("очередь ai переполнена — пропускаем лид")
@@ -424,10 +439,7 @@ $contextList
 
         val response = restTemplate.postForObject(
             "https://api.groq.com/openai/v1/chat/completions",
-            HttpEntity(body, HttpHeaders().apply {
-                contentType = MediaType.APPLICATION_JSON
-                setBearerAuth(apiKey)
-            }),
+            HttpEntity(body, headers),
             GroqResponse::class.java,
         ) ?: throw RuntimeException("пустой ответ от groq expand")
 
@@ -457,7 +469,14 @@ $contextList
             val task = queue.poll(5, TimeUnit.SECONDS) ?: continue
             throttle()
             val result = runCatching {
-                callGroq(task.messageText, task.keyword, task.contextMessages, task.recentLeads, task.businessContext)
+                callGroq(
+                    messageText            = task.messageText,
+                    keyword                = task.keyword,
+                    contextMessages        = task.contextMessages,
+                    recentLeads            = task.recentLeads,
+                    businessContext        = task.businessContext,
+                    respondToServiceOffers = task.respondToServiceOffers,
+                )
             }
                 .onFailure { log.warn("groq ошибка: ${it.message}") }
                 .getOrNull()
@@ -491,6 +510,7 @@ $contextList
         contextMessages: List<String>,
         recentLeads: List<RecentLead> = emptyList(),
         businessContext: String? = null,
+        respondToServiceOffers: Boolean = false,
     ): ValidationResult {
         val headers = HttpHeaders().apply {
             contentType = MediaType.APPLICATION_JSON
@@ -529,6 +549,19 @@ $contextList
             """.trimMargin()
         } else ""
 
+        // Динамически формируем правило по тумблеру "реагировать на предложения услуг"
+        val serviceOffersValidRule = if (respondToServiceOffers) {
+            """
+            |
+            |ДОПОЛНИТЕЛЬНО valid=true если:
+            |- автор сам предлагает свои услуги и ищет клиентов/заказы — владелец включил режим "реагировать на предложения услуг", такой автор тоже является лидом
+            """.trimMargin()
+        } else ""
+
+        val serviceOffersInvalidRule = if (!respondToServiceOffers) {
+            "- автор сам предлагает услуги (исполнитель ищет клиентов/заказы) — режим отключён, игнорируем\n"
+        } else ""
+
         val prompt = """
 ты — умный ии-ассистент для поиска лидов в telegram-чатах.
 твоя задача: определить, является ли сообщение реальным запросом на покупку услуги или поиском исполнителя.
@@ -546,7 +579,7 @@ $businessBlock
 2. контекст разговора — это продолжение другой темы или новый запрос?
 3. тональность — реальный запрос или просто упоминание слова, шутка, спам?
 4. срочность и готовность к сделке — есть ли признаки готовности платить?
-5. автор не предлагает услуги сам (не исполнитель ищет работу, а заказчик ищет исполнителя)
+5. автор предлагает услуги сам или ищет?
 6. если задан бизнес-контекст владельца — насколько этот лид подходит именно для его бизнеса?
 
 valid=true если:
@@ -554,11 +587,11 @@ valid=true если:
 - готов платить или обсуждает бюджет
 - есть реальная потребность (не просто вопрос "а сколько стоит")
 - это не ответ на чужой запрос
+$serviceOffersValidRule
 
 valid=false если:
 - спам, реклама, оффтоп, шутка
-- автор сам предлагает услуги (исполнитель ищет клиентов) — ЕСЛИ тумблер "реагировать на предложения услуг" НЕ включён
-- ключевое слово упомянуто случайно или в другом контексте
+$serviceOffersInvalidRule- ключевое слово упомянуто случайно или в другом контексте
 - это ответ на чужой запрос (не инициирует диалог)
 - слишком общее упоминание без намерения купить
 - буквальный дубль: тот же автор + та же услуга + практически то же сообщение

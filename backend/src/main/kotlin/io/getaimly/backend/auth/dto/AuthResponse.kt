@@ -14,6 +14,7 @@ data class AuthResponse(
     val subscriptionPlan:      String? = null,
     val subscriptionExpiresAt: String? = null,
     val createdAt:             String? = null,
+    val businessContext:       String? = null,
 )
 
 data class MessageResponse(val message: String)
@@ -22,4 +23,3 @@ data class TelegramLinkResponse(
     val linkToken:   String,
     val botUsername: String,
 )
-

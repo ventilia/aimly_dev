@@ -9,7 +9,6 @@ export interface AuthResponse {
     firstName:              string | null
     emailVerified:          boolean
     telegramLinked:         boolean
-    // FIX: добавлены поля которые возвращает бэкенд
     telegramUsername?:      string | null
     role:                   string
     balance:                number
@@ -17,6 +16,8 @@ export interface AuthResponse {
     subscriptionPlan:       string | null
     subscriptionExpiresAt?: string | null
     createdAt?:             string | null
+    // Описание бизнеса — нужно для ChatsPage (AI-поиск) и KeywordsPage
+    businessContext?:       string | null
 }
 
 export interface RegisterResponse {
@@ -112,7 +113,6 @@ async function request<T>(
         }
         throw new Error(body.message)
     }
-
 
     if (res.status === 204) return undefined as T
 

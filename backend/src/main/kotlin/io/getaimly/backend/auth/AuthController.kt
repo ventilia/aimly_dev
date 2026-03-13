@@ -133,6 +133,8 @@ class AuthController(
                 subscriptionPlan      = user.subscriptionPlan,
                 subscriptionExpiresAt = expiresAt,
                 createdAt             = user.createdAt?.toString(),
+                // Передаём businessContext — нужен фронту для AI-поиска чатов
+                businessContext       = user.businessContext,
             )
         )
     }
