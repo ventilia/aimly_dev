@@ -101,7 +101,20 @@ function HashIcon() {
     )
 }
 
+function GlobeIcon() {
+    return (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="2" y1="12" x2="22" y2="12"/>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+        </svg>
+    )
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
+type LangFilter = 'ru' | 'en' | 'all'
+
 interface TgstatResult {
     title: string
     username: string | null
@@ -126,12 +139,11 @@ interface SearchState {
     addedLinks: string[]
     dismissedLinks: string[]
     searchQuery: string
+    langFilter: LangFilter
 }
 
 function saveSearchState(state: SearchState) {
-    try {
-        sessionStorage.setItem(SESSION_KEY, JSON.stringify(state))
-    } catch { /* ignore */ }
+    try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(state)) } catch { /* ignore */ }
 }
 
 function loadSearchState(): SearchState | null {
@@ -139,9 +151,7 @@ function loadSearchState(): SearchState | null {
         const raw = sessionStorage.getItem(SESSION_KEY)
         if (!raw) return null
         return JSON.parse(raw) as SearchState
-    } catch {
-        return null
-    }
+    } catch { return null }
 }
 
 function clearSearchState() {
@@ -151,12 +161,12 @@ function clearSearchState() {
 // ─── API ──────────────────────────────────────────────────────────────────────
 const BASE: string = import.meta.env.VITE_API_URL || ''
 
-async function searchChatsApi(query: string): Promise<TgstatSearchResponse> {
+async function searchChatsApi(query: string, language: LangFilter): Promise<TgstatSearchResponse> {
     const res = await fetch(`${BASE}/api/v1/chats/search`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query, language }),
     })
     if (!res.ok) {
         const body = await res.json().catch(() => ({})) as { error?: string; message?: string }
@@ -180,6 +190,41 @@ function formatCount(n: number): string {
     return String(n)
 }
 
+// ─── Language Segment Control ─────────────────────────────────────────────────
+const LANG_OPTIONS: { value: LangFilter; label: string }[] = [
+    { value: 'ru',  label: 'RU' },
+    { value: 'en',  label: 'EN' },
+    { value: 'all', label: 'Все' },
+]
+
+function LangSegment({
+                         value,
+                         onChange,
+                         disabled,
+                     }: {
+    value: LangFilter
+    onChange: (v: LangFilter) => void
+    disabled?: boolean
+}) {
+    return (
+        <div className={s.langSegment} aria-label="Язык чатов" role="group">
+            <span className={s.langSegIcon}><GlobeIcon /></span>
+            {LANG_OPTIONS.map(opt => (
+                <button
+                    key={opt.value}
+                    className={`${s.langSegBtn}${value === opt.value ? ` ${s.langSegActive}` : ''}`}
+                    onClick={() => onChange(opt.value)}
+                    disabled={disabled}
+                    type="button"
+                    aria-pressed={value === opt.value}
+                >
+                    {opt.label}
+                </button>
+            ))}
+        </div>
+    )
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 function StatusDot({ active }: { active: boolean }) {
     return (
@@ -192,12 +237,7 @@ function StatusDot({ active }: { active: boolean }) {
 }
 
 function ResultCard({
-                        result,
-                        onAdd,
-                        onDismiss,
-                        isAdding,
-                        isAdded,
-                        isDismissed,
+                        result, onAdd, onDismiss, isAdding, isAdded, isDismissed,
                     }: {
     result: TgstatResult
     onAdd: (link: string) => void
@@ -301,7 +341,6 @@ export default function ChatsPage() {
     const [error,    setError]    = useState('')
     const [removing, setRemoving] = useState<number | null>(null)
 
-    // AI-поиск — состояние (восстанавливается из sessionStorage)
     const [searchOpen,     setSearchOpen]     = useState(false)
     const [searchQuery,    setSearchQuery]    = useState('')
     const [searching,      setSearching]      = useState(false)
@@ -312,7 +351,8 @@ export default function ChatsPage() {
     const [addedLinks,     setAddedLinks]     = useState<Set<string>>(new Set())
     const [dismissedLinks, setDismissedLinks] = useState<Set<string>>(new Set())
 
-    // Поиск по ключевым словам
+    const [langFilter, setLangFilter] = useState<LangFilter>('ru')
+
     const [userKeywords,        setUserKeywords]        = useState<string[]>([])
     const [loadingKeywords,     setLoadingKeywords]     = useState(false)
     const [searchingByKeywords, setSearchingByKeywords] = useState(false)
@@ -321,7 +361,6 @@ export default function ChatsPage() {
     const st    = user?.subscriptionStatus ?? null
     const hasAi = plan === 'MINIMUM' || plan === 'START' || st === 'TRIAL'
 
-    // ─── Восстановление состояния из sessionStorage ───────────────────────────
     useEffect(() => {
         const saved = loadSearchState()
         if (saved && saved.results.length > 0) {
@@ -330,21 +369,22 @@ export default function ChatsPage() {
             setAddedLinks(new Set(saved.addedLinks))
             setDismissedLinks(new Set(saved.dismissedLinks))
             setSearchQuery(saved.searchQuery)
+            if (saved.langFilter) setLangFilter(saved.langFilter)
             setSearchOpen(true)
         }
     }, [])
 
-    // ─── Персистентное сохранение при изменении ───────────────────────────────
     useEffect(() => {
         if (searchResults === null) return
         saveSearchState({
-            results:       searchResults,
-            queries:       searchQueries,
-            addedLinks:    Array.from(addedLinks),
+            results:        searchResults,
+            queries:        searchQueries,
+            addedLinks:     Array.from(addedLinks),
             dismissedLinks: Array.from(dismissedLinks),
             searchQuery,
+            langFilter,
         })
-    }, [searchResults, searchQueries, addedLinks, dismissedLinks, searchQuery])
+    }, [searchResults, searchQueries, addedLinks, dismissedLinks, searchQuery, langFilter])
 
     const fetchChats = () =>
         chatsApi.list()
@@ -353,7 +393,6 @@ export default function ChatsPage() {
 
     useEffect(() => { fetchChats().finally(() => setLoading(false)) }, [])
 
-    // Загружаем ключевые слова пользователя
     useEffect(() => {
         if (!hasAi) return
         setLoadingKeywords(true)
@@ -375,9 +414,7 @@ export default function ChatsPage() {
             setTimeout(() => fetchChats(), 15_000)
         } catch (e: unknown) {
             setError(e instanceof Error ? e.message : 'Не удалось добавить чат')
-        } finally {
-            setAdding(false)
-        }
+        } finally { setAdding(false) }
     }
 
     const remove = async (id: number) => {
@@ -390,7 +427,7 @@ export default function ChatsPage() {
         } finally { setRemoving(null) }
     }
 
-    const runSearch = async (query: string) => {
+    const runSearch = async (query: string, lang: LangFilter) => {
         setSearching(true)
         setSearchError('')
         setSearchResults(null)
@@ -399,31 +436,21 @@ export default function ChatsPage() {
         setAddedLinks(new Set())
         clearSearchState()
         try {
-            const resp = await searchChatsApi(query)
+            const resp = await searchChatsApi(query, lang)
             setSearchResults(resp.results)
             setSearchQueries(resp.queries)
-            // Автоматически раскрываем блок при получении результатов
-            if (resp.results.length > 0) {
-                setSearchOpen(true)
-            }
+            if (resp.results.length > 0) setSearchOpen(true)
         } catch (e: unknown) {
             setSearchError(e instanceof Error ? e.message : 'Ошибка поиска')
-        } finally {
-            setSearching(false)
-        }
+        } finally { setSearching(false) }
     }
 
-    const handleSearch = async () => {
-        await runSearch(searchQuery.trim())
-    }
+    const handleSearch = async () => { await runSearch(searchQuery.trim(), langFilter) }
 
-    // Поиск по ключевым словам пользователя — передаём их как общий запрос
     const handleSearchByKeywords = async () => {
         if (userKeywords.length === 0) return
         setSearchingByKeywords(true)
-        // Берём первые 5 ключевых слов как запрос — AI сам расширит
-        const query = userKeywords.slice(0, 5).join(', ')
-        await runSearch(query)
+        await runSearch(userKeywords.slice(0, 5).join(', '), langFilter)
         setSearchingByKeywords(false)
     }
 
@@ -441,38 +468,24 @@ export default function ChatsPage() {
         } finally { setAddingLink(null) }
     }
 
-    const handleDismiss = (link: string) => {
-        setDismissedLinks(prev => new Set([...prev, link]))
-    }
-
-    const handleDismissAll = () => {
+    const handleDismiss    = (link: string) => setDismissedLinks(prev => new Set([...prev, link]))
+    const handleDismissAll = () => { if (searchResults) setDismissedLinks(new Set(searchResults.map(r => r.link))) }
+    const handleAddAll     = async () => {
         if (!searchResults) return
-        setDismissedLinks(new Set(searchResults.map(r => r.link)))
-    }
-
-    const handleAddAll = async () => {
-        if (!searchResults) return
-        const toAdd = searchResults.filter(r => !addedLinks.has(r.link) && !dismissedLinks.has(r.link) && r.link)
-        for (const result of toAdd) {
-            await handleAddFromSearch(result.link)
-        }
+        for (const r of searchResults.filter(r => !addedLinks.has(r.link) && !dismissedLinks.has(r.link) && r.link))
+            await handleAddFromSearch(r.link)
     }
 
     const handleClearResults = () => {
-        setSearchResults(null)
-        setSearchQueries([])
-        setDismissedLinks(new Set())
-        setAddedLinks(new Set())
-        setSearchError('')
-        setSearchOpen(false)
+        setSearchResults(null); setSearchQueries([])
+        setDismissedLinks(new Set()); setAddedLinks(new Set())
+        setSearchError(''); setSearchOpen(false)
         clearSearchState()
     }
 
     const visibleResults = searchResults?.filter(r => !dismissedLinks.has(r.link)) ?? []
     const pendingCount   = visibleResults.filter(r => !addedLinks.has(r.link)).length
-
-    // Блок можно скрыть/раскрыть только когда есть результаты
-    const canToggle = searchResults !== null && searchResults.length > 0
+    const canToggle      = searchResults !== null && searchResults.length > 0
 
     const formatDate = (iso: string) => {
         try { return new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' }) }
@@ -482,7 +495,6 @@ export default function ChatsPage() {
     return (
         <div className={s.page}>
 
-            {/* ─── Заголовок ─────────────────────────────────── */}
             <div className={s.pageHead}>
                 <div>
                     <h1 className={s.title}>Чаты для мониторинга</h1>
@@ -496,7 +508,6 @@ export default function ChatsPage() {
                 )}
             </div>
 
-            {/* ─── Ручное добавление ─────────────────────────── */}
             <div className={s.addBlock}>
                 <div className={s.addRow}>
                     <div className={s.inputWrap}>
@@ -525,7 +536,6 @@ export default function ChatsPage() {
                 </div>
             )}
 
-            {/* ─── Список чатов ──────────────────────────────── */}
             {loading ? (
                 <div className={s.skels}>
                     {[...Array(3)].map((_, i) => <div key={i} className={s.skel} />)}
@@ -540,8 +550,7 @@ export default function ChatsPage() {
                 <div className={s.list}>
                     {chats.map(c => {
                         const tgUrl = buildTelegramUrl(c.chatLink)
-                        const displayTitle = c.chatTitle && c.chatTitle !== c.chatLink
-                            ? c.chatTitle : c.chatLink
+                        const displayTitle = c.chatTitle && c.chatTitle !== c.chatLink ? c.chatTitle : c.chatLink
                         return (
                             <div key={c.id} className={s.card}>
                                 <div className={s.cardLeft}>
@@ -556,14 +565,8 @@ export default function ChatsPage() {
                                                className={s.cardLink} onClick={e => e.stopPropagation()}>
                                                 {c.chatLink}
                                             </a>
-                                            {c.chatTgId !== 0 && (
-                                                <span className={s.cardId}>ID: {c.chatTgId}</span>
-                                            )}
-                                            {c.createdAt && (
-                                                <span className={s.cardDate}>
-                                                    добавлен {formatDate(c.createdAt)}
-                                                </span>
-                                            )}
+                                            {c.chatTgId !== 0 && <span className={s.cardId}>ID: {c.chatTgId}</span>}
+                                            {c.createdAt && <span className={s.cardDate}>добавлен {formatDate(c.createdAt)}</span>}
                                         </div>
                                     </div>
                                 </div>
@@ -581,9 +584,8 @@ export default function ChatsPage() {
                 </div>
             )}
 
-            {/* ─── AI-поиск чатов (внизу, сворачиваемый) ────── */}
+            {/* ─── AI-поиск чатов ────────────────────────────── */}
             <div className={s.searchBlock}>
-                {/* Заголовок — кликабелен для сворачивания только когда есть результаты */}
                 <div
                     className={s.searchToggleBtn}
                     style={{ cursor: canToggle ? 'pointer' : 'default' }}
@@ -605,7 +607,6 @@ export default function ChatsPage() {
                         )}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        {/* Кнопка очистить — только когда есть результаты */}
                         {searchResults !== null && (
                             <button
                                 onClick={e => { e.stopPropagation(); handleClearResults() }}
@@ -616,8 +617,7 @@ export default function ChatsPage() {
                                     border: '1.5px solid var(--c-border)',
                                     background: 'transparent', color: 'var(--c-ink-3)',
                                     fontSize: 11, fontWeight: 600, cursor: 'pointer',
-                                    fontFamily: 'var(--font-body)', transition: 'all .15s',
-                                    gap: 4,
+                                    fontFamily: 'var(--font-body)', transition: 'all .15s', gap: 4,
                                 }}
                                 onMouseEnter={e => {
                                     (e.currentTarget as HTMLButtonElement).style.borderColor = '#ef4444'
@@ -635,7 +635,6 @@ export default function ChatsPage() {
                     </div>
                 </div>
 
-                {/* Контент — виден когда открыт (или если нет результатов — всегда открыт) */}
                 {(!canToggle || searchOpen) && (
                     <>
                         {hasAi ? (
@@ -645,6 +644,7 @@ export default function ChatsPage() {
                                     {user?.businessContext ? ' Оставьте поле пустым для поиска по AI-профилю.' : ''}
                                 </p>
 
+                                {/* ─── Строка: инпут + язык + кнопка ──── */}
                                 <div className={s.searchRow}>
                                     <input
                                         className={s.searchInput}
@@ -656,6 +656,11 @@ export default function ChatsPage() {
                                                 ? 'Пусто = поиск по AI-профилю, или введите запрос...'
                                                 : 'Например: дизайн, smm, веб-разработка...'
                                         }
+                                        disabled={searching || searchingByKeywords}
+                                    />
+                                    <LangSegment
+                                        value={langFilter}
+                                        onChange={setLangFilter}
                                         disabled={searching || searchingByKeywords}
                                     />
                                     <button
@@ -670,7 +675,6 @@ export default function ChatsPage() {
                                     </button>
                                 </div>
 
-                                {/* Кнопка поиска по ключевым словам */}
                                 {userKeywords.length > 0 && (
                                     <button
                                         onClick={handleSearchByKeywords}
@@ -679,8 +683,7 @@ export default function ChatsPage() {
                                             display: 'inline-flex', alignItems: 'center', gap: 7,
                                             padding: '9px 16px', borderRadius: 10,
                                             border: '1.5px solid var(--c-border)',
-                                            background: 'var(--c-bg)',
-                                            color: 'var(--c-ink-2)',
+                                            background: 'var(--c-bg)', color: 'var(--c-ink-2)',
                                             fontSize: 13, fontWeight: 600,
                                             cursor: (searching || searchingByKeywords) ? 'default' : 'pointer',
                                             fontFamily: 'var(--font-body)', transition: 'all .15s',
@@ -712,7 +715,7 @@ export default function ChatsPage() {
 
                                 {searchResults !== null && (
                                     visibleResults.length === 0 && dismissedLinks.size === 0
-                                        ? <div className={s.searchEmpty}>Чаты не найдены — попробуйте другой запрос</div>
+                                        ? <div className={s.searchEmpty}>Чаты не найдены — попробуйте другой запрос или измените язык</div>
                                         : <>
                                             {visibleResults.length > 0 && (
                                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
@@ -732,8 +735,7 @@ export default function ChatsPage() {
                                                                     display: 'inline-flex', alignItems: 'center', gap: 5,
                                                                 }}
                                                             >
-                                                                <CheckIcon />
-                                                                Добавить все
+                                                                <CheckIcon /> Добавить все
                                                             </button>
                                                             <button
                                                                 onClick={handleDismissAll}
@@ -755,8 +757,7 @@ export default function ChatsPage() {
                                                                     ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--c-ink-3)'
                                                                 }}
                                                             >
-                                                                <CloseIcon />
-                                                                Отклонить все
+                                                                <CloseIcon /> Отклонить все
                                                             </button>
                                                         </div>
                                                     )}

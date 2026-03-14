@@ -819,6 +819,61 @@
 .searchToggleBtn:hover .searchTitle {
     color: var(--c-accent);
 }
+/* ─── Language segment (добавить в конец Chatspage.module.css) ──────────────── */
 
+.langSegment {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px 4px 3px 8px;
+    border-radius: 10px;
+    border: 1.5px solid var(--c-border);
+    background: var(--c-bg);
+    flex-shrink: 0;
+    transition: border-color .15s;
+}
+
+.langSegment:focus-within {
+    border-color: var(--c-accent);
+}
+
+.langSegIcon {
+    display: flex;
+    align-items: center;
+    color: var(--c-ink-3);
+    margin-right: 2px;
+    flex-shrink: 0;
+}
+
+.langSegBtn {
+    padding: 4px 9px;
+    border-radius: 7px;
+    border: none;
+    background: transparent;
+    color: var(--c-ink-3);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--font-body);
+    letter-spacing: 0.3px;
+    transition: background .15s, color .15s;
+    line-height: 1;
+}
+
+.langSegBtn:hover:not(:disabled) {
+    background: var(--c-surface);
+    color: var(--c-ink-2);
+}
+
+.langSegBtn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.langSegActive {
+    background: var(--c-surface) !important;
+    color: var(--c-ink) !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .08);
+}
 
 @keyframes spin { to { transform: rotate(360deg) } }
