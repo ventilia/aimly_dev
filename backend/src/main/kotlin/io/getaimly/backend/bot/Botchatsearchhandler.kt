@@ -276,17 +276,26 @@ class BotChatSearchHandler(
         sb.append("Найдено: ${visible.size}  •  Не добавлено: $remaining\n\n")
 
         pageIndices.forEach { idx ->
-            val r      = results[idx]
-            val status = when (idx) {
+            val r       = results[idx]
+            val status  = when (idx) {
                 in session.chatSearchAdded -> "✅"
                 else                       -> if (r.peerType == "chat") "💬" else "📢"
             }
             val members = if (r.participantsCount > 0) " · ${formatCount(r.participantsCount)} уч." else ""
-            sb.append("$status *${r.title.take(40).md()}*$members\n")
-            if (!r.description.isNullOrBlank()) {
-                sb.append("  _${r.description.take(80).md()}_\n")
+
+            // Экранируем все динамические строки.
+            // Описание выводим как обычный текст (без italic), чтобы
+            // спецсимволы внутри не ломали Markdown v1 парсер Telegram.
+            val safeTitle = r.title.take(40).md()
+            val safeDesc  = r.description?.take(100)?.md()
+            // username уже содержит @ — экранируем только служебные символы
+            val safeUser  = r.username?.replace("_", "\\_")?.replace("*", "\\*")
+
+            sb.append("$status *$safeTitle*$members\n")
+            if (!safeDesc.isNullOrBlank()) {
+                sb.append("  $safeDesc\n")
             }
-            if (r.username != null) sb.append("  ${r.username}\n")
+            if (safeUser != null) sb.append("  $safeUser\n")
             sb.append("\n")
         }
 
