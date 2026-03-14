@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { chatsApi, type ChatSubscription } from '../api/leads.ts'
+import { chatsApi, keywordsApi, type ChatSubscription } from '../api/leads.ts'
 import { useAuthContext } from '../context/AuthContext'
 import s from './Chatspage.module.css'
 
@@ -89,6 +89,18 @@ function CloseIcon() {
     )
 }
 
+function HashIcon() {
+    return (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="4" y1="9" x2="20" y2="9"/>
+            <line x1="4" y1="15" x2="20" y2="15"/>
+            <line x1="10" y1="3" x2="8" y2="21"/>
+            <line x1="16" y1="3" x2="14" y2="21"/>
+        </svg>
+    )
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface TgstatResult {
     title: string
@@ -103,6 +115,37 @@ interface TgstatResult {
 interface TgstatSearchResponse {
     results: TgstatResult[]
     queries: string[]
+}
+
+// ─── Персистентное состояние AI-поиска ────────────────────────────────────────
+const SESSION_KEY = 'aimly_chat_search_state'
+
+interface SearchState {
+    results: TgstatResult[]
+    queries: string[]
+    addedLinks: string[]
+    dismissedLinks: string[]
+    searchQuery: string
+}
+
+function saveSearchState(state: SearchState) {
+    try {
+        sessionStorage.setItem(SESSION_KEY, JSON.stringify(state))
+    } catch { /* ignore */ }
+}
+
+function loadSearchState(): SearchState | null {
+    try {
+        const raw = sessionStorage.getItem(SESSION_KEY)
+        if (!raw) return null
+        return JSON.parse(raw) as SearchState
+    } catch {
+        return null
+    }
+}
+
+function clearSearchState() {
+    try { sessionStorage.removeItem(SESSION_KEY) } catch { /* ignore */ }
 }
 
 // ─── API ──────────────────────────────────────────────────────────────────────
@@ -137,9 +180,6 @@ function formatCount(n: number): string {
     return String(n)
 }
 
-// Минимальный порог участников для отображения в результатах поиска
-const MIN_MEMBERS = 600
-
 // ─── Sub-components ───────────────────────────────────────────────────────────
 function StatusDot({ active }: { active: boolean }) {
     return (
@@ -151,7 +191,6 @@ function StatusDot({ active }: { active: boolean }) {
     )
 }
 
-// Карточка результата поиска — с кнопками принять/отклонить
 function ResultCard({
                         result,
                         onAdd,
@@ -196,14 +235,13 @@ function ResultCard({
             )}
 
             <div className={s.resultActions}>
-                {/* Кнопка принять */}
                 <button
                     style={{
                         display: 'inline-flex', alignItems: 'center', gap: 5,
                         padding: '7px 14px', borderRadius: 8, border: 'none',
                         fontSize: 12, fontWeight: 600, cursor: isAdded || isAdding ? 'default' : 'pointer',
                         fontFamily: 'var(--font-body)', transition: 'opacity .15s',
-                        background: isAdded ? 'rgba(16,185,129,.12)' : isAdding ? 'var(--c-accent)' : 'var(--c-accent)',
+                        background: isAdded ? 'rgba(16,185,129,.12)' : 'var(--c-accent)',
                         color: isAdded ? '#10b981' : '#fff',
                         opacity: isAdded || isAdding ? 0.8 : 1,
                     }}
@@ -218,7 +256,6 @@ function ResultCard({
                     }
                 </button>
 
-                {/* Кнопка отклонить — скрыта если уже добавлен */}
                 {!isAdded && (
                     <button
                         onClick={() => onDismiss(result.link)}
@@ -264,7 +301,7 @@ export default function ChatsPage() {
     const [error,    setError]    = useState('')
     const [removing, setRemoving] = useState<number | null>(null)
 
-    // AI-поиск — состояние
+    // AI-поиск — состояние (восстанавливается из sessionStorage)
     const [searchOpen,     setSearchOpen]     = useState(false)
     const [searchQuery,    setSearchQuery]    = useState('')
     const [searching,      setSearching]      = useState(false)
@@ -275,9 +312,39 @@ export default function ChatsPage() {
     const [addedLinks,     setAddedLinks]     = useState<Set<string>>(new Set())
     const [dismissedLinks, setDismissedLinks] = useState<Set<string>>(new Set())
 
+    // Поиск по ключевым словам
+    const [userKeywords,        setUserKeywords]        = useState<string[]>([])
+    const [loadingKeywords,     setLoadingKeywords]     = useState(false)
+    const [searchingByKeywords, setSearchingByKeywords] = useState(false)
+
     const plan  = user?.subscriptionPlan   ?? null
     const st    = user?.subscriptionStatus ?? null
     const hasAi = plan === 'MINIMUM' || plan === 'START' || st === 'TRIAL'
+
+    // ─── Восстановление состояния из sessionStorage ───────────────────────────
+    useEffect(() => {
+        const saved = loadSearchState()
+        if (saved && saved.results.length > 0) {
+            setSearchResults(saved.results)
+            setSearchQueries(saved.queries)
+            setAddedLinks(new Set(saved.addedLinks))
+            setDismissedLinks(new Set(saved.dismissedLinks))
+            setSearchQuery(saved.searchQuery)
+            setSearchOpen(true)
+        }
+    }, [])
+
+    // ─── Персистентное сохранение при изменении ───────────────────────────────
+    useEffect(() => {
+        if (searchResults === null) return
+        saveSearchState({
+            results:       searchResults,
+            queries:       searchQueries,
+            addedLinks:    Array.from(addedLinks),
+            dismissedLinks: Array.from(dismissedLinks),
+            searchQuery,
+        })
+    }, [searchResults, searchQueries, addedLinks, dismissedLinks, searchQuery])
 
     const fetchChats = () =>
         chatsApi.list()
@@ -285,6 +352,16 @@ export default function ChatsPage() {
             .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Ошибка загрузки'))
 
     useEffect(() => { fetchChats().finally(() => setLoading(false)) }, [])
+
+    // Загружаем ключевые слова пользователя
+    useEffect(() => {
+        if (!hasAi) return
+        setLoadingKeywords(true)
+        keywordsApi.list()
+            .then(kws => setUserKeywords(kws.map(k => k.keyword)))
+            .catch(() => {})
+            .finally(() => setLoadingKeywords(false))
+    }, [hasAi])
 
     const add = async () => {
         const link = input.trim()
@@ -313,21 +390,37 @@ export default function ChatsPage() {
         } finally { setRemoving(null) }
     }
 
-    const handleSearch = async () => {
+    const runSearch = async (query: string) => {
         setSearching(true)
         setSearchError('')
         setSearchResults(null)
         setSearchQueries([])
         setDismissedLinks(new Set())
+        setAddedLinks(new Set())
+        clearSearchState()
         try {
-            const resp = await searchChatsApi(searchQuery.trim())
-            // Фильтруем чаты с менее чем MIN_MEMBERS участников
-            const filtered = resp.results.filter(r => r.participantsCount === 0 || r.participantsCount >= MIN_MEMBERS)
-            setSearchResults(filtered)
+            const resp = await searchChatsApi(query)
+            setSearchResults(resp.results)
             setSearchQueries(resp.queries)
         } catch (e: unknown) {
             setSearchError(e instanceof Error ? e.message : 'Ошибка поиска')
-        } finally { setSearching(false) }
+        } finally {
+            setSearching(false)
+        }
+    }
+
+    const handleSearch = async () => {
+        await runSearch(searchQuery.trim())
+    }
+
+    // Поиск по ключевым словам пользователя — передаём их как общий запрос
+    const handleSearchByKeywords = async () => {
+        if (userKeywords.length === 0) return
+        setSearchingByKeywords(true)
+        // Берём первые 5 ключевых слов как запрос — AI сам расширит
+        const query = userKeywords.slice(0, 5).join(', ')
+        await runSearch(query)
+        setSearchingByKeywords(false)
     }
 
     const handleAddFromSearch = async (link: string) => {
@@ -361,8 +454,21 @@ export default function ChatsPage() {
         }
     }
 
+    const handleClearResults = () => {
+        setSearchResults(null)
+        setSearchQueries([])
+        setDismissedLinks(new Set())
+        setAddedLinks(new Set())
+        setSearchError('')
+        setSearchOpen(false)
+        clearSearchState()
+    }
+
     const visibleResults = searchResults?.filter(r => !dismissedLinks.has(r.link)) ?? []
     const pendingCount   = visibleResults.filter(r => !addedLinks.has(r.link)).length
+
+    // Блок можно скрыть/раскрыть только когда есть результаты
+    const canToggle = searchResults !== null && searchResults.length > 0
 
     const formatDate = (iso: string) => {
         try { return new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' }) }
@@ -473,16 +579,17 @@ export default function ChatsPage() {
 
             {/* ─── AI-поиск чатов (внизу, сворачиваемый) ────── */}
             <div className={s.searchBlock}>
-                {/* Заголовок — кликабельный для сворачивания */}
-                <button
+                {/* Заголовок — кликабелен для сворачивания только когда есть результаты */}
+                <div
                     className={s.searchToggleBtn}
-                    onClick={() => setSearchOpen(v => !v)}
-                    aria-expanded={searchOpen}
+                    style={{ cursor: canToggle ? 'pointer' : 'default' }}
+                    onClick={() => canToggle && setSearchOpen(v => !v)}
+                    role={canToggle ? 'button' : undefined}
+                    aria-expanded={canToggle ? searchOpen : undefined}
                 >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <SparkleIcon />
                         <span className={s.searchTitle}>Найти чаты по AI</span>
-                        {/* Плашка AI-функция */}
                         {hasAi && (
                             <span style={{
                                 fontSize: 11, fontWeight: 700, padding: '3px 8px',
@@ -493,11 +600,39 @@ export default function ChatsPage() {
                             </span>
                         )}
                     </div>
-                    <ChevronIcon open={searchOpen} />
-                </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {/* Кнопка очистить — только когда есть результаты */}
+                        {searchResults !== null && (
+                            <button
+                                onClick={e => { e.stopPropagation(); handleClearResults() }}
+                                title="Сбросить результаты"
+                                style={{
+                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                    padding: '4px 10px', borderRadius: 7,
+                                    border: '1.5px solid var(--c-border)',
+                                    background: 'transparent', color: 'var(--c-ink-3)',
+                                    fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                                    fontFamily: 'var(--font-body)', transition: 'all .15s',
+                                    gap: 4,
+                                }}
+                                onMouseEnter={e => {
+                                    (e.currentTarget as HTMLButtonElement).style.borderColor = '#ef4444'
+                                    ;(e.currentTarget as HTMLButtonElement).style.color = '#ef4444'
+                                }}
+                                onMouseLeave={e => {
+                                    (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--c-border)'
+                                    ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--c-ink-3)'
+                                }}
+                            >
+                                <CloseIcon /> Сбросить
+                            </button>
+                        )}
+                        {canToggle && <ChevronIcon open={searchOpen} />}
+                    </div>
+                </div>
 
-                {/* Контент — виден только когда открыт */}
-                {searchOpen && (
+                {/* Контент — виден когда открыт (или если нет результатов — всегда открыт) */}
+                {(!canToggle || searchOpen) && (
                     <>
                         {hasAi ? (
                             <>
@@ -517,34 +652,64 @@ export default function ChatsPage() {
                                                 ? 'Пусто = поиск по AI-профилю, или введите запрос...'
                                                 : 'Например: дизайн, smm, веб-разработка...'
                                         }
-                                        disabled={searching}
+                                        disabled={searching || searchingByKeywords}
                                     />
                                     <button
                                         className={s.searchBtn}
                                         onClick={handleSearch}
-                                        disabled={searching || (!searchQuery.trim() && !user?.businessContext)}
+                                        disabled={searching || searchingByKeywords || (!searchQuery.trim() && !user?.businessContext)}
                                     >
-                                        {searching
+                                        {searching && !searchingByKeywords
                                             ? <><span className={s.spinnerAccent} /> Ищем…</>
                                             : <><SearchIcon /> Найти чаты</>
                                         }
                                     </button>
                                 </div>
 
-                                {searchError && <div className={s.searchError}>{searchError}</div>}
-
-                                {searchQueries.length > 0 && (
-                                    <div className={s.searchUsed}>
-                                        <span className={s.searchUsedLabel}>AI искал по:</span>
-                                        {searchQueries.map(q => <span key={q} className={s.searchTag}>{q}</span>)}
-                                    </div>
+                                {/* Кнопка поиска по ключевым словам */}
+                                {userKeywords.length > 0 && (
+                                    <button
+                                        onClick={handleSearchByKeywords}
+                                        disabled={searching || searchingByKeywords || loadingKeywords}
+                                        style={{
+                                            display: 'inline-flex', alignItems: 'center', gap: 7,
+                                            padding: '9px 16px', borderRadius: 10,
+                                            border: '1.5px solid var(--c-border)',
+                                            background: 'var(--c-bg)',
+                                            color: 'var(--c-ink-2)',
+                                            fontSize: 13, fontWeight: 600,
+                                            cursor: (searching || searchingByKeywords) ? 'default' : 'pointer',
+                                            fontFamily: 'var(--font-body)', transition: 'all .15s',
+                                            opacity: (searching || searchingByKeywords) ? 0.6 : 1,
+                                            width: 'fit-content',
+                                        }}
+                                        onMouseEnter={e => {
+                                            if (!searching && !searchingByKeywords)
+                                                (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--c-accent)'
+                                        }}
+                                        onMouseLeave={e => {
+                                            (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--c-border)'
+                                        }}
+                                    >
+                                        {searchingByKeywords
+                                            ? <><span className={s.spinnerAccent} style={{ borderTopColor: 'var(--c-accent)', borderColor: 'rgba(92,57,223,.2)' }} /> Ищем по ключевым словам…</>
+                                            : <><HashIcon /> Найти чаты по моим ключевым словам ({userKeywords.length})</>
+                                        }
+                                    </button>
                                 )}
+
+                                {userKeywords.length === 0 && !loadingKeywords && (
+                                    <p style={{ fontSize: 12, color: 'var(--c-ink-3)', margin: 0 }}>
+                                        Добавьте ключевые слова в разделе «Ключевые слова» — AI найдёт чаты, где ваша аудитория общается на эти темы
+                                    </p>
+                                )}
+
+                                {searchError && <div className={s.searchError}>{searchError}</div>}
 
                                 {searchResults !== null && (
                                     visibleResults.length === 0 && dismissedLinks.size === 0
                                         ? <div className={s.searchEmpty}>Чаты не найдены — попробуйте другой запрос</div>
                                         : <>
-                                            {/* Управление всеми результатами */}
                                             {visibleResults.length > 0 && (
                                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                                                     <p className={s.searchResultsTitle}>
@@ -593,6 +758,14 @@ export default function ChatsPage() {
                                                     )}
                                                 </div>
                                             )}
+
+                                            {searchQueries.length > 0 && (
+                                                <div className={s.searchUsed}>
+                                                    <span className={s.searchUsedLabel}>AI искал по:</span>
+                                                    {searchQueries.map(q => <span key={q} className={s.searchTag}>{q}</span>)}
+                                                </div>
+                                            )}
+
                                             <div className={s.searchResults}>
                                                 {searchResults.map(r => (
                                                     <ResultCard

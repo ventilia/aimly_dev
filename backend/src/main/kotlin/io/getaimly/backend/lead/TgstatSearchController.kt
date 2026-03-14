@@ -46,6 +46,55 @@ class TgstatSearchController(
     // Минимум участников — чаты с меньшим числом не возвращаем
     private val MIN_MEMBERS = 600
 
+    // ─── Фиксированные рекомендованные чаты ──────────────────────────────────
+
+    // Ключевые слова для определения дизайнерской специальности
+    private val DESIGN_SIGNALS = setOf(
+        "дизайн", "design", "ui", "ux", "graphic", "график", "иллюстр",
+        "брендинг", "верстк", "figma", "photoshop", "illustrator", "sketch",
+        "motion", "моушн", "анимац",
+    )
+
+    // Ключевые слова для творческих/event специальностей
+    private val CREATIVE_SIGNALS = setOf(
+        "дизайн", "design", "фото", "photo", "видео", "video", "арт", "art",
+        "творч", "креатив", "event", "ивент", "мероприят", "свадьб", "wedding",
+        "съёмк", "оператор", "режиссёр", "продакшн", "production", "стилист",
+        "визаж", "makeup", "флорист",
+    )
+
+    private val FIXED_DESIGN_CHAT = TgstatChannelResult(
+        title             = "Designgang Chat",
+        username          = "@desgangchat",
+        description       = "Чат для дизайнеров — обсуждение работ, вакансии и заказы",
+        participantsCount = 0,
+        link              = "https://t.me/desgangchat",
+        tgstatLink        = null,
+        peerType          = "chat",
+    )
+
+    private val FIXED_EVENT_CHAT = TgstatChannelResult(
+        title             = "MSK Event Job",
+        username          = "@mskeventjob",
+        description       = "Вакансии и заказы для творческих специальностей: event, фото, видео, дизайн",
+        participantsCount = 0,
+        link              = "https://t.me/mskeventjob",
+        tgstatLink        = null,
+        peerType          = "chat",
+    )
+
+    private fun isDesignRelated(input: String): Boolean {
+        val lower = input.lowercase()
+        return DESIGN_SIGNALS.any { lower.contains(it) }
+    }
+
+    private fun isCreativeRelated(input: String): Boolean {
+        val lower = input.lowercase()
+        return CREATIVE_SIGNALS.any { lower.contains(it) }
+    }
+
+    // ─── Search endpoint ──────────────────────────────────────────────────────
+
     @PostMapping
     fun search(
         @AuthenticationPrincipal user: User,
@@ -104,6 +153,21 @@ class TgstatSearchController(
                 if (results.size >= 5) break
                 addUnique(searchTgstat(query, peerType = "all", limit = 50), seen, results)
             }
+        }
+
+        // ─── Добавляем фиксированные рекомендованные чаты ────────────────────
+        // Для дизайнеров — desgangchat
+        if (isDesignRelated(inputText) && results.none { it.link.contains("desgangchat") }) {
+            results.add(FIXED_DESIGN_CHAT)
+            seen.add("desgangchat")
+            log.info("TGStat: добавлен фиксированный чат desgangchat для user=${user.id}")
+        }
+
+        // Для творческих специальностей — mskeventjob
+        if (isCreativeRelated(inputText) && results.none { it.link.contains("mskeventjob") }) {
+            results.add(FIXED_EVENT_CHAT)
+            seen.add("mskeventjob")
+            log.info("TGStat: добавлен фиксированный чат mskeventjob для user=${user.id}")
         }
 
         log.info("TGStat итог для user=${user.id}: найдено ${results.size} результатов")

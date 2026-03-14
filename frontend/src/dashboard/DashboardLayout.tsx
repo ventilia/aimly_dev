@@ -38,10 +38,6 @@ const txt = {
     },
 } as const
 
-// FIX: Удалён дублирующий interface Props { lang: Lang; onLang: (l: Lang) => void },
-// который был объявлен но не использовался (shadowed Props2 ниже).
-// @typescript-eslint/no-unused-vars
-
 interface NavLabels {
     overview: string
     leads: string
@@ -57,6 +53,9 @@ const NAV_ITEMS = (l: NavLabels) => [
     { to: '/dashboard/chats',    label: l.chats,    exact: false },
     { to: '/dashboard/profile',  label: l.profile,  exact: false },
 ]
+
+// Имя custom event для мгновенного обновления счётчика лидов
+export const LEADS_COUNT_CHANGED = 'aimly:leads-count-changed'
 
 const IconWallet = () => (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -101,7 +100,6 @@ function NotifBell() {
     )
 }
 
-// FIX: Переименован в DashboardLayoutProps для ясности и устранения конфликта имён.
 interface DashboardLayoutProps { lang: Lang; onLang: (l: Lang) => void }
 
 export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) {
@@ -113,15 +111,33 @@ export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) 
 
     const hasSubscription = user?.subscriptionStatus === 'ACTIVE' || user?.subscriptionStatus === 'TRIAL'
 
+    const refreshNewCount = () => {
+        leadsApi.list({ status: 'NEW', size: 1 })
+            .then(p => setNewLeadsCount(p.totalElements))
+            .catch(() => {})
+    }
+
     useEffect(() => {
-        const fetchNewCount = () => {
-            leadsApi.list({ status: 'NEW', size: 1 })
-                .then(p => setNewLeadsCount(p.totalElements))
-                .catch(() => {})
+        refreshNewCount()
+        const interval = setInterval(refreshNewCount, 30_000)
+
+        // Слушаем событие от LeadsPage — немедленно обновляем счётчик
+        const handleCountChanged = (e: Event) => {
+            const detail = (e as CustomEvent<{ newCount: number }>).detail
+            if (typeof detail?.newCount === 'number') {
+                setNewLeadsCount(detail.newCount)
+            } else {
+                // Если конкретное число не передано — перезапрашиваем
+                refreshNewCount()
+            }
         }
-        fetchNewCount()
-        const interval = setInterval(fetchNewCount, 30_000)
-        return () => clearInterval(interval)
+
+        window.addEventListener(LEADS_COUNT_CHANGED, handleCountChanged)
+
+        return () => {
+            clearInterval(interval)
+            window.removeEventListener(LEADS_COUNT_CHANGED, handleCountChanged)
+        }
     }, [])
 
     const handleLogout = async () => {

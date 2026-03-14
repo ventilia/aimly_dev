@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { leadsApi, type Lead, type LeadPage } from '../api/leads'
+import { LEADS_COUNT_CHANGED } from './DashboardLayout'
 import s from './Leadspage.module.css'
 
 // ─── Цвета статусов ───────────────────────────────────────────────────────────
@@ -25,6 +26,13 @@ const FILTERS = [
     { value: 'IGNORED', label: 'Архив'    },
 ]
 
+// ─── Вспомогательная функция диспатча события ─────────────────────────────────
+function dispatchLeadsCountChanged(newCount: number) {
+    window.dispatchEvent(
+        new CustomEvent(LEADS_COUNT_CHANGED, { detail: { newCount } })
+    )
+}
+
 // ─── Icons ────────────────────────────────────────────────────────────────────
 const IconUser = () => (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -49,6 +57,27 @@ const IconArchive = () => (
 const IconCheck = () => (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
         <polyline points="20 6 9 17 4 12"/>
+    </svg>
+)
+
+const IconEye = () => (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+        <circle cx="12" cy="12" r="3"/>
+    </svg>
+)
+
+const IconEyeOff = () => (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+        <line x1="1" y1="1" x2="23" y2="23"/>
+    </svg>
+)
+
+const IconUndo = () => (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="9 14 4 9 9 4"/>
+        <path d="M20 20v-7a4 4 0 0 0-4-4H4"/>
     </svg>
 )
 
@@ -89,6 +118,8 @@ export default function LeadsPage() {
             const statusParam = filter || undefined
             const result = await leadsApi.list({ status: statusParam, page, size: 20 })
             setData(result)
+            // Синхронизируем счётчик в навигации при каждой загрузке
+            dispatchLeadsCountChanged(result.newCount)
         } catch (e: unknown) {
             setError(e instanceof Error ? e.message : 'Ошибка загрузки')
         } finally {
@@ -111,22 +142,40 @@ export default function LeadsPage() {
         })
     }
 
-    const applyStatusUpdate = (updated: Lead) => {
-        setData(prev => prev ? {
-            ...prev,
-            content: prev.content.map(l => l.id === updated.id ? updated : l),
-            newCount: updated.status !== 'NEW'
-                ? Math.max(0, prev.newCount - (prev.content.find(l => l.id === updated.id)?.status === 'NEW' ? 1 : 0))
-                : prev.newCount,
-        } : prev)
+    /**
+     * Применяет обновлённый лид к локальному состоянию и немедленно
+     * диспатчит событие обновления счётчика в навигации.
+     */
+    const applyStatusUpdate = (updated: Lead, previousStatus: string) => {
+        setData(prev => {
+            if (!prev) return prev
+
+            const content = prev.content.map(l => l.id === updated.id ? updated : l)
+
+            // Пересчёт newCount:
+            // - если был NEW и стал не NEW — уменьшаем
+            // - если был не NEW и стал NEW — увеличиваем
+            let newCount = prev.newCount
+            if (previousStatus === 'NEW' && updated.status !== 'NEW') {
+                newCount = Math.max(0, newCount - 1)
+            } else if (previousStatus !== 'NEW' && updated.status === 'NEW') {
+                newCount = newCount + 1
+            }
+
+            // Немедленно обновляем счётчик в навигации
+            dispatchLeadsCountChanged(newCount)
+
+            return { ...prev, content, newCount }
+        })
     }
 
     const setStatus = async (lead: Lead, status: string) => {
         if (lead.status === status) return
+        const previousStatus = lead.status
         setUpdating(prev => new Set(prev).add(lead.id))
         try {
             const updated = await leadsApi.updateStatus(lead.id, status)
-            applyStatusUpdate(updated)
+            applyStatusUpdate(updated, previousStatus)
         } catch {
             // silent
         } finally {
@@ -134,15 +183,13 @@ export default function LeadsPage() {
         }
     }
 
+    // При открытии ссылки — автоматически помечаем как прочитанный
     const handleOpen = (lead: Lead) => {
         if (lead.status === 'NEW') {
             void setStatus(lead, 'VIEWED')
         }
     }
 
-    // FIX: убраны (lead as any).contextMessages — поле contextMessages: string[]
-    // уже присутствует в интерфейсе Lead, поэтому приведение к any излишне.
-    // @typescript-eslint/no-explicit-any
     const visibleContent = (data?.content ?? []).filter(lead =>
         filter === '' ? lead.status !== 'IGNORED' : true
     )
@@ -218,11 +265,12 @@ export default function LeadsPage() {
                         {visibleContent.map(lead => {
                             const color      = STATUS_COLOR[lead.status] || STATUS_COLOR.NEW
                             const isNew      = lead.status === 'NEW'
+                            const isViewed   = lead.status === 'VIEWED'
+                            const isReplied  = lead.status === 'REPLIED'
                             const isArchived = lead.status === 'IGNORED'
                             const isExpanded = expanded.has(lead.id)
                             const isUpdating = updating.has(lead.id)
 
-                            // FIX: contextMessages типизировано в Lead — as any убран.
                             const contextMsgs: string[] = lead.contextMessages ?? []
 
                             return (
@@ -267,14 +315,37 @@ export default function LeadsPage() {
                                             )}
                                         </div>
 
-                                        <span style={{
-                                            ...color,
-                                            fontSize: 11, fontWeight: 700,
-                                            padding: '3px 10px', borderRadius: 100,
-                                            flexShrink: 0, letterSpacing: '.2px',
-                                        }}>
+                                        {/* Статус — кликабельный для быстрого переключения прочитан/не прочитан */}
+                                        <button
+                                            onClick={() => {
+                                                if (isNew)    void setStatus(lead, 'VIEWED')
+                                                if (isViewed) void setStatus(lead, 'NEW')
+                                            }}
+                                            disabled={isUpdating || isReplied || isArchived}
+                                            title={
+                                                isNew    ? 'Нажмите — пометить прочитанным' :
+                                                    isViewed ? 'Нажмите — пометить непрочитанным' :
+                                                        undefined
+                                            }
+                                            style={{
+                                                ...color,
+                                                fontSize: 11, fontWeight: 700,
+                                                padding: '3px 10px', borderRadius: 100,
+                                                flexShrink: 0, letterSpacing: '.2px',
+                                                border: 'none',
+                                                background: color.bg,
+                                                color: color.text,
+                                                cursor: (isNew || isViewed) && !isUpdating ? 'pointer' : 'default',
+                                                transition: 'opacity .15s',
+                                                display: 'flex', alignItems: 'center', gap: 4,
+                                                opacity: isUpdating ? 0.5 : 1,
+                                            }}
+                                        >
                                             {STATUS_LABEL[lead.status] ?? lead.status}
-                                        </span>
+                                            {(isNew || isViewed) && !isUpdating && (
+                                                isNew ? <IconEye /> : <IconEyeOff />
+                                            )}
+                                        </button>
                                     </div>
 
                                     {/* ─── Текст сообщения ─── */}
@@ -391,39 +462,76 @@ export default function LeadsPage() {
                                                 </div>
                                             )}
 
-                                            {(lead.status === 'NEW' || lead.status === 'VIEWED') && (
+                                            {/* Кнопка "Ответил" — для NEW и VIEWED */}
+                                            {(isNew || isViewed) && (
                                                 <button
                                                     onClick={() => void setStatus(lead, 'REPLIED')}
                                                     disabled={isUpdating}
                                                     title="Отметить как отвечено"
                                                     style={{
                                                         display: 'flex', alignItems: 'center', gap: 4,
-                                                        padding: '4px 10px', borderRadius: 100,
-                                                        border: '1.5px solid rgba(16,185,129,.35)',
-                                                        background: 'rgba(16,185,129,.06)',
-                                                        color: '#059669', fontSize: 11,
-                                                        fontWeight: 600, cursor: 'pointer',
+                                                        padding: '5px 12px', borderRadius: 100,
+                                                        border: '1.5px solid rgba(16,185,129,.45)',
+                                                        background: 'rgba(16,185,129,.08)',
+                                                        color: '#059669', fontSize: 12,
+                                                        fontWeight: 700, cursor: 'pointer',
                                                         fontFamily: 'var(--font-body)', transition: 'all .15s',
                                                     }}
-                                                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(16,185,129,.14)' }}
-                                                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(16,185,129,.06)' }}
+                                                    onMouseEnter={e => {
+                                                        (e.currentTarget as HTMLButtonElement).style.background = 'rgba(16,185,129,.18)'
+                                                        ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(16,185,129,.7)'
+                                                    }}
+                                                    onMouseLeave={e => {
+                                                        (e.currentTarget as HTMLButtonElement).style.background = 'rgba(16,185,129,.08)'
+                                                        ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(16,185,129,.45)'
+                                                    }}
                                                 >
                                                     <IconCheck />
                                                     Ответил
                                                 </button>
                                             )}
 
-                                            {lead.status !== 'IGNORED' && (
+                                            {/* Кнопка "Вернуть" — для REPLIED (откат на VIEWED) */}
+                                            {isReplied && (
+                                                <button
+                                                    onClick={() => void setStatus(lead, 'VIEWED')}
+                                                    disabled={isUpdating}
+                                                    title="Вернуть в просмотренные"
+                                                    style={{
+                                                        display: 'flex', alignItems: 'center', gap: 4,
+                                                        padding: '5px 12px', borderRadius: 100,
+                                                        border: '1.5px solid var(--c-border)',
+                                                        background: 'none',
+                                                        color: 'var(--c-ink-3)', fontSize: 12,
+                                                        fontWeight: 600, cursor: 'pointer',
+                                                        fontFamily: 'var(--font-body)', transition: 'all .15s',
+                                                    }}
+                                                    onMouseEnter={e => {
+                                                        (e.currentTarget as HTMLButtonElement).style.borderColor = '#d97706'
+                                                        ;(e.currentTarget as HTMLButtonElement).style.color = '#d97706'
+                                                    }}
+                                                    onMouseLeave={e => {
+                                                        (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--c-border)'
+                                                        ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--c-ink-3)'
+                                                    }}
+                                                >
+                                                    <IconUndo />
+                                                    Вернуть
+                                                </button>
+                                            )}
+
+                                            {/* Кнопка "В архив" — для всех кроме IGNORED */}
+                                            {!isArchived && (
                                                 <button
                                                     onClick={() => void setStatus(lead, 'IGNORED')}
                                                     disabled={isUpdating}
                                                     title="В архив"
                                                     style={{
                                                         display: 'flex', alignItems: 'center', gap: 4,
-                                                        padding: '4px 10px', borderRadius: 100,
+                                                        padding: '5px 12px', borderRadius: 100,
                                                         border: '1.5px solid var(--c-border)',
                                                         background: 'none',
-                                                        color: 'var(--c-ink-3)', fontSize: 11,
+                                                        color: 'var(--c-ink-3)', fontSize: 12,
                                                         fontWeight: 600, cursor: 'pointer',
                                                         fontFamily: 'var(--font-body)', transition: 'all .15s',
                                                     }}
@@ -441,17 +549,18 @@ export default function LeadsPage() {
                                                 </button>
                                             )}
 
-                                            {lead.status === 'IGNORED' && (
+                                            {/* Кнопка "Восстановить" — только для IGNORED */}
+                                            {isArchived && (
                                                 <button
                                                     onClick={() => void setStatus(lead, 'NEW')}
                                                     disabled={isUpdating}
                                                     title="Вернуть из архива"
                                                     style={{
                                                         display: 'flex', alignItems: 'center', gap: 4,
-                                                        padding: '4px 10px', borderRadius: 100,
+                                                        padding: '5px 12px', borderRadius: 100,
                                                         border: '1.5px solid var(--c-border)',
                                                         background: 'none',
-                                                        color: 'var(--c-ink-3)', fontSize: 11,
+                                                        color: 'var(--c-ink-3)', fontSize: 12,
                                                         fontWeight: 600, cursor: 'pointer',
                                                         fontFamily: 'var(--font-body)', transition: 'all .15s',
                                                     }}
@@ -460,8 +569,6 @@ export default function LeadsPage() {
                                                 </button>
                                             )}
 
-                                            {/* FIX: onClick был standalone-выражением без void/присваивания.
-                                                @typescript-eslint/no-unused-expressions */}
                                             <a
                                                 href={lead.messageLink}
                                                 target="_blank"

@@ -11,6 +11,25 @@ const SUGGESTIONS = [
     'ищу менеджера', 'нужен монтажёр',
 ]
 
+// Ключ для сохранения AI-подсказок в sessionStorage
+const AI_SUGGESTIONS_KEY = 'aimly_keywords_ai_suggestions'
+
+function saveAiSuggestions(suggestions: string[]) {
+    try { sessionStorage.setItem(AI_SUGGESTIONS_KEY, JSON.stringify(suggestions)) } catch { /* ignore */ }
+}
+
+function loadAiSuggestions(): string[] {
+    try {
+        const raw = sessionStorage.getItem(AI_SUGGESTIONS_KEY)
+        if (!raw) return []
+        return JSON.parse(raw) as string[]
+    } catch { return [] }
+}
+
+function clearAiSuggestions() {
+    try { sessionStorage.removeItem(AI_SUGGESTIONS_KEY) } catch { /* ignore */ }
+}
+
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
 function SearchIcon() {
@@ -210,6 +229,14 @@ export default function KeywordsPage() {
 
     const atLimit = keywords.length >= MAX_KEYWORDS
 
+    // ─── Восстановление AI-подсказок из sessionStorage ───────────────────────
+    useEffect(() => {
+        const saved = loadAiSuggestions()
+        if (saved.length > 0) {
+            setAiSuggestions(saved)
+        }
+    }, [])
+
     useEffect(() => {
         keywordsApi
             .list()
@@ -231,6 +258,15 @@ export default function KeywordsPage() {
             setBizLoading(false)
         }
     }, [hasAiFeatures])
+
+    // Сохраняем AI-подсказки в sessionStorage при каждом изменении
+    useEffect(() => {
+        if (aiSuggestions.length > 0) {
+            saveAiSuggestions(aiSuggestions)
+        } else {
+            clearAiSuggestions()
+        }
+    }, [aiSuggestions])
 
     const add = async (kw?: string) => {
         const word = (kw ?? input).trim()
@@ -325,8 +361,9 @@ export default function KeywordsPage() {
             const added = await keywordsApi.add(kw)
             setKeywords(prev => prev.find(k => k.id === added.id) ? prev : [...prev, added])
         } catch (e: unknown) {
-            setAiSuggestions(prev => [kw, ...prev])
             setError(e instanceof Error ? e.message : 'Не удалось добавить')
+            // Возвращаем обратно если не добавилось
+            setAiSuggestions(prev => [kw, ...prev])
         }
     }
 
@@ -335,43 +372,19 @@ export default function KeywordsPage() {
     }
 
     const addAllAiSuggestions = async () => {
-        const available = MAX_KEYWORDS - keywords.length
-        if (available <= 0) {
-            setError(`Достигнут лимит — максимум ${MAX_KEYWORDS} ключевых слов`)
-            return
-        }
-        const toAdd = aiSuggestions.slice(0, available)
-        if (toAdd.length === 0) return
-
+        if (atLimit || addingAi) return
         setAddingAi(true)
-        setError('')
-
-        const tempItems: Keyword[] = toAdd.map((kw, i) => ({
-            id: -(Date.now() + i),
-            keyword: kw,
-            isActive: true,
-            variants: [],
-        }))
-        setKeywords(prev => [...prev, ...tempItems])
-        setAiSuggestions([])
-
-        const results = await Promise.allSettled(toAdd.map(kw => keywordsApi.add(kw)))
-
-        setKeywords(prev => {
-            const withoutTemp = prev.filter(k => k.id >= 0)
-            const added = results
-                .filter((r): r is PromiseFulfilledResult<Keyword> => r.status === 'fulfilled')
-                .map(r => r.value)
-            const existingIds = new Set(withoutTemp.map(k => k.id))
-            const newItems = added.filter(k => !existingIds.has(k.id))
-            return [...withoutTemp, ...newItems]
-        })
-
-        const failed = results.filter(r => r.status === 'rejected')
-        if (failed.length > 0) {
-            setError(`Не удалось добавить ${failed.length} слов — возможно, они уже существуют`)
+        const toAdd = [...aiSuggestions]
+        for (const kw of toAdd) {
+            if (keywords.length >= MAX_KEYWORDS) break
+            try {
+                const added = await keywordsApi.add(kw)
+                setKeywords(prev => prev.find(k => k.id === added.id) ? prev : [...prev, added])
+                setAiSuggestions(prev => prev.filter(s => s !== kw))
+            } catch {
+                // пропускаем дубли
+            }
         }
-
         setAddingAi(false)
     }
 
@@ -379,89 +392,89 @@ export default function KeywordsPage() {
         setAiSuggestions([])
     }
 
-    const unused = SUGGESTIONS.filter(sg => !keywords.find(k => k.keyword.toLowerCase() === sg.toLowerCase()))
-    const bizContextChanged = bizContext !== bizContextSaved
+    const unused = SUGGESTIONS.filter(s => !keywords.some(k => k.keyword.toLowerCase() === s.toLowerCase()))
 
     return (
         <div className={s.page}>
-
-            {/* ─── Тумблер «реагировать на предложения услуг» ─── */}
-            <ServiceOffersToggle />
-
-            {/* ─── Персонализация AI ─── */}
-            <div style={{
-                background: 'var(--c-surface)',
-                border: '1.5px solid var(--c-border)',
-                borderRadius: 14,
-                padding: '18px 20px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 14,
-            }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ color: 'var(--c-accent)', display: 'flex' }}><SparkleIcon /></span>
-                        <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--c-ink)' }}>
-                            Персонализация AI
-                        </span>
-                    </div>
-                    {hasAiFeatures && (
-                        <span style={{
-                            fontSize: 11, fontWeight: 700, padding: '3px 8px',
-                            borderRadius: 6, background: 'var(--c-accent-soft)',
-                            color: 'var(--c-accent)', letterSpacing: '0.5px',
-                        }}>
-                            AI-функция
-                        </span>
-                    )}
+            <div className={s.pageHead}>
+                <div>
+                    <h1 className={s.title}>Ключевые слова</h1>
+                    <p className={s.sub}>Система ищет сообщения, содержащие эти слова или фразы</p>
                 </div>
+                {keywords.length > 0 && (
+                    <div className={s.counter}>
+                        <span className={s.counterNum}>{keywords.length}</span>
+                        <span className={s.counterLabel}>/ {MAX_KEYWORDS}</span>
+                    </div>
+                )}
+            </div>
 
-                {hasAiFeatures ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                        <p style={{ fontSize: 13, color: 'var(--c-ink-2)', margin: 0, lineHeight: 1.5 }}>
-                            Опишите ваш бизнес, услуги и целевую аудиторию. AI будет учитывать это при
-                            фильтрации лидов и автоматически сгенерирует ключевые слова для мониторинга.
+            {/* ─── AI-персонализация ─── */}
+            {hasAiFeatures ? (
+                <div style={{
+                    background: 'var(--c-surface)',
+                    border: '1.5px solid var(--c-border)',
+                    borderRadius: 14,
+                    padding: '20px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 14,
+                }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ color: 'var(--c-accent)' }}><SparkleIcon /></span>
+                            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--c-ink)' }}>
+                                AI-персонализация
+                            </span>
+                        </div>
+                        <p style={{ fontSize: 13, color: 'var(--c-ink-3)', margin: 0, lineHeight: 1.5 }}>
+                            Опишите ваш бизнес — AI подберёт ключевые слова и будет учитывать контекст при оценке лидов.
                         </p>
+                    </div>
+
+                    <div style={{ position: 'relative' }}>
                         <textarea
                             value={bizContext}
-                            onChange={e => setBizContext(e.target.value)}
-                            placeholder="Например: Я frontend-разработчик, специализируюсь на React и Next.js. Ищу клиентов, которым нужна разработка или доработка веб-приложений. Работаю с бюджетами от 50 000 ₽..."
-                            disabled={bizSaving}
-                            maxLength={2000}
-                            rows={5}
+                            onChange={e => setBizContext(e.target.value.slice(0, 2000))}
+                            placeholder="Пример: я SMM-специалист, помогаю малому бизнесу с ведением Instagram и ВКонтакте, делаю контент-планы, таргетированную рекламу..."
+                            rows={4}
                             style={{
                                 width: '100%',
-                                background: 'var(--c-surface)',
+                                padding: '12px 14px',
+                                background: 'var(--c-bg)',
                                 border: '1.5px solid var(--c-border)',
                                 borderRadius: 10,
-                                padding: '12px 14px',
-                                fontSize: 13,
                                 color: 'var(--c-ink)',
+                                fontSize: 13,
+                                outline: 'none',
+                                resize: 'vertical',
                                 fontFamily: 'var(--font-body)',
                                 lineHeight: 1.55,
-                                resize: 'vertical',
-                                outline: 'none',
                                 boxSizing: 'border-box',
                                 transition: 'border-color .15s',
                             }}
                             onFocus={e => (e.target.style.borderColor = 'var(--c-accent)')}
                             onBlur={e => (e.target.style.borderColor = 'var(--c-border)')}
                         />
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                             <button
                                 onClick={saveBizContext}
-                                disabled={bizSaving || !bizContextChanged}
+                                disabled={bizSaving || bizContext === bizContextSaved}
                                 style={{
-                                    padding: '9px 20px', borderRadius: 9,
-                                    background: bizContextChanged ? 'var(--c-accent)' : 'var(--c-surface)',
-                                    border: `1.5px solid ${bizContextChanged ? 'var(--c-accent)' : 'var(--c-border)'}`,
-                                    color: bizContextChanged ? '#fff' : 'var(--c-ink-3)',
+                                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                                    padding: '9px 18px', borderRadius: 9,
+                                    background: 'var(--c-accent)', color: '#fff',
+                                    border: 'none',
                                     fontSize: 13, fontWeight: 600,
-                                    cursor: bizContextChanged ? 'pointer' : 'default',
+                                    cursor: (bizSaving || bizContext === bizContextSaved) ? 'default' : 'pointer',
                                     fontFamily: 'var(--font-body)', transition: 'all .15s',
+                                    opacity: (bizSaving || bizContext === bizContextSaved) ? 0.6 : 1,
                                 }}
                             >
-                                {bizSaving ? 'Сохраняем...' : bizSuccess ? '✓ Сохранено' : 'Сохранить'}
+                                {bizSaving ? 'Сохраняем...' : bizSuccess ? 'Сохранено' : 'Сохранить'}
                             </button>
 
                             {bizContextSaved.trim().length > 20 && (
@@ -484,198 +497,200 @@ export default function KeywordsPage() {
                                     {aiGenerating ? 'Генерируем...' : 'Сгенерировать ключевые слова'}
                                 </button>
                             )}
-
-                            <span style={{ fontSize: 12, color: 'var(--c-ink-3)' }}>
-                                {bizContext.length} / 2000
-                            </span>
                         </div>
 
-                        {bizError && (
-                            <div className={s.error}>
-                                <span style={{ display: 'flex', flexShrink: 0 }}><AlertIcon /></span>
-                                <span>{bizError}</span>
-                            </div>
-                        )}
+                        <span style={{ fontSize: 12, color: 'var(--c-ink-3)' }}>
+                            {bizContext.length} / 2000
+                        </span>
+                    </div>
 
-                        {aiGenerating && (
-                            <div style={{
-                                padding: '16px 18px',
-                                background: 'var(--c-accent-soft)',
-                                borderRadius: 10,
-                                border: '1.5px solid rgba(92,57,223,.15)',
-                                display: 'flex', alignItems: 'center', gap: 10,
-                                fontSize: 13, color: 'var(--c-accent)',
-                            }}>
-                                <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>✦</span>
-                                AI анализирует ваш бизнес и подбирает ключевые слова...
-                            </div>
-                        )}
+                    {bizError && (
+                        <div className={s.error}>
+                            <span style={{ display: 'flex', flexShrink: 0 }}><AlertIcon /></span>
+                            <span>{bizError}</span>
+                        </div>
+                    )}
 
-                        {aiError && (
-                            <div className={s.error}>
-                                <span style={{ display: 'flex', flexShrink: 0 }}><AlertIcon /></span>
-                                <span>Ошибка генерации: {aiError}</span>
-                            </div>
-                        )}
+                    {aiGenerating && (
+                        <div style={{
+                            padding: '16px 18px',
+                            background: 'var(--c-accent-soft)',
+                            borderRadius: 10,
+                            border: '1.5px solid rgba(92,57,223,.15)',
+                            display: 'flex', alignItems: 'center', gap: 10,
+                            fontSize: 13, color: 'var(--c-accent)',
+                        }}>
+                            <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>✦</span>
+                            AI анализирует ваш бизнес и подбирает ключевые слова...
+                        </div>
+                    )}
 
-                        {aiSuggestions.length > 0 && (
-                            <div style={{
-                                padding: '16px 18px',
-                                background: 'var(--c-surface)',
-                                border: '1.5px solid var(--c-green)',
-                                borderRadius: 12,
-                                display: 'flex', flexDirection: 'column', gap: 12,
-                            }}>
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-                                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--c-ink)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                        <span style={{ color: 'var(--c-green)' }}><SparkleIcon /></span>
-                                        AI сгенерировал {aiSuggestions.length} ключевых слов
-                                    </span>
-                                    <div style={{ display: 'flex', gap: 8 }}>
+                    {aiError && (
+                        <div className={s.error}>
+                            <span style={{ display: 'flex', flexShrink: 0 }}><AlertIcon /></span>
+                            <span>Ошибка генерации: {aiError}</span>
+                        </div>
+                    )}
+
+                    {aiSuggestions.length > 0 && (
+                        <div style={{
+                            padding: '16px 18px',
+                            background: 'var(--c-surface)',
+                            border: '1.5px solid var(--c-green)',
+                            borderRadius: 12,
+                            display: 'flex', flexDirection: 'column', gap: 12,
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--c-ink)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ color: 'var(--c-green)' }}><SparkleIcon /></span>
+                                    AI сгенерировал {aiSuggestions.length} ключевых слов
+                                </span>
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                    <button
+                                        onClick={addAllAiSuggestions}
+                                        disabled={atLimit || addingAi}
+                                        title={atLimit ? `Лимит ${MAX_KEYWORDS} слов достигнут` : undefined}
+                                        style={{
+                                            padding: '6px 14px', borderRadius: 8,
+                                            background: (atLimit || addingAi) ? 'var(--c-border)' : 'var(--c-green)',
+                                            color: '#fff',
+                                            border: 'none', fontSize: 12, fontWeight: 600,
+                                            cursor: (atLimit || addingAi) ? 'default' : 'pointer',
+                                            fontFamily: 'var(--font-body)',
+                                            opacity: (atLimit || addingAi) ? 0.5 : 1,
+                                        }}
+                                    >
+                                        {addingAi ? 'Добавляем...' : 'Добавить все'}
+                                    </button>
+                                    <button
+                                        onClick={dismissAllAiSuggestions}
+                                        disabled={addingAi}
+                                        style={{
+                                            padding: '6px 14px', borderRadius: 8,
+                                            background: 'transparent',
+                                            color: 'var(--c-ink-3)',
+                                            border: '1.5px solid var(--c-border)',
+                                            fontSize: 12, fontWeight: 600,
+                                            cursor: 'pointer',
+                                            fontFamily: 'var(--font-body)',
+                                            transition: 'all .15s',
+                                        }}
+                                        onMouseEnter={e => {
+                                            (e.currentTarget as HTMLButtonElement).style.borderColor = '#ef4444'
+                                            ;(e.currentTarget as HTMLButtonElement).style.color = '#ef4444'
+                                        }}
+                                        onMouseLeave={e => {
+                                            (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--c-border)'
+                                            ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--c-ink-3)'
+                                        }}
+                                    >
+                                        Отклонить все
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                {aiSuggestions.map(kw => (
+                                    <div
+                                        key={kw}
+                                        style={{
+                                            display: 'inline-flex', alignItems: 'center',
+                                            borderRadius: 20,
+                                            background: 'var(--c-green-soft)',
+                                            border: '1.5px solid var(--c-green)',
+                                            overflow: 'hidden',
+                                        }}
+                                    >
                                         <button
-                                            onClick={addAllAiSuggestions}
-                                            disabled={atLimit || addingAi}
-                                            title={atLimit ? `Лимит ${MAX_KEYWORDS} слов достигнут` : undefined}
+                                            onClick={() => addAiSuggestion(kw)}
+                                            disabled={atLimit}
+                                            title={atLimit ? `Лимит ${MAX_KEYWORDS} слов достигнут` : 'Добавить'}
                                             style={{
-                                                padding: '6px 14px', borderRadius: 8,
-                                                background: (atLimit || addingAi) ? 'var(--c-border)' : 'var(--c-green)',
-                                                color: '#fff',
-                                                border: 'none', fontSize: 12, fontWeight: 600,
-                                                cursor: (atLimit || addingAi) ? 'default' : 'pointer',
-                                                fontFamily: 'var(--font-body)',
-                                                opacity: (atLimit || addingAi) ? 0.5 : 1,
-                                            }}
-                                        >
-                                            {addingAi ? 'Добавляем...' : 'Добавить все'}
-                                        </button>
-                                        <button
-                                            onClick={dismissAllAiSuggestions}
-                                            disabled={addingAi}
-                                            style={{
-                                                padding: '6px 14px', borderRadius: 8,
-                                                background: 'transparent',
-                                                color: 'var(--c-ink-3)',
-                                                border: '1.5px solid var(--c-border)',
+                                                display: 'inline-flex', alignItems: 'center', gap: 5,
+                                                padding: '6px 10px 6px 12px',
+                                                background: 'transparent', border: 'none',
+                                                color: 'var(--c-green)',
                                                 fontSize: 12, fontWeight: 600,
-                                                cursor: 'pointer',
+                                                cursor: atLimit ? 'default' : 'pointer',
                                                 fontFamily: 'var(--font-body)',
                                                 transition: 'all .15s',
+                                                opacity: atLimit ? 0.5 : 1,
                                             }}
                                             onMouseEnter={e => {
-                                                (e.currentTarget as HTMLButtonElement).style.borderColor = '#ef4444'
+                                                if (!atLimit) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(16,185,129,.15)'
+                                            }}
+                                            onMouseLeave={e => {
+                                                (e.currentTarget as HTMLButtonElement).style.background = 'transparent'
+                                            }}
+                                        >
+                                            + {kw}
+                                        </button>
+                                        <button
+                                            onClick={() => dismissAiSuggestion(kw)}
+                                            title="Отклонить"
+                                            style={{
+                                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                                width: 24, height: '100%',
+                                                padding: '0 6px 0 2px',
+                                                background: 'transparent', border: 'none',
+                                                color: 'var(--c-green)',
+                                                cursor: 'pointer',
+                                                transition: 'color .15s',
+                                                opacity: 0.6,
+                                            }}
+                                            onMouseEnter={e => {
+                                                (e.currentTarget as HTMLButtonElement).style.opacity = '1'
                                                 ;(e.currentTarget as HTMLButtonElement).style.color = '#ef4444'
                                             }}
                                             onMouseLeave={e => {
-                                                (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--c-border)'
-                                                ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--c-ink-3)'
+                                                (e.currentTarget as HTMLButtonElement).style.opacity = '0.6'
+                                                ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--c-green)'
                                             }}
                                         >
-                                            Отклонить все
+                                            <CloseIcon />
                                         </button>
                                     </div>
-                                </div>
-
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                    {aiSuggestions.map(kw => (
-                                        <div
-                                            key={kw}
-                                            style={{
-                                                display: 'inline-flex', alignItems: 'center',
-                                                borderRadius: 20,
-                                                background: 'var(--c-green-soft)',
-                                                border: '1.5px solid var(--c-green)',
-                                                overflow: 'hidden',
-                                            }}
-                                        >
-                                            <button
-                                                onClick={() => addAiSuggestion(kw)}
-                                                disabled={atLimit}
-                                                title={atLimit ? `Лимит ${MAX_KEYWORDS} слов достигнут` : 'Добавить'}
-                                                style={{
-                                                    display: 'inline-flex', alignItems: 'center', gap: 5,
-                                                    padding: '6px 10px 6px 12px',
-                                                    background: 'transparent', border: 'none',
-                                                    color: 'var(--c-green)',
-                                                    fontSize: 12, fontWeight: 600,
-                                                    cursor: atLimit ? 'default' : 'pointer',
-                                                    fontFamily: 'var(--font-body)',
-                                                    transition: 'all .15s',
-                                                    opacity: atLimit ? 0.5 : 1,
-                                                }}
-                                                onMouseEnter={e => {
-                                                    if (!atLimit) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(16,185,129,.15)'
-                                                }}
-                                                onMouseLeave={e => {
-                                                    (e.currentTarget as HTMLButtonElement).style.background = 'transparent'
-                                                }}
-                                            >
-                                                + {kw}
-                                            </button>
-                                            <button
-                                                onClick={() => dismissAiSuggestion(kw)}
-                                                title="Отклонить"
-                                                style={{
-                                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                                    width: 24, height: '100%',
-                                                    padding: '0 6px 0 2px',
-                                                    background: 'transparent', border: 'none',
-                                                    color: 'var(--c-green)',
-                                                    cursor: 'pointer',
-                                                    transition: 'color .15s',
-                                                    opacity: 0.6,
-                                                }}
-                                                onMouseEnter={e => {
-                                                    (e.currentTarget as HTMLButtonElement).style.opacity = '1'
-                                                    ;(e.currentTarget as HTMLButtonElement).style.color = '#ef4444'
-                                                }}
-                                                onMouseLeave={e => {
-                                                    (e.currentTarget as HTMLButtonElement).style.opacity = '0.6'
-                                                    ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--c-green)'
-                                                }}
-                                            >
-                                                <CloseIcon />
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-
-                                <p style={{ fontSize: 12, color: 'var(--c-ink-3)', margin: 0 }}>
-                                    Нажмите на фразу чтобы добавить, × чтобы отклонить одну, или используйте кнопки выше
-                                </p>
+                                ))}
                             </div>
-                        )}
-                    </div>
-                ) : (
-                    <div style={{
-                        background: 'var(--c-bg)',
-                        border: '1.5px dashed var(--c-border)',
-                        borderRadius: 12,
-                        padding: '20px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 10,
-                    }}>
-                        <p style={{ fontSize: 13, color: 'var(--c-ink-2)', margin: 0, lineHeight: 1.5 }}>
-                            Персонализация AI и генерация ключевых слов доступны на тарифе <b>МИНИМУМ</b>.
-                            Опишите ваш бизнес один раз, и система будет автоматически подбирать релевантные лиды.
-                        </p>
-                        <a
-                            href="/checkout"
-                            style={{
-                                display: 'inline-flex', alignItems: 'center', gap: 6,
-                                padding: '9px 18px', borderRadius: 9,
-                                background: 'var(--c-accent)', color: '#fff',
-                                fontSize: 13, fontWeight: 600, textDecoration: 'none',
-                                width: 'fit-content', transition: 'opacity .15s',
-                            }}
-                            onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.opacity = '0.85'}
-                            onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.opacity = '1'}
-                        >
-                            Подключить тариф →
-                        </a>
-                    </div>
-                )}
-            </div>
+
+                            <p style={{ fontSize: 12, color: 'var(--c-ink-3)', margin: 0 }}>
+                                Нажмите на фразу чтобы добавить, × чтобы отклонить одну, или используйте кнопки выше
+                            </p>
+                        </div>
+                    )}
+
+                    <ServiceOffersToggle />
+                </div>
+            ) : (
+                <div style={{
+                    background: 'var(--c-bg)',
+                    border: '1.5px dashed var(--c-border)',
+                    borderRadius: 12,
+                    padding: '20px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10,
+                }}>
+                    <p style={{ fontSize: 13, color: 'var(--c-ink-2)', margin: 0, lineHeight: 1.5 }}>
+                        Персонализация AI и генерация ключевых слов доступны на тарифе <b>МИНИМУМ</b>.
+                        Опишите ваш бизнес один раз, и система будет автоматически подбирать релевантные лиды.
+                    </p>
+                    <a
+                        href="/checkout"
+                        style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 6,
+                            padding: '9px 18px', borderRadius: 9,
+                            background: 'var(--c-accent)', color: '#fff',
+                            fontSize: 13, fontWeight: 600, textDecoration: 'none',
+                            width: 'fit-content', transition: 'opacity .15s',
+                        }}
+                        onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.opacity = '0.85'}
+                        onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.opacity = '1'}
+                    >
+                        Подключить тариф →
+                    </a>
+                </div>
+            )}
 
             {/* ─── Добавление ключевых слов ─── */}
             <div className={s.addBlock}>
