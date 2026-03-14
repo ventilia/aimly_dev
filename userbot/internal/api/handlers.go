@@ -172,9 +172,50 @@ func (h *Handlers) SubscribeChat(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// ─── Проверка: чат уже отслеживается какой-то сессией ───────────────────────
+	// Если да — повторно вступать не нужно. Просто сохраняем подписку в БД
+	// и синхронизируем ключевые слова. Это предотвращает дублирование чата
+	// сразу на нескольких юзерботах.
+	if existingSession := h.pool.GetSessionByChatLink(req.ChatLink); existingSession != nil {
+		h.log.Info("чат уже отслеживается существующей сессией — пропускаем join",
+			zap.Int64("userID", req.UserID),
+			zap.String("chatLink", req.ChatLink),
+			zap.Int64("sessionID", existingSession.Meta().ID),
+		)
+
+		// Получаем текущий chatTgID из watchedChats существующей сессии
+		// (если он уже известен)
+		existSessID := existingSession.Meta().ID
+
+		// Сохраняем подписку в БД с уже известной сессией
+		dbCtx, dbCancel := context.WithTimeout(ctx, 10*time.Second)
+		_, err := h.handler.Database().AddSubscription(dbCtx, &model.ChatSubscription{
+			UserID:    req.UserID,
+			ChatLink:  req.ChatLink,
+			SessionID: &existSessID,
+		})
+		dbCancel()
+		if err != nil {
+			h.log.Error("не удалось сохранить подписку (reuse session)", zap.Error(err))
+			jsonError(w, "ошибка БД: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if err := h.handler.UpdateKeywordsWithVariants(ctx, req.UserID, req.Keywords, req.AllVariants); err != nil {
+			h.log.Warn("не удалось обновить ключевые слова", zap.Error(err))
+		}
+
+		jsonOK(w, map[string]any{
+			"status": "ok",
+			"reused": true,
+		})
+		return
+	}
+
+	// ─── Нового join — выбираем наименее загруженную сессию ─────────────────────
 	session := h.pool.GetSessionForUser(req.UserID)
 	if session == nil {
-		jsonError(w, "нет доступной сессии", http.StatusServiceUnavailable)
+		jsonError(w, "нет доступной сессии (все юзерботы заполнены)", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -225,6 +266,7 @@ func (h *Handlers) SubscribeChat(w http.ResponseWriter, r *http.Request) {
 		zap.Int64("userID", req.UserID),
 		zap.String("chatLink", req.ChatLink),
 		zap.Int64("chatTgID", chatTgID),
+		zap.Int64("sessionID", sessID),
 	)
 
 	jsonOK(w, map[string]any{
@@ -303,11 +345,11 @@ func (h *Handlers) UpdateKeywords(w http.ResponseWriter, r *http.Request) {
 
 func jsonOK(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(v)
+	json.NewEncoder(w).Encode(v) //nolint:errcheck
 }
 
 func jsonError(w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+	json.NewEncoder(w).Encode(map[string]string{"error": msg}) //nolint:errcheck
 }

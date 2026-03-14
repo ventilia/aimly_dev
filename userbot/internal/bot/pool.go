@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 	"userbot/internal/db"
 	"userbot/internal/model"
@@ -11,6 +12,10 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
+
+// MAX_CHATS_PER_SESSION — максимум чатов на одну userbot-сессию.
+// Telegram допускает ~500 подписок; оставляем запас на системные чаты.
+const MAX_CHATS_PER_SESSION = 450
 
 type Pool struct {
 	sessions []*Session
@@ -25,6 +30,9 @@ type Pool struct {
 
 	pendingMu  sync.Mutex
 	pendingReg map[string]*PendingRegistration
+
+	// pending[sessionID] — количество «забронированных» слотов до AddChat.
+	// Защищено атомарно внутри каждой сессии (pendingSlots atomic.Int32).
 }
 
 type PendingRegistration struct {
@@ -57,7 +65,6 @@ func NewPool(
 }
 
 func (p *Pool) Start(ctx context.Context) error {
-
 	p.appCtx = ctx
 
 	sessions, err := p.database.GetActiveSessions(ctx)
@@ -129,7 +136,14 @@ func (p *Pool) recoverSubscriptions(ctx context.Context) {
 		default:
 		}
 
+		// Чат уже отслеживается какой-то сессией — пропускаем join
 		if sub.ChatTgID != 0 && p.GetSessionByChat(sub.ChatTgID) != nil {
+			skipped++
+			continue
+		}
+
+		// Чат уже отслеживается по ссылке — пропускаем join
+		if p.GetSessionByChatLink(sub.ChatLink) != nil {
 			skipped++
 			continue
 		}
@@ -180,6 +194,8 @@ func (p *Pool) recoverSubscriptions(ctx context.Context) {
 	)
 }
 
+// getOrAssignSession выбирает или переназначает сессию для конкретной подписки.
+// Используется при восстановлении. Не резервирует слот (join идёт сразу).
 func (p *Pool) getOrAssignSession(ctx context.Context, sub model.ChatSubscription) *Session {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -188,17 +204,22 @@ func (p *Pool) getOrAssignSession(ctx context.Context, sub model.ChatSubscriptio
 		return nil
 	}
 
+	// Сначала проверяем закреплённую сессию
 	if sub.SessionID != nil && *sub.SessionID != 0 {
 		for _, s := range p.sessions {
-			if s.Meta().ID == *sub.SessionID {
+			if s.Meta().ID == *sub.SessionID && s.EffectiveCount() < MAX_CHATS_PER_SESSION {
 				return s
 			}
 		}
 	}
 
+	// Выбираем наименее загруженную сессию с запасом
 	var best *Session
 	for _, s := range p.sessions {
-		if best == nil || s.ChatCount() < best.ChatCount() {
+		if s.EffectiveCount() >= MAX_CHATS_PER_SESSION {
+			continue
+		}
+		if best == nil || s.EffectiveCount() < best.EffectiveCount() {
 			best = s
 		}
 	}
@@ -330,6 +351,10 @@ func (p *Pool) Stats() []model.SessionStats {
 	return stats
 }
 
+// GetSessionForUser выбирает наименее загруженную сессию с учётом:
+// 1. Лимита MAX_CHATS_PER_SESSION
+// 2. Уже зарезервированных (но ещё не добавленных) слотов
+// Бронирует слот атомарно — если join провалится, слот освобождается в JoinChat.
 func (p *Pool) GetSessionForUser(_ int64) *Session {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -340,19 +365,52 @@ func (p *Pool) GetSessionForUser(_ int64) *Session {
 
 	var best *Session
 	for _, s := range p.sessions {
-		if best == nil || s.ChatCount() < best.ChatCount() {
+		if s.EffectiveCount() >= MAX_CHATS_PER_SESSION {
+			continue
+		}
+		if best == nil || s.EffectiveCount() < best.EffectiveCount() {
 			best = s
 		}
 	}
+
+	if best != nil {
+		// Резервируем слот до фактического AddChat / JoinChat
+		atomic.AddInt32(&best.pendingSlots, 1)
+		p.log.Debug("слот забронирован",
+			zap.Int64("sessionID", best.Meta().ID),
+			zap.Int("effectiveCount", best.EffectiveCount()),
+		)
+	} else {
+		p.log.Warn("все сессии заполнены или недоступны",
+			zap.Int("sessions", len(p.sessions)),
+			zap.Int("maxChats", MAX_CHATS_PER_SESSION),
+		)
+	}
+
 	return best
 }
 
+// GetSessionByChat возвращает сессию, которая уже слушает данный чат по tgID.
 func (p *Pool) GetSessionByChat(chatTgID int64) *Session {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
 	for _, s := range p.sessions {
 		if s.IsWatchingChat(chatTgID) {
+			return s
+		}
+	}
+	return nil
+}
+
+// GetSessionByChatLink возвращает сессию, которая уже слушает данный чат по ссылке.
+// Используется для предотвращения дублирующих join-ов одного чата.
+func (p *Pool) GetSessionByChatLink(chatLink string) *Session {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	for _, s := range p.sessions {
+		if s.IsWatchingChatLink(chatLink) {
 			return s
 		}
 	}

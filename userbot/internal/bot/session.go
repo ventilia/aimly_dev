@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"userbot/internal/db"
@@ -38,12 +39,17 @@ type Session struct {
 	api    *tg.Client
 
 	mu           sync.RWMutex
-	watchedChats map[int64]string
+	watchedChats map[int64]string // chatTgID -> chatLink
 
 	joinQueue chan string
 
 	regDone chan int64
 	regErr  chan error
+
+	// pendingSlots — количество слотов, забронированных pool.GetSessionForUser,
+	// но ещё не подтверждённых через AddChat. Используется для предотвращения
+	// перераспределения слотов при одновременных subscribe-запросах.
+	pendingSlots int32 // accessed via sync/atomic
 }
 
 func NewSession(
@@ -81,11 +87,47 @@ func (s *Session) Stats() model.SessionStats {
 	}
 }
 
+// ChatCount возвращает фактическое количество отслеживаемых чатов.
+func (s *Session) ChatCount() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.watchedChats)
+}
+
+// EffectiveCount возвращает ChatCount() + pendingSlots.
+// Используется pool для корректного балансирования при одновременных subscribe-запросах.
+func (s *Session) EffectiveCount() int {
+	s.mu.RLock()
+	actual := len(s.watchedChats)
+	s.mu.RUnlock()
+	return actual + int(atomic.LoadInt32(&s.pendingSlots))
+}
+
+// releaseSlot вызывается когда slot был зарезервирован, но chat не добавлен
+// (ошибка join, chatTgID=0 и т.д.).
+func (s *Session) releaseSlot() {
+	if atomic.LoadInt32(&s.pendingSlots) > 0 {
+		atomic.AddInt32(&s.pendingSlots, -1)
+	}
+}
+
 func (s *Session) IsWatchingChat(chatTgID int64) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	_, ok := s.watchedChats[chatTgID]
 	return ok
+}
+
+// IsWatchingChatLink проверяет, слушает ли сессия чат по его ссылке.
+func (s *Session) IsWatchingChatLink(chatLink string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, link := range s.watchedChats {
+		if link == chatLink {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Session) Start(ctx context.Context) error {
@@ -128,7 +170,7 @@ func (s *Session) Start(ctx context.Context) error {
 		if subErr == nil {
 			for _, sub := range subs {
 				if sub.ChatTgID != 0 {
-					s.AddChat(sub.ChatTgID, sub.ChatLink)
+					s.addChatInternal(sub.ChatTgID, sub.ChatLink)
 				}
 			}
 			s.log.Info("восстановлены подписки чатов из БД", zap.Int("count", len(subs)))
@@ -201,18 +243,31 @@ func (s *Session) WaitRegistration(ctx context.Context) (int64, error) {
 	}
 }
 
+// JoinChat вступает в чат и добавляет его в watchlist.
+// Если API ещё не готов — кладёт ссылку в очередь (pending-слот НЕ освобождается здесь,
+// он освободится в processJoinQueue).
 func (s *Session) JoinChat(ctx context.Context, chatLink string) (int64, string, error) {
 	if s.api == nil {
 		s.joinQueue <- chatLink
+		// Слот уже зарезервирован в GetSessionForUser; освободится в processJoinQueue.
 		return 0, chatLink, nil
 	}
+
 	chatTgID, title, err := s.joinChatNow(ctx, chatLink)
 	if err != nil {
+		// Join провалился — освобождаем слот
+		s.releaseSlot()
 		return 0, title, err
 	}
+
 	if chatTgID != 0 {
+		// AddChat внутри освобождает pending-слот и добавляет чат в watchedChats
 		s.AddChat(chatTgID, chatLink)
+	} else {
+		// chatTgID=0 — соединение ещё устанавливается; слот освобождаем
+		s.releaseSlot()
 	}
+
 	return chatTgID, title, nil
 }
 
@@ -403,7 +458,7 @@ func (s *Session) ProcessChatHistory(ctx context.Context, userID int64, chatTgID
 				AuthorName:     authorName,
 				AuthorUsername: authorUsername,
 				Date:           msgTime,
-				MessageLink:    buildMessageLink(chatLink, chatTgID, int64(msg.ID)), // ← исправлено
+				MessageLink:    buildMessageLink(chatLink, chatTgID, int64(msg.ID)),
 			})
 			offsetID = msg.ID
 		}
@@ -488,10 +543,13 @@ func (s *Session) processJoinQueue(ctx context.Context) {
 			if err != nil {
 				s.log.Error("ошибка вступления в чат из очереди",
 					zap.String("link", link), zap.Error(err))
+				// Освобождаем слот, зарезервированный в GetSessionForUser
+				s.releaseSlot()
 				continue
 			}
 
 			if chatID != 0 {
+				// AddChat освобождает pending-слот внутри
 				s.AddChat(chatID, link)
 
 				updateCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -513,6 +571,9 @@ func (s *Session) processJoinQueue(ctx context.Context) {
 					s.log.Warn("не удалось получить подписки для истории",
 						zap.String("link", link), zap.Error(subErr))
 				}
+			} else {
+				// chatID=0 — освобождаем слот
+				s.releaseSlot()
 			}
 
 			select {
@@ -524,12 +585,28 @@ func (s *Session) processJoinQueue(ctx context.Context) {
 	}
 }
 
+// AddChat добавляет чат в watchlist и освобождает ранее зарезервированный pending-слот.
 func (s *Session) AddChat(chatTgID int64, chatLink string) {
 	s.mu.Lock()
 	s.watchedChats[chatTgID] = chatLink
 	s.mu.Unlock()
+
+	// Освобождаем pending-слот, зарезервированный в GetSessionForUser
+	s.releaseSlot()
+
 	s.log.Info("чат добавлен в watchlist",
-		zap.Int64("chatTgID", chatTgID), zap.String("link", chatLink))
+		zap.Int64("chatTgID", chatTgID),
+		zap.String("link", chatLink),
+		zap.Int("totalChats", s.ChatCount()),
+	)
+}
+
+// addChatInternal добавляет чат без освобождения pending-слота.
+// Используется при старте сессии (restore), когда слот не был зарезервирован.
+func (s *Session) addChatInternal(chatTgID int64, chatLink string) {
+	s.mu.Lock()
+	s.watchedChats[chatTgID] = chatLink
+	s.mu.Unlock()
 }
 
 func (s *Session) RemoveChat(chatTgID int64) {
@@ -538,9 +615,8 @@ func (s *Session) RemoveChat(chatTgID int64) {
 	s.mu.Unlock()
 }
 
-func (s *Session) ID() int64      { return s.meta.ID }
-func (s *Session) Phone() string  { return s.meta.Phone }
-func (s *Session) ChatCount() int { s.mu.RLock(); defer s.mu.RUnlock(); return len(s.watchedChats) }
+func (s *Session) ID() int64     { return s.meta.ID }
+func (s *Session) Phone() string { return s.meta.Phone }
 
 func (s *Session) onNewMessage(ctx context.Context, e tg.Entities, u *tg.UpdateNewMessage) error {
 	msg, ok := u.Message.(*tg.Message)

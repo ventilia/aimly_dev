@@ -27,15 +27,28 @@ class BotChatsHandler(
 
         val chats = subscriptionRepository.findByUserIdAndIsActiveTrue(user.id)
 
+        // Проверяем доступ к AI-поиску
+        val plan      = user.subscriptionPlan
+        val status    = user.subscriptionStatus
+        val hasSearch = plan in setOf("MINIMUM", "START") || status == "TRIAL"
+
         if (chats.isEmpty()) {
+            val rows = mutableListOf<org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow>()
+            rows.add(row(btn("➕ Добавить чат вручную", "chat:add")))
+            if (hasSearch) {
+                rows.add(row(btn("🔍 AI-поиск чатов", "csearch:start")))
+            }
+            rows.add(row(btn("◀️ Главное меню", "menu:back")))
+
             sender.editText(
                 chatId, msgId,
                 "💬 *Чаты для мониторинга*\n\nУ вас ещё нет добавленных чатов.\n\n" +
-                        "Добавьте ссылку на Telegram-чат, и userbot начнёт его мониторить.",
-                keyboard(
-                    row(btn("➕ Добавить чат", "chat:add")),
-                    row(btn("◀️ Главное меню",  "menu:back")),
-                ),
+                        "Добавьте ссылку на Telegram-чат, и userbot начнёт его мониторить.\n\n" +
+                        if (hasSearch)
+                            "💡 Используйте *AI-поиск*, чтобы найти подходящие чаты автоматически."
+                        else
+                            "",
+                InlineKeyboardMarkup(rows),
                 parseMarkdown = true,
             )
             return
@@ -64,7 +77,7 @@ class BotChatsHandler(
             rows.add(row(btn("$icon 🗑 $label", "chat:del:${sub.id}")))
         }
 
-
+        // Навигация по страницам
         if (totalPages > 1) {
             val navBtns = mutableListOf<org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton>()
             if (safePage > 0)              navBtns.add(btn("◀️", "chat:page:${safePage - 1}"))
@@ -73,7 +86,14 @@ class BotChatsHandler(
             rows.add(org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow(navBtns))
         }
 
-        rows.add(row(btn("➕ Добавить чат", "chat:add"), btn("◀️ Главное меню", "menu:back")))
+        // Кнопки действий
+        val actionBtns = mutableListOf<org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton>()
+        actionBtns.add(btn("➕ Добавить", "chat:add"))
+        if (hasSearch) {
+            actionBtns.add(btn("🔍 AI-поиск", "csearch:start"))
+        }
+        rows.add(org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow(actionBtns))
+        rows.add(row(btn("◀️ Главное меню", "menu:back")))
 
         sender.editText(chatId, msgId, sb.toString(), InlineKeyboardMarkup(rows), parseMarkdown = true)
     }
@@ -134,7 +154,6 @@ class BotChatsHandler(
                 }
             }
     }
-
 
 
     fun showDeleteChatConfirm(chatId: Long, msgId: Int, tgUserId: Long, subId: Long) {
