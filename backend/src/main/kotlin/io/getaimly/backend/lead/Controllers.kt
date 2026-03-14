@@ -3,6 +3,7 @@ package io.getaimly.backend.lead
 import io.getaimly.backend.ai.AiService
 import io.getaimly.backend.user.User
 import io.getaimly.backend.user.UserRepository
+import jakarta.transaction.Transactional
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
@@ -191,26 +192,45 @@ class UserSettingsController(
     /**
      * GET /api/v1/settings/service-offers
      * Возвращает текущее значение флага.
+     *
+     * ИСПРАВЛЕНО: читаем свежее значение из БД, а не из SecurityContext-объекта,
+     * который может быть stale (загружен в JwtAuthFilter в другой сессии).
      */
     @GetMapping("/service-offers")
     fun getServiceOffers(
         @AuthenticationPrincipal user: User,
-    ): ResponseEntity<ServiceOffersToggleResponse> =
-        ResponseEntity.ok(ServiceOffersToggleResponse(user.respondToServiceOffers))
+    ): ResponseEntity<ServiceOffersToggleResponse> {
+        val fresh = userRepository.findById(user.id).orElse(user)
+        return ResponseEntity.ok(ServiceOffersToggleResponse(fresh.respondToServiceOffers))
+    }
 
     /**
      * POST /api/v1/settings/service-offers
      * Body: {"enabled": true}
      * Устанавливает флаг и сохраняет в БД.
+     *
+     * ИСПРАВЛЕНО:
+     * 1. Добавлена аннотация @Transactional — без неё merge detached-entity
+     *    может не зафиксироваться надёжно.
+     * 2. Явно перечитываем пользователя из БД (findById) перед изменением,
+     *    чтобы работать с managed-entity в текущей транзакции, а не с
+     *    detached-объектом из SecurityContext.
      */
     @PostMapping("/service-offers")
+    @Transactional
     fun setServiceOffers(
         @AuthenticationPrincipal user: User,
         @RequestBody body: Map<String, Boolean>,
     ): ResponseEntity<ServiceOffersToggleResponse> {
         val enabled = body["enabled"] ?: return ResponseEntity.badRequest().build()
-        user.respondToServiceOffers = enabled
-        userRepository.save(user)
-        return ResponseEntity.ok(ServiceOffersToggleResponse(user.respondToServiceOffers))
+
+        // Перечитываем из БД — managed entity в текущей транзакции
+        val managedUser = userRepository.findById(user.id)
+            .orElse(null) ?: return ResponseEntity.notFound().build()
+
+        managedUser.respondToServiceOffers = enabled
+        userRepository.save(managedUser)
+
+        return ResponseEntity.ok(ServiceOffersToggleResponse(managedUser.respondToServiceOffers))
     }
 }

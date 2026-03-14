@@ -58,9 +58,11 @@ class TgstatSearchController(
                 .body(mapOf("error" to "Поиск чатов доступен на тарифе MINIMUM и выше"))
         }
         if (tgstatApiKey.isBlank()) {
+            log.error("TGStat API ключ не настроен — установите переменную окружения TGSTAT_API_KEY")
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(mapOf("error" to "TGStat API ключ не настроен"))
         }
+
         val inputText = req.query.trim().ifBlank {
             user.businessContext?.trim() ?: ""
         }
@@ -68,8 +70,10 @@ class TgstatSearchController(
             return ResponseEntity.badRequest()
                 .body(mapOf("error" to "Введите запрос или заполните AI-профиль в настройках"))
         }
+
         val queries = aiService.generateTgstatQueries(inputText)
         log.info("TGStat поиск для user=${user.id}: запросы=$queries")
+
         val seen    = mutableSetOf<String>()
         val results = mutableListOf<TgstatChannelResult>()
 
@@ -80,16 +84,16 @@ class TgstatSearchController(
             addUnique(found, seen, results)
         }
 
-        // Проход 2: все типы (каналы + чаты), дополняем до 5
+        // Проход 2: все типы (peer_type=all), дополняем до 5
         if (results.size < 5) {
             for (query in queries) {
                 if (results.size >= 5) break
-                val found = searchTgstat(query, peerType = null, limit = 10)
+                val found = searchTgstat(query, peerType = "all", limit = 10)
                 addUnique(found, seen, results)
             }
         }
 
-        // Проход 3: fallback — первое слово каждого запроса
+        // Проход 3: fallback — только первое слово каждого запроса
         if (results.isEmpty()) {
             val fallback = queries
                 .map { it.trim().split("\\s+".toRegex()).first().lowercase() }
@@ -98,10 +102,11 @@ class TgstatSearchController(
             log.info("TGStat fallback для user=${user.id}: $fallback")
             for (query in fallback) {
                 if (results.size >= 5) break
-                val found = searchTgstat(query, peerType = null, limit = 20)
+                val found = searchTgstat(query, peerType = "all", limit = 20)
                 addUnique(found, seen, results)
             }
         }
+
         log.info("TGStat итог для user=${user.id}: найдено ${results.size} результатов")
         return ResponseEntity.ok(TgstatSearchResponse(results = results, queries = queries))
     }
@@ -121,30 +126,37 @@ class TgstatSearchController(
 
     /**
      * Один запрос к TGStat API.
-     * ИСПРАВЛЕНО: используется параметр 'key' вместо 'token'
-     * ИСПРАВЛЕНО: peer_type может быть null для поиска всех типов
+     *
+     * ИСПРАВЛЕНИЯ:
+     * 1. Параметр авторизации — 'token' (не 'key'). Именно так требует документация TGStat.
+     * 2. Параметр 'country' — обязателен по документации (используем 'ru' для России).
+     * 3. Параметр 'language' — корректный код 'ru' (не 'russian').
+     * 4. peer_type передаётся всегда (включая 'all' вместо null).
      */
     private fun searchTgstat(
         query: String,
-        peerType: String? = null,
+        peerType: String = "channel",
         limit: Int = 10,
     ): List<TgstatChannelResult> {
         if (query.length < 3) {
             log.warn("TGStat: пропускаем слишком короткий запрос '$query'")
             return emptyList()
         }
+
+        // ИСПРАВЛЕНО: используем 'token', добавлен 'country=ru', language='ru'
         val url = buildString {
             append("https://api.tgstat.ru/channels/search")
-            append("?key=$tgstatApiKey")  // ИСПРАВЛЕНО: было token=
+            append("?token=${java.net.URLEncoder.encode(tgstatApiKey, "UTF-8")}")
             append("&q=${java.net.URLEncoder.encode(query, "UTF-8")}")
-            if (peerType != null) {
-                append("&peer_type=$peerType")
-            }
-            append("&language=russian")
+            append("&peer_type=$peerType")
+            append("&country=ru")
+            append("&language=ru")
             append("&search_by_description=1")
             append("&limit=$limit")
         }
-        log.info("TGStat запрос: q='$query' peer_type=${peerType ?: "all"} limit=$limit")
+
+        log.info("TGStat запрос: q='$query' peer_type=$peerType limit=$limit")
+
         return try {
             val headers = HttpHeaders().apply {
                 accept = listOf(MediaType.APPLICATION_JSON)
@@ -155,37 +167,51 @@ class TgstatSearchController(
                 HttpEntity<Void>(headers),
                 TgstatApiResponse::class.java,
             )
+
             val body = response.body
             if (body == null) {
                 log.warn("TGStat: пустое тело ответа для запроса '$query'")
                 return emptyList()
             }
+
             if (body.status != "ok") {
-                log.error("TGStat: статус='${body.status}' для запроса '$query'. message=${body.message}")
+                log.error("TGStat: статус='${body.status}' для запроса '$query'. error=${body.error} message=${body.message}")
                 return emptyList()
             }
+
             val items = body.response?.items
-            log.info("TGStat '$query' peer=${peerType ?: "all"}: получено ${items?.size ?: 0} результатов (count=${body.response?.count})")
+            log.info("TGStat '$query' peer=$peerType: получено ${items?.size ?: 0} результатов (count=${body.response?.count})")
             if (items.isNullOrEmpty()) return emptyList()
 
-            // Принимаем все каналы/чаты — с username И без
-            items.map { item ->
-                val rawUsername = item.username?.takeIf { it.isNotBlank() }
+            items.mapNotNull { item ->
+                val rawUsername   = item.username?.takeIf { it.isNotBlank() }
                 val cleanUsername = rawUsername?.let {
                     if (it.startsWith("@")) it else "@$it"
                 }
-                val link = rawUsername?.let { "https://t.me/${it.trimStart('@')}" } ?: ""
+
+                // Ссылка строится из поля link (из API) или username
+                val apiLink = item.link?.takeIf { it.isNotBlank() }
+                val link = when {
+                    apiLink != null -> {
+                        if (apiLink.startsWith("https://")) apiLink
+                        else "https://$apiLink"
+                    }
+                    rawUsername != null -> "https://t.me/${rawUsername.trimStart('@')}"
+                    else -> return@mapNotNull null   // канал без ссылки — пропускаем
+                }
+
                 val tgstatLink = rawUsername?.let { "https://tgstat.ru/channel/${it.trimStart('@')}" }
+
                 TgstatChannelResult(
                     title             = item.title?.ifBlank { cleanUsername ?: "Без названия" } ?: cleanUsername ?: "Без названия",
                     username          = cleanUsername,
                     description       = item.about?.trim()?.take(200)?.ifBlank { null },
-                    participantsCount = item.subscribersCount ?: item.participantsCount ?: 0,
+                    participantsCount = item.participantsCount ?: 0,
                     link              = link,
                     tgstatLink        = tgstatLink,
-                    peerType          = item.peerType ?: (peerType ?: "channel"),
+                    peerType          = item.peerType ?: peerType,
                 )
-            }.filter { it.link.isNotBlank() }
+            }
         } catch (e: HttpClientErrorException) {
             log.error("TGStat HTTP ошибка ${e.statusCode} для '$query': ${e.responseBodyAsString}", e)
             emptyList()
@@ -200,7 +226,8 @@ class TgstatSearchController(
 @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
 data class TgstatApiResponse(
     val status: String = "",
-    val message: String? = null,  // ДОБАВЛЕНО: для логирования ошибок
+    val error: String? = null,       // поле ошибки из TGStat
+    val message: String? = null,     // дополнительное сообщение
     val response: TgstatResponseBody? = null,
 )
 
@@ -216,8 +243,8 @@ data class TgstatChannelItem(
     val title: String? = null,
     val username: String? = null,
     val about: String? = null,
-    @com.fasterxml.jackson.annotation.JsonProperty("subscribers_count")
-    val subscribersCount: Int? = null,
+    // Поле link присутствует в ответе TGStat (например "t.me/channel_name")
+    val link: String? = null,
     @com.fasterxml.jackson.annotation.JsonProperty("participants_count")
     val participantsCount: Int? = null,
     @com.fasterxml.jackson.annotation.JsonProperty("peer_type")
