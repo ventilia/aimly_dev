@@ -180,6 +180,7 @@ class BusinessContextController(private val service: LeadService) {
 
 // ─── Тумблер «реагировать на предложения услуг» ──────────────────────────────
 
+// ─── Тумблер «реагировать на предложения услуг» ──────────────────────────────
 data class ServiceOffersToggleResponse(val respondToServiceOffers: Boolean)
 
 @RestController
@@ -187,7 +188,6 @@ data class ServiceOffersToggleResponse(val respondToServiceOffers: Boolean)
 class UserSettingsController(
     private val userRepository: UserRepository,
 ) {
-
     /**
      * GET /api/v1/settings/service-offers
      * Возвращает текущее значение флага.
