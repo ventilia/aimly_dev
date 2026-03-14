@@ -12,6 +12,7 @@ import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.*
+import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.RestTemplate
 
 // ─── DTOs ─────────────────────────────────────────────────────────────────────
@@ -84,18 +85,16 @@ class TgstatSearchController(
         // Проход 1: только чаты/группы (peer_type=chat)
         for (query in queries) {
             if (results.size >= 5) break
-            runCatching {
-                addUnique(searchTgstat(query, peerType = "chat", limit = 10), seen, results)
-            }.onFailure { log.warn("TGStat chat-pass '$query': ${it.message}") }
+            val found = searchTgstat(query, peerType = "chat", limit = 10)
+            addUnique(found, seen, results)
         }
 
-        // Проход 2: все (каналы + чаты), дополняем до 5
+        // Проход 2: все типы (каналы + чаты), дополняем до 5
         if (results.size < 5) {
             for (query in queries) {
                 if (results.size >= 5) break
-                runCatching {
-                    addUnique(searchTgstat(query, peerType = "all", limit = 10), seen, results)
-                }.onFailure { log.warn("TGStat all-pass '$query': ${it.message}") }
+                val found = searchTgstat(query, peerType = "all", limit = 10)
+                addUnique(found, seen, results)
             }
         }
 
@@ -108,9 +107,8 @@ class TgstatSearchController(
             log.info("TGStat fallback для user=${user.id}: $fallback")
             for (query in fallback) {
                 if (results.size >= 5) break
-                runCatching {
-                    addUnique(searchTgstat(query, peerType = "all", limit = 20), seen, results)
-                }.onFailure { log.warn("TGStat fallback '$query': ${it.message}") }
+                val found = searchTgstat(query, peerType = "all", limit = 20)
+                addUnique(found, seen, results)
             }
         }
 
@@ -131,12 +129,19 @@ class TgstatSearchController(
         }
     }
 
+    /**
+     * Один запрос к TGStat API.
+     * Ошибки не глотаются — логируются с полным контекстом и пробрасываются наверх.
+     */
     private fun searchTgstat(
         query: String,
         peerType: String = "all",
         limit: Int = 10,
     ): List<TgstatChannelResult> {
-        if (query.length < 3) return emptyList()
+        if (query.length < 3) {
+            log.warn("TGStat: пропускаем слишком короткий запрос '$query'")
+            return emptyList()
+        }
 
         val url = buildString {
             append("https://api.tgstat.ru/channels/search")
@@ -149,36 +154,57 @@ class TgstatSearchController(
             append("&extended=1")
         }
 
-        log.debug("TGStat запрос: q='$query' peer_type=$peerType limit=$limit")
+        log.info("TGStat запрос: q='$query' peer_type=$peerType limit=$limit")
 
-        val response = restTemplate.exchange(
-            url,
-            HttpMethod.GET,
-            HttpEntity<Void>(HttpHeaders().apply { accept = listOf(MediaType.APPLICATION_JSON) }),
-            TgstatApiResponse::class.java,
-        )
-
-        val body = response.body ?: return emptyList()
-        if (body.status != "ok") {
-            log.warn("TGStat статус '${body.status}' для запроса '$query'")
-            return emptyList()
-        }
-
-        val items = body.response?.items ?: return emptyList()
-        log.debug("TGStat '$query' peer=$peerType: ${items.size} результатов")
-
-        return items.mapNotNull { item ->
-            val rawUsername = item.username?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            val cleanUsername = if (rawUsername.startsWith("@")) rawUsername else "@$rawUsername"
-            TgstatChannelResult(
-                title             = item.title?.ifBlank { cleanUsername } ?: cleanUsername,
-                username          = cleanUsername,
-                description       = item.about?.trim()?.take(200)?.ifBlank { null },
-                participantsCount = item.participantsCount ?: 0,
-                link              = "https://t.me/${rawUsername.trimStart('@')}",
-                tgstatLink        = "https://tgstat.ru/channel/${rawUsername.trimStart('@')}",
-                peerType          = item.peerType ?: peerType,
+        return try {
+            val response = restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                HttpEntity<Void>(HttpHeaders().apply { accept = listOf(MediaType.APPLICATION_JSON) }),
+                TgstatApiResponse::class.java,
             )
+
+            val body = response.body
+            if (body == null) {
+                log.warn("TGStat: пустое тело ответа для запроса '$query'")
+                return emptyList()
+            }
+
+            if (body.status != "ok") {
+                log.warn("TGStat: статус='${body.status}' для запроса '$query'")
+                return emptyList()
+            }
+
+            val items = body.response?.items
+            log.info("TGStat '$query' peer=$peerType: получено ${items?.size ?: 0} результатов (count=${body.response?.count})")
+
+            if (items.isNullOrEmpty()) return emptyList()
+
+            // Принимаем все каналы/чаты — с username И без
+            items.map { item ->
+                val rawUsername = item.username?.takeIf { it.isNotBlank() }
+                val cleanUsername = rawUsername?.let {
+                    if (it.startsWith("@")) it else "@$it"
+                }
+                val link = rawUsername?.let { "https://t.me/${it.trimStart('@')}" } ?: ""
+                val tgstatLink = rawUsername?.let { "https://tgstat.ru/channel/${it.trimStart('@')}" }
+
+                TgstatChannelResult(
+                    title             = item.title?.ifBlank { cleanUsername ?: "Без названия" } ?: cleanUsername ?: "Без названия",
+                    username          = cleanUsername,
+                    description       = item.about?.trim()?.take(200)?.ifBlank { null },
+                    participantsCount = item.participantsCount ?: 0,
+                    link              = link,
+                    tgstatLink        = tgstatLink,
+                    peerType          = item.peerType ?: peerType,
+                )
+            }.filter { it.link.isNotBlank() } // оставляем только те, к которым можно получить ссылку
+        } catch (e: HttpClientErrorException) {
+            log.error("TGStat HTTP ошибка ${e.statusCode} для '$query': ${e.responseBodyAsString}")
+            emptyList()
+        } catch (e: Exception) {
+            log.error("TGStat исключение для '$query': ${e.javaClass.simpleName}: ${e.message}")
+            emptyList()
         }
     }
 }

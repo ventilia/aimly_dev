@@ -1,5 +1,7 @@
 package io.getaimly.backend.lead
 
+import com.fasterxml.jackson.annotation.JsonSetter
+import com.fasterxml.jackson.annotation.Nulls
 
 data class IncomingMessageRequest(
 
@@ -13,6 +15,9 @@ data class IncomingMessageRequest(
     val messageText: String,
     val messageLink: String,
     val matchedKeyword: String,
+
+    @JsonSetter(nulls = Nulls.SKIP)
     val contextMessages: List<String> = emptyList(),
+
     val isHistorical: Boolean = false,
 )
