@@ -24,6 +24,7 @@ class AuthController(
     private val COOKIE_NAME    = "aimly_auth"
     private val COOKIE_MAX_AGE = 60 * 60 * 24 * 30  // 30 дней
 
+
     @PostMapping("/telegram/unlink")
     fun unlinkTelegram(
         @AuthenticationPrincipal user: User,
@@ -47,10 +48,17 @@ class AuthController(
 
     @PostMapping("/verify-email")
     fun verifyEmail(
-        @AuthenticationPrincipal user: User,
+        // ИСПРАВЛЕНИЕ: user может быть null, если в куке протухший/несуществующий токен.
+        // Spring передаёт null вместо выброса исключения — обрабатываем явно.
+        @AuthenticationPrincipal user: User?,
         @Valid @RequestBody request: VerifyEmailRequest,
         response: HttpServletResponse,
     ): ResponseEntity<AuthResponse> {
+        if (user == null) {
+            // Очищаем невалидную куку, чтобы браузер не продолжал её слать
+            clearAuthCookie(response)
+            return ResponseEntity.status(401).build()
+        }
         val auth = authService.verifyEmail(user.id, request)
         setAuthCookie(response, auth.token)
         return ResponseEntity.ok(auth.copy(token = ""))
@@ -59,9 +67,16 @@ class AuthController(
 
     @PostMapping("/resend-code")
     fun resendCode(
-        @AuthenticationPrincipal user: User,
-    ): ResponseEntity<MessageResponse> =
-        ResponseEntity.ok(authService.resendVerificationCode(user.id))
+        // ИСПРАВЛЕНИЕ: аналогично verifyEmail — user может быть null
+        @AuthenticationPrincipal user: User?,
+        response: HttpServletResponse,
+    ): ResponseEntity<MessageResponse> {
+        if (user == null) {
+            clearAuthCookie(response)
+            return ResponseEntity.status(401).build()
+        }
+        return ResponseEntity.ok(authService.resendVerificationCode(user.id))
+    }
 
 
     @PostMapping("/login")
@@ -159,6 +174,7 @@ class AuthController(
             append("; SameSite=None")
             if (cookieDomain.isNotBlank()) append("; Domain=$cookieDomain")
         }
+
 
     private fun getClientIp(request: HttpServletRequest): String =
         request.getHeader("X-Forwarded-For")

@@ -10,6 +10,9 @@ class BotSender(private val client: TelegramClient) {
 
     private val log = LoggerFactory.getLogger(BotSender::class.java)
 
+    /**
+     * Отправляет новое сообщение. Никогда не бросает исключений наружу.
+     */
     fun sendText(
         chatId: Long,
         text: String,
@@ -25,6 +28,29 @@ class BotSender(private val client: TelegramClient) {
             .onFailure { log.warn("sendText failed chatId=$chatId: ${it.message}") }
     }
 
+    /**
+     * Отправляет новое сообщение и возвращает его messageId.
+     * Возвращает null если отправить не удалось.
+     * Используется когда нужно сохранить ID для последующего editText.
+     */
+    fun sendTextAndGetId(
+        chatId: Long,
+        text: String,
+        markup: InlineKeyboardMarkup? = null,
+    ): Int? {
+        val b = SendMessage.builder()
+            .chatId(chatId.toString())
+            .text(text)
+        markup?.let { b.replyMarkup(it) }
+
+        return runCatching { client.execute(b.build())?.messageId }
+            .onFailure { log.warn("sendTextAndGetId failed chatId=$chatId: ${it.message}") }
+            .getOrNull()
+    }
+
+    /**
+     * Редактирует существующее сообщение. Никогда не бросает исключений наружу.
+     */
     fun editText(
         chatId: Long,
         msgId: Int,
