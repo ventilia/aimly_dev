@@ -402,6 +402,10 @@ export default function ChatsPage() {
             const resp = await searchChatsApi(query)
             setSearchResults(resp.results)
             setSearchQueries(resp.queries)
+            // Автоматически раскрываем блок при получении результатов
+            if (resp.results.length > 0) {
+                setSearchOpen(true)
+            }
         } catch (e: unknown) {
             setSearchError(e instanceof Error ? e.message : 'Ошибка поиска')
         } finally {

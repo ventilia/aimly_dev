@@ -259,67 +259,83 @@ $contextList
     }
 
     /**
-     * Генерирует поисковые запросы для TGStat.
+     * Генерирует 5 поисковых запросов для TGStat.
      *
-     * Ключевое требование: запросы должны соответствовать реальным НАЗВАНИЯМ
-     * чатов в Telegram, а не описывать то, что ищет пользователь.
+     * Используем EXPAND_MODEL (70b) — llama-3.1-8b-instant (8b) путается
+     * и генерирует "design" вместо "developers" для разработки.
      *
-     * Порядок запросов:
-     * 1. [короткий термин] вакансии  — чаты с вакансиями по теме (рус)
-     * 2. [short term] jobs            — то же на английском
-     * 3. [короткий термин]            — тематические чаты (рус)
-     * 4. [short term]                 — тематические чаты (eng)
-     * 5. [смежный термин]             — одна смежная тема
-     *
-     * ВАЖНО: поиск идёт по названию чата. "дизайн" найдёт "Дизайн чат",
-     * но НЕ найдёт "ux ui дизайнеры" если мы ищем только "дизайн".
-     * Поэтому запрос 3 и 4 — ОДНО самое узнаваемое слово.
+     * Порядок запросов (строго):
+     * 1. [рус термин] вакансии
+     * 2. [eng термин] jobs
+     * 3. [рус термин] — одно слово
+     * 4. [eng термин] — одно слово, ПЕРЕВОД запроса 3
+     * 5. [смежный термин]
      */
     fun generateTgstatQueries(input: String): List<String> {
         if (apiKey.isBlank()) {
             log.warn("generateTgstatQueries: groq api key не задан")
-            return listOf(input.trim().split(" ").first().take(20).lowercase())
+            return fallbackQueries(input)
         }
 
         val trimmed = input.trim()
 
+        // Для коротких запросов (1-2 слова) — можем сгенерировать сами без AI
+        // через жёсткое правило. Оставляем AI только для сложных описаний.
         val prompt = """
-Тебе нужно придумать 5 поисковых запросов для поиска Telegram-чатов по базе TGStat.
-Поиск идёт по НАЗВАНИЯМ и USERNAME чатов — не по описаниям.
+You are generating 5 search queries for TGStat — a Telegram channel/chat search engine.
+Queries are matched against channel/chat TITLES and USERNAMES.
 
-Пользователь ищет чаты по теме: "$trimmed"
+User topic: "$trimmed"
 
-Правила:
-1. Запросы — это слова, которые реально встречаются в НАЗВАНИЯХ Telegram-чатов.
-   Примеры реальных названий: "Дизайнеры РФ", "SMM Chat", "Разработчики вакансии", "IT Jobs RU", "Frontend чат"
-2. Каждый запрос: 1-2 слова, не более.
-3. Запрос 1 (ru+вакансии): самое короткое узнаваемое слово темы + "вакансии". Пример: "дизайн вакансии", "smm вакансии", "разработчики вакансии"
-4. Запрос 2 (en+jobs): то же слово на английском + "jobs". Пример: "design jobs", "smm jobs", "developer jobs"
-5. Запрос 3 (ru одно слово): ТОЛЬКО одно самое узнаваемое слово темы. Пример: "дизайн", "smm", "разработчики", "маркетинг"
-6. Запрос 4 (en одно слово): то же одно слово по-английски. Пример: "design", "smm", "developers", "marketing"
-7. Запрос 5 (смежная тема): одно слово смежной темы. Пример для дизайна: "фриланс", для разработки: "программисты"
+Generate EXACTLY 5 queries in this strict order:
 
-КРИТИЧНО:
-- Запрос 3 и 4 — строго ОДНО слово, без уточнений и дополнений
-- Для "разработка"/"программирование" используй "разработчики" (не "разработка") — это реальное слово в названиях чатов
-- Для "дизайн": запрос 3 = "дизайн" (не "ui ux дизайн"), запрос 4 = "design"
-- Для "smm/маркетинг": запрос 3 = "smm", запрос 4 = "smm" или "marketing"
-- НЕ используй: "фриланс биржа" (слишком широко), "it" одиноко (слишком широко)
-- Все запросы в нижнем регистре
+Query 1: [main Russian term] + "вакансии"
+  Examples: "дизайн вакансии", "smm вакансии", "разработчики вакансии", "маркетинг вакансии"
 
-Верни ТОЛЬКО JSON без пояснений:
-{"queries": ["запрос 1", "запрос 2", "запрос 3", "запрос 4", "запрос 5"]}
+Query 2: [main English term] + "jobs"
+  Examples: "design jobs", "smm jobs", "developers jobs", "marketing jobs"
+  RULE: English term must be the DIRECT TRANSLATION of the Russian term in query 1.
+  "дизайн" → "design jobs"
+  "smm" → "smm jobs"
+  "разработчики" → "developers jobs"
+  "маркетинг" → "marketing jobs"
+  "копирайтер" → "copywriter jobs"
+  "таргет" → "targeting jobs" or "ads jobs"
+
+Query 3: ONE single Russian word — the most recognizable topic word.
+  Examples: "дизайн", "smm", "разработчики", "маркетинг", "копирайтеры"
+  NEVER multiple words. NEVER "ux ui дизайн", NEVER "веб разработка". ONE word only.
+
+Query 4: ONE single English word — DIRECT TRANSLATION of query 3.
+  "дизайн" → "design"
+  "smm" → "smm"
+  "разработчики" → "developers"
+  "программисты" → "developers"
+  "маркетинг" → "marketing"
+  "копирайтеры" → "copywriters"
+  "таргетолог" → "targeting"
+  "верстальщик" → "frontend"
+  NEVER use "design" if the topic is programming/development/marketing.
+
+Query 5: ONE related topic word (not the main one).
+  For "дизайн" → "фриланс"
+  For "разработчики"/"программисты" → "программисты" (or "it" or "фриланс")
+  For "smm"/"маркетинг" → "реклама"
+
+ALL queries must be lowercase.
+Return ONLY JSON, no explanations:
+{"queries": ["query1", "query2", "query3", "query4", "query5"]}
 """.trimIndent()
 
         return try {
             val body = mapOf(
-                "model" to MAIN_MODEL,
+                "model" to EXPAND_MODEL,
                 "messages" to listOf(
-                    mapOf("role" to "system", "content" to "Отвечай только JSON. Никаких пояснений, никаких markdown-блоков."),
+                    mapOf("role" to "system", "content" to "Return only JSON. No explanations. No markdown."),
                     mapOf("role" to "user", "content" to prompt),
                 ),
                 "max_tokens" to 200,
-                "temperature" to 0.1,
+                "temperature" to 0.0,
             )
 
             val response = restTemplate.postForObject(
@@ -346,7 +362,7 @@ $contextList
                 .distinct()
                 .toList()
 
-            log.info("generateTgstatQueries: сгенерировано ${queries.size} запросов для \"${trimmed.take(40)}\": $queries")
+            log.info("generateTgstatQueries: запросы для \"${trimmed.take(40)}\": $queries")
             queries.ifEmpty { fallbackQueries(trimmed) }
         } catch (e: Exception) {
             log.warn("generateTgstatQueries ошибка: ${e.message}")
@@ -354,7 +370,6 @@ $contextList
         }
     }
 
-    // Fallback — берём первое слово запроса как базовый термин
     private fun fallbackQueries(input: String): List<String> {
         val term = input.trim().split(" ").first().take(20).lowercase()
         return listOf("$term вакансии", "$term jobs", term)
