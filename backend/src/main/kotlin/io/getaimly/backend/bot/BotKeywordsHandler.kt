@@ -11,9 +11,9 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
-private const val KW_PAGE_SIZE       = 5
-private const val AI_SUGGEST_SHOW    = 5
-private const val MAX_KEYWORDS       = 50
+private const val KW_PAGE_SIZE    = 5
+private const val AI_SUGGEST_SHOW = 5
+private const val MAX_KEYWORDS    = 50
 
 
 class BotKeywordsHandler(
@@ -35,9 +35,15 @@ class BotKeywordsHandler(
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
         if (user == null) { sender.editText(chatId, msgId, "Нужно войти. /start"); return }
 
-        val keywords   = keywordRepository.findByUserIdAndIsActiveTrue(user.id)
-        val plan       = user.subscriptionPlan
-        val hasAi      = plan == "MINIMUM" || plan == "START" || user.subscriptionStatus == "TRIAL"
+        val keywords = keywordRepository.findByUserIdAndIsActiveTrue(user.id)
+        val plan     = user.subscriptionPlan
+        val hasAi    = plan == "MINIMUM" || plan == "START" || user.subscriptionStatus == "TRIAL"
+
+        // Метка тумблера — одинакова для обоих экранов (пустой и с данными)
+        val toggleLabel = if (user.respondToServiceOffers)
+            "🟢 Предложения услуг: ВКЛ"
+        else
+            "⚫️ Предложения услуг: ВЫКЛ"
 
         if (keywords.isEmpty()) {
             val rows = mutableListOf<InlineKeyboardRow>()
@@ -45,11 +51,6 @@ class BotKeywordsHandler(
             if (hasAi && !user.businessContext.isNullOrBlank()) {
                 rows.add(row(btn("✨ Сгенерировать AI-слова", "kw:ai:generate")))
             }
-            // Тумблер «реагировать на предложения услуг»
-            val toggleLabel = if (user.respondToServiceOffers)
-                "🟢 Реагировать на предложения услуг: ВКЛ"
-            else
-                "⚫️ Реагировать на предложения услуг: ВЫКЛ"
             rows.add(row(btn(toggleLabel, "kw:toggle_service_offers")))
             rows.add(row(btn("◀️ Главное меню", "menu:back")))
             sender.editText(
@@ -100,11 +101,6 @@ class BotKeywordsHandler(
         }
         rows.add(InlineKeyboardRow(actionBtns))
 
-        // Тумблер «реагировать на предложения услуг»
-        val toggleLabel = if (user.respondToServiceOffers)
-            "🟢 Предложения услуг: ВКЛ"
-        else
-            "⚫️ Предложения услуг: ВЫКЛ"
         rows.add(row(btn(toggleLabel, "kw:toggle_service_offers")))
         rows.add(row(btn("◀️ Главное меню", "menu:back")))
 
@@ -115,7 +111,23 @@ class BotKeywordsHandler(
     /**
      * Переключает флаг respondToServiceOffers и обновляет экран ключевых слов.
      */
+    fun toggleServiceOffers(chatId: Long, msgId: Int, tgUserId: Long) {
+        val user = userRepository.findByTelegramId(tgUserId).orElse(null)
+            ?: run { sender.editText(chatId, msgId, "Нужно войти. /start"); return }
 
+        // Перечитываем из БД для получения актуального значения флага
+        val freshUser = userRepository.findById(user.id).orElse(null) ?: return
+        freshUser.respondToServiceOffers = !freshUser.respondToServiceOffers
+        userRepository.save(freshUser)
+
+        log.info(
+            "toggleServiceOffers: userId=${freshUser.id} " +
+                    "respondToServiceOffers=${freshUser.respondToServiceOffers}"
+        )
+
+        // Обновляем страницу: тумблер отражает новое состояние
+        showKeywords(chatId, msgId, tgUserId)
+    }
 
 
     fun startAddKeyword(chatId: Long, msgId: Int, tgUserId: Long) {
@@ -164,8 +176,8 @@ class BotKeywordsHandler(
                         chatId, savedMsgId,
                         "✅ *Ключевое слово добавлено!*\n\n🔍 «${kw.keyword.md()}»$variantsLine",
                         keyboard(
-                            row(btn("➕ Добавить ещё",          "kw:add")),
-                            row(btn("◀️ К ключевым словам",     "menu:keywords")),
+                            row(btn("➕ Добавить ещё",      "kw:add")),
+                            row(btn("◀️ К ключевым словам", "menu:keywords")),
                         ),
                         parseMarkdown = true,
                     )
@@ -222,8 +234,8 @@ class BotKeywordsHandler(
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
         if (user == null) { sender.editText(chatId, msgId, "Нужно войти. /start"); return }
 
-        val plan    = user.subscriptionPlan
-        val hasAi   = plan == "MINIMUM" || plan == "START" || user.subscriptionStatus == "TRIAL"
+        val plan  = user.subscriptionPlan
+        val hasAi = plan == "MINIMUM" || plan == "START" || user.subscriptionStatus == "TRIAL"
 
         if (!hasAi) {
             sender.editText(
@@ -281,10 +293,10 @@ class BotKeywordsHandler(
                 }
 
                 sessions[chatId] = UserSession(
-                    step                  = BotStep.WAITING_AI_KEYWORD_CONFIRM,
-                    msgId                 = msgId,
-                    aiKeywordSuggestions  = keywords,
-                    aiKeywordPage         = 0,
+                    step                 = BotStep.WAITING_AI_KEYWORD_CONFIRM,
+                    msgId                = msgId,
+                    aiKeywordSuggestions = keywords,
+                    aiKeywordPage        = 0,
                 )
                 showAiSuggestions(chatId, msgId, tgUserId)
 
@@ -304,36 +316,21 @@ class BotKeywordsHandler(
     }
 
 
-    fun showAiSuggestions(chatId: Long, msgId: Int, tgUserId: Long) {
-        val session = sessions[chatId]
-        if (session == null || session.step != BotStep.WAITING_AI_KEYWORD_CONFIRM) {
-            sender.editText(chatId, msgId, "Сессия истекла. Нажмите /start.")
-            return
-        }
-
+    private fun showAiSuggestions(chatId: Long, msgId: Int, tgUserId: Long) {
+        val session     = sessions[chatId] ?: return
         val suggestions = session.aiKeywordSuggestions
-        if (suggestions.isEmpty()) {
-            sessions.remove(chatId)
-            sender.editText(
-                chatId, msgId,
-                "✅ Все AI-предложения обработаны!",
-                keyboard(row(btn("◀️ К ключевым словам", "menu:keywords"))),
-            )
-            return
-        }
+        val user        = userRepository.findByTelegramId(tgUserId).orElse(null) ?: return
 
-        val user = userRepository.findByTelegramId(tgUserId).orElse(null)
-        val currentCount = user?.let { keywordRepository.findByUserIdAndIsActiveTrue(it.id).size } ?: 0
-        val available    = (MAX_KEYWORDS - currentCount).coerceAtLeast(0)
-
-        val totalPages  = (suggestions.size + AI_SUGGEST_SHOW - 1) / AI_SUGGEST_SHOW
-        val safePage    = session.aiKeywordPage.coerceIn(0, (totalPages - 1).coerceAtLeast(0))
-        val from        = safePage * AI_SUGGEST_SHOW
-        val to          = (from + AI_SUGGEST_SHOW).coerceAtMost(suggestions.size)
+        val safePage   = session.aiKeywordPage
+        val totalPages = (suggestions.size + AI_SUGGEST_SHOW - 1) / AI_SUGGEST_SHOW
+        val from       = safePage * AI_SUGGEST_SHOW
+        val to         = (from + AI_SUGGEST_SHOW).coerceAtMost(suggestions.size)
         val pageSuggestions = suggestions.subList(from, to)
 
-        val sb = StringBuilder()
-        sb.append("✨ *AI сгенерировал ${suggestions.size} ключевых слов*")
+        val currentCount = keywordRepository.findByUserIdAndIsActiveTrue(user.id).size
+        val available    = (MAX_KEYWORDS - currentCount).coerceAtLeast(0)
+
+        val sb = StringBuilder("✨ *AI-подборка ключевых слов*")
         if (totalPages > 1) sb.append("  •  стр. ${safePage + 1}/$totalPages")
         sb.append("\n\n")
         if (available == 0) {
@@ -439,9 +436,9 @@ class BotKeywordsHandler(
         val suggestions = session.aiKeywordSuggestions
         val user        = userRepository.findByTelegramId(tgUserId).orElse(null) ?: return
 
-        val from     = page * AI_SUGGEST_SHOW
-        val to       = (from + AI_SUGGEST_SHOW).coerceAtMost(suggestions.size)
-        val pageKws  = suggestions.subList(from, to).toList()
+        val from    = page * AI_SUGGEST_SHOW
+        val to      = (from + AI_SUGGEST_SHOW).coerceAtMost(suggestions.size)
+        val pageKws = suggestions.subList(from, to).toList()
 
         var addedCount = 0
         pageKws.forEach { kw ->
@@ -492,8 +489,8 @@ class BotKeywordsHandler(
         val summary = buildString {
             append("✅ *Готово!*\n\n")
             append("Добавлено: $addedCount слов\n")
-            if (skippedCount > 0)         append("Пропущено (дубликаты): $skippedCount\n")
-            if (skippedDueToLimit > 0)    append("Не вошло (лимит $MAX_KEYWORDS): $skippedDueToLimit\n")
+            if (skippedCount > 0)      append("Пропущено (дубликаты): $skippedCount\n")
+            if (skippedDueToLimit > 0) append("Не вошло (лимит $MAX_KEYWORDS): $skippedDueToLimit\n")
         }
 
         sender.editText(
@@ -518,23 +515,5 @@ class BotKeywordsHandler(
         val session = sessions[chatId] ?: return
         session.aiKeywordPage = page
         showAiSuggestions(chatId, msgId, tgUserId)
-    }
-
-    fun toggleServiceOffers(chatId: Long, msgId: Int, tgUserId: Long) {
-        val user = userRepository.findByTelegramId(tgUserId).orElse(null)
-            ?: run { sender.editText(chatId, msgId, "Нужно войти. /start"); return }
-
-        // Перечитываем пользователя из БД, чтобы получить актуальное значение флага
-        val freshUser = userRepository.findById(user.id).orElse(null) ?: return
-        freshUser.respondToServiceOffers = !freshUser.respondToServiceOffers
-        userRepository.save(freshUser)
-
-        log.info(
-            "toggleServiceOffers: userId=${freshUser.id} " +
-                    "respondToServiceOffers=${freshUser.respondToServiceOffers}"
-        )
-
-        // Обновляем страницу ключевых слов, чтобы кнопка-тумблер отразила новое состояние
-        showKeywords(chatId, msgId, tgUserId)
     }
 }

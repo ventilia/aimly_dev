@@ -90,8 +90,8 @@ async function searchChatsApi(query: string): Promise<TgstatSearchResponse> {
         body: JSON.stringify({ query }),
     })
     if (!res.ok) {
-        const body = await res.json().catch(() => ({})) as { error?: string }
-        throw new Error(body.error ?? `Ошибка ${res.status}`)
+        const body = await res.json().catch(() => ({})) as { error?: string; message?: string }
+        throw new Error(body.error ?? body.message ?? `Ошибка ${res.status}`)
     }
     return res.json() as Promise<TgstatSearchResponse>
 }
@@ -342,7 +342,7 @@ export default function ChatsPage() {
     return (
         <div className={s.page}>
 
-            {/* Заголовок */}
+            {/* ─── Заголовок ─────────────────────────────────── */}
             <div className={s.pageHead}>
                 <div>
                     <h1 className={s.title}>Чаты для мониторинга</h1>
@@ -356,92 +356,96 @@ export default function ChatsPage() {
                 )}
             </div>
 
-            {/* Тумблер */}
+            {/* ─── Тумблер «предложения услуг» ───────────────── */}
             <ServiceOffersToggle />
 
-            {/* AI-поиск */}
-            {hasAi ? (
-                <div className={s.searchBlock}>
-                    <div className={s.searchHeader}>
-                        <SparkleIcon />
-                        <p className={s.searchTitle}>Найти чаты по AI</p>
-                        <span className={s.searchBadge}>New</span>
-                    </div>
-
-                    <p className={s.searchDesc}>
-                        Опишите себя или нишу — AI подберёт подходящие Telegram-чаты через TGStat.
-                        {user?.businessContext ? ' Оставьте поле пустым для поиска по AI-профилю.' : ''}
-                    </p>
-
-                    <div className={s.searchRow}>
-                        <input
-                            className={s.searchInput}
-                            value={searchQuery}
-                            onChange={e => setSearchQuery(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && !searching && handleSearch()}
-                            placeholder={
-                                user?.businessContext
-                                    ? 'Пусто = поиск по AI-профилю, или введите запрос...'
-                                    : 'Например: я SMM-специалист, ищу заказчиков...'
-                            }
-                            disabled={searching}
-                        />
-                        <button
-                            className={s.searchBtn}
-                            onClick={handleSearch}
-                            disabled={searching || (!searchQuery.trim() && !user?.businessContext)}
-                        >
-                            {searching
-                                ? <><span className={s.spinnerAccent} /> Ищем…</>
-                                : <><SearchIcon /> Найти чаты</>
-                            }
-                        </button>
-                    </div>
-
-                    {searchError && <div className={s.searchError}>{searchError}</div>}
-
-                    {searchQueries.length > 0 && (
-                        <div className={s.searchUsed}>
-                            <span className={s.searchUsedLabel}>AI искал по:</span>
-                            {searchQueries.map(q => <span key={q} className={s.searchTag}>{q}</span>)}
-                        </div>
-                    )}
-
-                    {searchResults !== null && (
-                        searchResults.length === 0
-                            ? <div className={s.searchEmpty}>Чаты не найдены — попробуйте другой запрос</div>
-                            : <>
-                                <p className={s.searchResultsTitle}>
-                                    Найдено {searchResults.length} {searchResults.length === 1 ? 'чат' : 'чатов'}:
-                                </p>
-                                <div className={s.searchResults}>
-                                    {searchResults.map(r => (
-                                        <ResultCard
-                                            key={r.link || r.title}
-                                            result={r}
-                                            onAdd={handleAddFromSearch}
-                                            isAdding={addingLink === r.link}
-                                            isAdded={addedLinks.has(r.link)}
-                                        />
-                                    ))}
-                                </div>
-                            </>
-                    )}
+            {/* ─── AI-поиск чатов через TGStat ───────────────── */}
+            <div className={s.searchBlock}>
+                <div className={s.searchHeader}>
+                    <SparkleIcon />
+                    <p className={s.searchTitle}>Найти чаты по AI</p>
+                    <span className={s.searchBadge}>New</span>
                 </div>
-            ) : (
-                <div className={s.searchLocked}>
-                    <div className={s.searchLockedIcon}><LockIcon /></div>
-                    <div className={s.searchLockedText}>
-                        <p className={s.searchLockedTitle}>AI-поиск чатов</p>
-                        <p className={s.searchLockedSub}>
-                            Доступно на тарифе <b>МИНИМУМ</b> — AI подберёт чаты по вашему профилю через TGStat
+
+                {hasAi ? (
+                    <>
+                        <p className={s.searchDesc}>
+                            Опишите себя или нишу — AI подберёт подходящие Telegram-чаты через TGStat.
+                            {user?.businessContext ? ' Оставьте поле пустым для поиска по AI-профилю.' : ''}
                         </p>
-                    </div>
-                    <a href="/checkout" className={s.searchLockedBtn}>Подключить →</a>
-                </div>
-            )}
 
-            {/* Ручное добавление */}
+                        <div className={s.searchRow}>
+                            <input
+                                className={s.searchInput}
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && !searching && handleSearch()}
+                                placeholder={
+                                    user?.businessContext
+                                        ? 'Пусто = поиск по AI-профилю, или введите запрос...'
+                                        : 'Например: я SMM-специалист, ищу заказчиков...'
+                                }
+                                disabled={searching}
+                            />
+                            <button
+                                className={s.searchBtn}
+                                onClick={handleSearch}
+                                disabled={searching || (!searchQuery.trim() && !user?.businessContext)}
+                            >
+                                {searching
+                                    ? <><span className={s.spinnerAccent} /> Ищем…</>
+                                    : <><SearchIcon /> Найти чаты</>
+                                }
+                            </button>
+                        </div>
+
+                        {searchError && <div className={s.searchError}>{searchError}</div>}
+
+                        {searchQueries.length > 0 && (
+                            <div className={s.searchUsed}>
+                                <span className={s.searchUsedLabel}>AI искал по:</span>
+                                {searchQueries.map(q => <span key={q} className={s.searchTag}>{q}</span>)}
+                            </div>
+                        )}
+
+                        {searchResults !== null && (
+                            searchResults.length === 0
+                                ? <div className={s.searchEmpty}>Чаты не найдены — попробуйте другой запрос</div>
+                                : <>
+                                    <p className={s.searchResultsTitle}>
+                                        Найдено {searchResults.length} {searchResults.length === 1 ? 'чат' : 'чатов'}:
+                                    </p>
+                                    <div className={s.searchResults}>
+                                        {searchResults.map(r => (
+                                            <ResultCard
+                                                key={r.link || r.title}
+                                                result={r}
+                                                onAdd={handleAddFromSearch}
+                                                isAdding={addingLink === r.link}
+                                                isAdded={addedLinks.has(r.link)}
+                                            />
+                                        ))}
+                                    </div>
+                                </>
+                        )}
+                    </>
+                ) : (
+                    /* ─── Заглушка для пользователей без подписки ─── */
+                    <div className={s.searchLockedInner}>
+                        <div className={s.searchLockedIcon}><LockIcon /></div>
+                        <div className={s.searchLockedText}>
+                            <p className={s.searchLockedTitle}>Доступно на тарифе МИНИМУМ</p>
+                            <p className={s.searchLockedSub}>
+                                AI проанализирует ваш бизнес и подберёт подходящие Telegram-чаты через TGStat —
+                                где сидит ваша целевая аудитория
+                            </p>
+                        </div>
+                        <a href="/checkout" className={s.searchLockedBtn}>Подключить →</a>
+                    </div>
+                )}
+            </div>
+
+            {/* ─── Ручное добавление ─────────────────────────── */}
             <div className={s.addBlock}>
                 <div className={s.addRow}>
                     <div className={s.inputWrap}>
@@ -470,7 +474,7 @@ export default function ChatsPage() {
                 </div>
             )}
 
-            {/* Список */}
+            {/* ─── Список чатов ──────────────────────────────── */}
             {loading ? (
                 <div className={s.skels}>
                     {[...Array(3)].map((_, i) => <div key={i} className={s.skel} />)}

@@ -259,7 +259,84 @@
     border: 1px dashed var(--c-border);
 }
 
-/* Карточка результата TGStat */
+/* ─── Апгрейд-заглушка ВНУТРИ блока AI-поиска ───────────── */
+
+.searchLockedInner {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--c-bg);
+    border: 1.5px dashed var(--c-border);
+    border-radius: 10px;
+    padding: 16px 18px;
+}
+
+/* ─── Плашка «нет доступа» к AI-поиску (отдельный блок) ─── */
+
+.searchLocked {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--c-surface);
+    border: 1.5px dashed var(--c-border);
+    border-radius: 14px;
+    padding: 16px 20px;
+}
+
+.searchLockedIcon {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: var(--c-bg);
+    border: 1px solid var(--c-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--c-ink-3);
+    flex-shrink: 0;
+}
+
+.searchLockedText {
+    flex: 1;
+    min-width: 0;
+}
+
+.searchLockedTitle {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--c-ink);
+    margin: 0 0 3px;
+}
+
+.searchLockedSub {
+    font-size: 12px;
+    color: var(--c-ink-3);
+    margin: 0;
+    line-height: 1.45;
+}
+
+.searchLockedBtn {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: none;
+    background: var(--c-accent);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    text-decoration: none;
+    display: inline-block;
+    font-family: var(--font-body);
+    transition: opacity .15s;
+}
+
+.searchLockedBtn:hover { opacity: .85; }
+
+
+/* ─── Карточка результата TGStat ─────────────────────────── */
+
 .resultCard {
     display: flex;
     flex-direction: column;
@@ -395,69 +472,6 @@
     border-color: var(--c-accent);
     color: var(--c-accent);
 }
-
-
-/* ─── Плашка «нет доступа» к AI-поиску ──────────────────── */
-
-.searchLocked {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    background: var(--c-surface);
-    border: 1.5px dashed var(--c-border);
-    border-radius: 14px;
-    padding: 16px 20px;
-}
-
-.searchLockedIcon {
-    width: 38px;
-    height: 38px;
-    border-radius: 10px;
-    background: var(--c-bg);
-    border: 1px solid var(--c-border);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--c-ink-3);
-    flex-shrink: 0;
-}
-
-.searchLockedText {
-    flex: 1;
-    min-width: 0;
-}
-
-.searchLockedTitle {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--c-ink);
-    margin: 0 0 3px;
-}
-
-.searchLockedSub {
-    font-size: 12px;
-    color: var(--c-ink-3);
-    margin: 0;
-}
-
-.searchLockedBtn {
-    padding: 8px 16px;
-    border-radius: 8px;
-    border: none;
-    background: var(--c-accent);
-    color: #fff;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    white-space: nowrap;
-    flex-shrink: 0;
-    text-decoration: none;
-    display: inline-block;
-    font-family: var(--font-body);
-    transition: opacity .15s;
-}
-
-.searchLockedBtn:hover { opacity: .85; }
 
 
 /* ─── Ручное добавление ──────────────────────────────────── */
