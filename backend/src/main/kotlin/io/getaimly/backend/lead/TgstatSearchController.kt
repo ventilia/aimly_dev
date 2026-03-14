@@ -16,16 +16,7 @@ import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.RestTemplate
 
 // ─── DTOs ─────────────────────────────────────────────────────────────────────
-data class TgstatSearchRequest(
-    val query: String = "",
-    /**
-     * Фильтр языка чатов:
-     *   "ru"  → language=russian, country=<defaultCountry>
-     *   "en"  → language=english, country=com
-     *   "all" → language не передаётся,  country=<defaultCountry>
-     */
-    val language: String = "ru",
-)
+data class TgstatSearchRequest(val query: String = "")
 
 data class TgstatChannelResult(
     val title: String,
@@ -42,31 +33,25 @@ data class TgstatSearchResponse(
     val queries: List<String>,
 )
 
-// ─── Language / country config ────────────────────────────────────────────────
-private data class LangConfig(
-    val tgstatLanguage: String?,   // null = параметр не передаётся
-    val tgstatCountry: String,
-)
-
-private fun resolveLangConfig(language: String, defaultCountry: String): LangConfig =
-    when (language.trim().lowercase()) {
-        "en"  -> LangConfig(tgstatLanguage = "english",  tgstatCountry = "com")
-        "all" -> LangConfig(tgstatLanguage = null,        tgstatCountry = defaultCountry)
-        else  -> LangConfig(tgstatLanguage = "russian",   tgstatCountry = defaultCountry) // "ru" + любое другое
-    }
-
 // ─── Controller ───────────────────────────────────────────────────────────────
 @RestController
 @RequestMapping("/api/v1/chats/search")
 class TgstatSearchController(
     private val aiService: AiService,
     @Value("\${tgstat.api-key:}") private val tgstatApiKey: String,
-    @Value("\${tgstat.country:ru}") private val defaultCountry: String,
+    /**
+     * Страна для TGStat API — обязательный параметр.
+     * По умолчанию "ru". Переопределяется через application.properties: tgstat.country=ru
+     */
+    @Value("\${tgstat.country:ru}") private val tgstatCountry: String,
 ) {
     private val log = LoggerFactory.getLogger(TgstatSearchController::class.java)
     private val restTemplate = RestTemplate()
 
     private val MIN_MEMBERS = 600
+
+    // Язык поиска зафиксирован: всегда русскоязычные чаты
+    private val TGSTAT_LANGUAGE = "russian"
 
     // ─── Фиксированные рекомендованные чаты ──────────────────────────────────
 
@@ -150,14 +135,8 @@ class TgstatSearchController(
                 .body(mapOf("error" to "Введите запрос или заполните AI-профиль в настройках"))
         }
 
-        val langConfig = resolveLangConfig(req.language, defaultCountry)
-        log.info(
-            "TGStat поиск для user=${user.id}: language=${req.language} " +
-                    "→ country=${langConfig.tgstatCountry} tgstatLang=${langConfig.tgstatLanguage}"
-        )
-
         val queries   = aiService.generateTgstatQueries(inputText)
-        log.info("TGStat запросы для user=${user.id}: $queries")
+        log.info("TGStat поиск для user=${user.id}: запросы=$queries")
 
         val coreTerms = extractCoreTerms(queries)
         log.info("TGStat core terms: $coreTerms")
@@ -169,16 +148,16 @@ class TgstatSearchController(
         for (query in queries) {
             if (results.size >= 7) break
             addUnique(
-                searchTgstat(query, langConfig, limit = 20, searchByDescription = false),
+                searchTgstat(query, limit = 20, searchByDescription = false),
                 seen, results, maxResults = 7,
             )
         }
 
-        // ─── Проход 2: поиск с описанием ─────────────────────────────────────
+        // ─── Проход 2: поиск с описанием, если мало результатов ──────────────
         if (results.size < 4 && coreTerms.isNotEmpty()) {
             for (query in queries.take(3)) {
                 if (results.size >= 7) break
-                val raw      = searchTgstat(query, langConfig, limit = 40, searchByDescription = true)
+                val raw      = searchTgstat(query, limit = 40, searchByDescription = true)
                 val filtered = raw.filter { isTitleRelevant(it, coreTerms) }
                 log.info("TGStat desc '$query': всего=${raw.size} после фильтра=${filtered.size}")
                 addUnique(filtered, seen, results, maxResults = 7)
@@ -192,22 +171,20 @@ class TgstatSearchController(
             for (query in fallback) {
                 if (results.size >= 5) break
                 addUnique(
-                    searchTgstat(query, langConfig, limit = 50, searchByDescription = false),
+                    searchTgstat(query, limit = 50, searchByDescription = false),
                     seen, results, maxResults = 5,
                 )
             }
         }
 
-        // ─── Фиксированные чаты — только при RU/ALL поиске ───────────────────
-        if (req.language != "en") {
-            if (isDesignRelated(inputText) && results.none { it.link.contains("desgangchat") }) {
-                results.add(FIXED_DESIGN_CHAT); seen.add("desgangchat")
-                log.info("TGStat: добавлен desgangchat для user=${user.id}")
-            }
-            if (isCreativeRelated(inputText) && results.none { it.link.contains("mskeventjob") }) {
-                results.add(FIXED_EVENT_CHAT); seen.add("mskeventjob")
-                log.info("TGStat: добавлен mskeventjob для user=${user.id}")
-            }
+        // ─── Фиксированные рекомендованные чаты ──────────────────────────────
+        if (isDesignRelated(inputText) && results.none { it.link.contains("desgangchat") }) {
+            results.add(FIXED_DESIGN_CHAT); seen.add("desgangchat")
+            log.info("TGStat: добавлен desgangchat для user=${user.id}")
+        }
+        if (isCreativeRelated(inputText) && results.none { it.link.contains("mskeventjob") }) {
+            results.add(FIXED_EVENT_CHAT); seen.add("mskeventjob")
+            log.info("TGStat: добавлен mskeventjob для user=${user.id}")
         }
 
         log.info("TGStat итог для user=${user.id}: найдено ${results.size} результатов")
@@ -230,14 +207,13 @@ class TgstatSearchController(
     /**
      * Запрос к TGStat API.
      *
-     * Параметры страны и языка передаются через [LangConfig]:
-     *   ru  → &language=russian  &country=ru
-     *   en  → &language=english  &country=com
-     *   all → (language не передаётся) &country=ru
+     * Параметры зафиксированы:
+     *   country  = tgstat.country (по умолчанию "ru")
+     *   language = "russian"
+     *   peer_type = "all" — возвращает и каналы, и чаты
      */
     private fun searchTgstat(
         query: String,
-        langConfig: LangConfig,
         limit: Int = 20,
         searchByDescription: Boolean = false,
     ): List<TgstatChannelResult> {
@@ -250,19 +226,14 @@ class TgstatSearchController(
             append("https://api.tgstat.ru/channels/search")
             append("?token=${java.net.URLEncoder.encode(tgstatApiKey, "UTF-8")}")
             append("&q=${java.net.URLEncoder.encode(query, "UTF-8")}")
-            append("&country=${java.net.URLEncoder.encode(langConfig.tgstatCountry, "UTF-8")}")
-            langConfig.tgstatLanguage?.let { lang ->
-                append("&language=${java.net.URLEncoder.encode(lang, "UTF-8")}")
-            }
+            append("&country=${java.net.URLEncoder.encode(tgstatCountry, "UTF-8")}")
+            append("&language=${java.net.URLEncoder.encode(TGSTAT_LANGUAGE, "UTF-8")}")
             append("&peer_type=all")
             if (searchByDescription) append("&search_by_description=1")
             append("&limit=$limit")
         }
 
-        log.info(
-            "TGStat запрос: q='$query' country=${langConfig.tgstatCountry} " +
-                    "language=${langConfig.tgstatLanguage} limit=$limit desc=$searchByDescription"
-        )
+        log.info("TGStat запрос: q='$query' country=$tgstatCountry language=$TGSTAT_LANGUAGE limit=$limit desc=$searchByDescription")
 
         return try {
             val headers  = HttpHeaders().apply { accept = listOf(MediaType.APPLICATION_JSON) }

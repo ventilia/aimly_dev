@@ -101,20 +101,7 @@ function HashIcon() {
     )
 }
 
-function GlobeIcon() {
-    return (
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10"/>
-            <line x1="2" y1="12" x2="22" y2="12"/>
-            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-        </svg>
-    )
-}
-
 // ─── Types ────────────────────────────────────────────────────────────────────
-type LangFilter = 'ru' | 'en' | 'all'
-
 interface TgstatResult {
     title: string
     username: string | null
@@ -139,7 +126,6 @@ interface SearchState {
     addedLinks: string[]
     dismissedLinks: string[]
     searchQuery: string
-    langFilter: LangFilter
 }
 
 function saveSearchState(state: SearchState) {
@@ -161,12 +147,12 @@ function clearSearchState() {
 // ─── API ──────────────────────────────────────────────────────────────────────
 const BASE: string = import.meta.env.VITE_API_URL || ''
 
-async function searchChatsApi(query: string, language: LangFilter): Promise<TgstatSearchResponse> {
+async function searchChatsApi(query: string): Promise<TgstatSearchResponse> {
     const res = await fetch(`${BASE}/api/v1/chats/search`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, language }),
+        body: JSON.stringify({ query }),
     })
     if (!res.ok) {
         const body = await res.json().catch(() => ({})) as { error?: string; message?: string }
@@ -188,41 +174,6 @@ function formatCount(n: number): string {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
     if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}K`
     return String(n)
-}
-
-// ─── Language Segment Control ─────────────────────────────────────────────────
-const LANG_OPTIONS: { value: LangFilter; label: string }[] = [
-    { value: 'ru',  label: 'RU' },
-    { value: 'en',  label: 'EN' },
-    { value: 'all', label: 'Все' },
-]
-
-function LangSegment({
-                         value,
-                         onChange,
-                         disabled,
-                     }: {
-    value: LangFilter
-    onChange: (v: LangFilter) => void
-    disabled?: boolean
-}) {
-    return (
-        <div className={s.langSegment} aria-label="Язык чатов" role="group">
-            <span className={s.langSegIcon}><GlobeIcon /></span>
-            {LANG_OPTIONS.map(opt => (
-                <button
-                    key={opt.value}
-                    className={`${s.langSegBtn}${value === opt.value ? ` ${s.langSegActive}` : ''}`}
-                    onClick={() => onChange(opt.value)}
-                    disabled={disabled}
-                    type="button"
-                    aria-pressed={value === opt.value}
-                >
-                    {opt.label}
-                </button>
-            ))}
-        </div>
-    )
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -351,8 +302,6 @@ export default function ChatsPage() {
     const [addedLinks,     setAddedLinks]     = useState<Set<string>>(new Set())
     const [dismissedLinks, setDismissedLinks] = useState<Set<string>>(new Set())
 
-    const [langFilter, setLangFilter] = useState<LangFilter>('ru')
-
     const [userKeywords,        setUserKeywords]        = useState<string[]>([])
     const [loadingKeywords,     setLoadingKeywords]     = useState(false)
     const [searchingByKeywords, setSearchingByKeywords] = useState(false)
@@ -369,7 +318,6 @@ export default function ChatsPage() {
             setAddedLinks(new Set(saved.addedLinks))
             setDismissedLinks(new Set(saved.dismissedLinks))
             setSearchQuery(saved.searchQuery)
-            if (saved.langFilter) setLangFilter(saved.langFilter)
             setSearchOpen(true)
         }
     }, [])
@@ -382,9 +330,8 @@ export default function ChatsPage() {
             addedLinks:     Array.from(addedLinks),
             dismissedLinks: Array.from(dismissedLinks),
             searchQuery,
-            langFilter,
         })
-    }, [searchResults, searchQueries, addedLinks, dismissedLinks, searchQuery, langFilter])
+    }, [searchResults, searchQueries, addedLinks, dismissedLinks, searchQuery])
 
     const fetchChats = () =>
         chatsApi.list()
@@ -427,7 +374,7 @@ export default function ChatsPage() {
         } finally { setRemoving(null) }
     }
 
-    const runSearch = async (query: string, lang: LangFilter) => {
+    const runSearch = async (query: string) => {
         setSearching(true)
         setSearchError('')
         setSearchResults(null)
@@ -436,7 +383,7 @@ export default function ChatsPage() {
         setAddedLinks(new Set())
         clearSearchState()
         try {
-            const resp = await searchChatsApi(query, lang)
+            const resp = await searchChatsApi(query)
             setSearchResults(resp.results)
             setSearchQueries(resp.queries)
             if (resp.results.length > 0) setSearchOpen(true)
@@ -445,12 +392,12 @@ export default function ChatsPage() {
         } finally { setSearching(false) }
     }
 
-    const handleSearch = async () => { await runSearch(searchQuery.trim(), langFilter) }
+    const handleSearch = async () => { await runSearch(searchQuery.trim()) }
 
     const handleSearchByKeywords = async () => {
         if (userKeywords.length === 0) return
         setSearchingByKeywords(true)
-        await runSearch(userKeywords.slice(0, 5).join(', '), langFilter)
+        await runSearch(userKeywords.slice(0, 5).join(', '))
         setSearchingByKeywords(false)
     }
 
@@ -644,7 +591,6 @@ export default function ChatsPage() {
                                     {user?.businessContext ? ' Оставьте поле пустым для поиска по AI-профилю.' : ''}
                                 </p>
 
-                                {/* ─── Строка: инпут + язык + кнопка ──── */}
                                 <div className={s.searchRow}>
                                     <input
                                         className={s.searchInput}
@@ -656,11 +602,6 @@ export default function ChatsPage() {
                                                 ? 'Пусто = поиск по AI-профилю, или введите запрос...'
                                                 : 'Например: дизайн, smm, веб-разработка...'
                                         }
-                                        disabled={searching || searchingByKeywords}
-                                    />
-                                    <LangSegment
-                                        value={langFilter}
-                                        onChange={setLangFilter}
                                         disabled={searching || searchingByKeywords}
                                     />
                                     <button
@@ -715,7 +656,7 @@ export default function ChatsPage() {
 
                                 {searchResults !== null && (
                                     visibleResults.length === 0 && dismissedLinks.size === 0
-                                        ? <div className={s.searchEmpty}>Чаты не найдены — попробуйте другой запрос или измените язык</div>
+                                        ? <div className={s.searchEmpty}>Чаты не найдены — попробуйте другой запрос</div>
                                         : <>
                                             {visibleResults.length > 0 && (
                                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
