@@ -39,6 +39,12 @@ data class TgstatSearchResponse(
 class TgstatSearchController(
     private val aiService: AiService,
     @Value("\${tgstat.api-key:}") private val tgstatApiKey: String,
+    /**
+     * Страна для TGStat API (обязательный параметр).
+     * По умолчанию "ru" — основная аудитория. Можно переопределить
+     * через application.properties: tgstat.country=com
+     */
+    @Value("\${tgstat.country:ru}") private val tgstatCountry: String,
 ) {
     private val log = LoggerFactory.getLogger(TgstatSearchController::class.java)
     private val restTemplate = RestTemplate()
@@ -146,9 +152,6 @@ class TgstatSearchController(
         val results = mutableListOf<TgstatChannelResult>()
 
         // ─── Проход 1: поиск ТОЛЬКО по названию, peer_type=all ───────────────
-        // peer_type=chat + country=ru возвращает 0 результатов для большинства
-        // русских запросов — TGStat плохо индексирует группы.
-        // Используем peer_type=all и убираем country=ru для русских запросов.
         for (query in queries) {
             if (results.size >= 7) break
             addUnique(
@@ -158,8 +161,6 @@ class TgstatSearchController(
         }
 
         // ─── Проход 2: поиск с описанием, только если мало результатов ───────
-        // Берём первые 3 запроса (наиболее точные — с "вакансии"/"jobs" и чистые).
-        // Каждый результат фильтруется: title должен содержать core-термин.
         if (results.size < 4 && coreTerms.isNotEmpty()) {
             for (query in queries.take(3)) {
                 if (results.size >= 7) break
@@ -215,14 +216,14 @@ class TgstatSearchController(
     /**
      * Запрос к TGStat API.
      *
-     * Ключевые изменения по сравнению с предыдущей версией:
-     * - peer_type не передаём (дефолт API = all) — peer_type=chat + country=ru
-     *   возвращал 0 результатов для большинства русских запросов
-     * - country=ru не передаём — ограничивает выдачу и не нужен, т.к. запросы
-     *   на русском языке уже фильтруют русские чаты
-     * - language не передаём — дефолт API = "russian", явная передача → ошибка
-     * - searchByDescription=false (дефолт): только по названию → чистые результаты
-     * - searchByDescription=true: по описанию, но используем только с isTitleRelevant
+     * ИСПРАВЛЕНО: добавлен обязательный параметр country.
+     * Без него TGStat возвращает error="param country required" для каждого запроса.
+     *
+     * Параметры:
+     * - country   — обязательный по документации TGStat (конфигурируется через tgstat.country)
+     * - peer_type — "all" чтобы получать и каналы, и чаты
+     * - language  — не передаём (дефолт API = "russian")
+     * - search_by_description — управляется параметром searchByDescription
      */
     private fun searchTgstat(
         query: String,
@@ -238,11 +239,13 @@ class TgstatSearchController(
             append("https://api.tgstat.ru/channels/search")
             append("?token=${java.net.URLEncoder.encode(tgstatApiKey, "UTF-8")}")
             append("&q=${java.net.URLEncoder.encode(query, "UTF-8")}")
+            append("&country=${java.net.URLEncoder.encode(tgstatCountry, "UTF-8")}") // ← ИСПРАВЛЕНО
+            append("&peer_type=all")
             if (searchByDescription) append("&search_by_description=1")
             append("&limit=$limit")
         }
 
-        log.info("TGStat запрос: q='$query' limit=$limit desc=$searchByDescription")
+        log.info("TGStat запрос: q='$query' country=$tgstatCountry limit=$limit desc=$searchByDescription")
 
         return try {
             val headers  = HttpHeaders().apply { accept = listOf(MediaType.APPLICATION_JSON) }
