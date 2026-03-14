@@ -2,20 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { leadsApi, type Lead, type LeadPage } from '../api/leads'
 import s from './Leadspage.module.css'
 
-const STATUS_LABEL: Record<string, string> = {
-    NEW:     'Новый',
-    VIEWED:  'Просмотрен',
-    REPLIED: 'Отвечено',
-    IGNORED: 'Игнорирован',
-}
-
-const STATUS_NEXT: Record<string, string> = {
-    NEW:     'VIEWED',
-    VIEWED:  'REPLIED',
-    REPLIED: 'VIEWED',
-    IGNORED: 'VIEWED',
-}
-
+// ─── Цвета статусов ───────────────────────────────────────────────────────────
 const STATUS_COLOR: Record<string, { bg: string; text: string }> = {
     NEW:     { bg: 'rgba(239,68,68,.12)',    text: '#dc2626' },
     VIEWED:  { bg: 'rgba(245,158,11,.12)',   text: '#d97706' },
@@ -23,16 +10,22 @@ const STATUS_COLOR: Record<string, { bg: string; text: string }> = {
     IGNORED: { bg: 'rgba(107,114,128,.12)', text: '#6b7280' },
 }
 
+const STATUS_LABEL: Record<string, string> = {
+    NEW:     'Новый',
+    VIEWED:  'Просмотрен',
+    REPLIED: 'Отвечено',
+    IGNORED: 'Архив',
+}
 
 const FILTERS = [
-    { value: '',         label: 'Все',          excludeIgnored: true },
-    { value: 'NEW',      label: 'Новые',         excludeIgnored: false },
-    { value: 'VIEWED',   label: 'Просмотрены',   excludeIgnored: false },
-    { value: 'REPLIED',  label: 'Отвечено',      excludeIgnored: false },
-    { value: 'IGNORED',  label: 'Архив',         excludeIgnored: false },
+    { value: '',        label: 'Активные' },
+    { value: 'NEW',     label: 'Новые'    },
+    { value: 'VIEWED',  label: 'Просмотр' },
+    { value: 'REPLIED', label: 'Отвечено' },
+    { value: 'IGNORED', label: 'Архив'    },
 ]
 
-
+// ─── Icons ────────────────────────────────────────────────────────────────────
 const IconUser = () => (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
@@ -50,6 +43,12 @@ const IconArchive = () => (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/>
         <line x1="10" y1="12" x2="14" y2="12"/>
+    </svg>
+)
+
+const IconCheck = () => (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="20 6 9 17 4 12"/>
     </svg>
 )
 
@@ -73,17 +72,15 @@ const IconChevron = ({ open }: { open: boolean }) => (
     </svg>
 )
 
+// ─── Main ─────────────────────────────────────────────────────────────────────
 export default function LeadsPage() {
-    const [data,    setData]    = useState<LeadPage | null>(null)
-    const [loading, setLoading] = useState(true)
-    const [filter,  setFilter]  = useState('')
-    const [page,    setPage]    = useState(0)
-    const [error,   setError]   = useState('')
+    const [data,     setData]     = useState<LeadPage | null>(null)
+    const [loading,  setLoading]  = useState(true)
+    const [filter,   setFilter]   = useState('')
+    const [page,     setPage]     = useState(0)
+    const [error,    setError]    = useState('')
     const [updating, setUpdating] = useState<Set<number>>(new Set())
-
     const [expanded, setExpanded] = useState<Set<number>>(new Set())
-
-    const currentFilterDef = FILTERS.find(f => f.value === filter) ?? FILTERS[0]
 
     const load = useCallback(async () => {
         setLoading(true)
@@ -114,40 +111,41 @@ export default function LeadsPage() {
         })
     }
 
-    const handleStatusChange = async (lead: Lead) => {
-        const next = STATUS_NEXT[lead.status] || 'VIEWED'
+    const applyStatusUpdate = (updated: Lead) => {
+        setData(prev => prev ? {
+            ...prev,
+            content: prev.content.map(l => l.id === updated.id ? updated : l),
+            newCount: updated.status !== 'NEW'
+                ? Math.max(0, prev.newCount - (prev.content.find(l => l.id === updated.id)?.status === 'NEW' ? 1 : 0))
+                : prev.newCount,
+        } : prev)
+    }
+
+    const setStatus = async (lead: Lead, status: string) => {
+        if (lead.status === status) return
         setUpdating(prev => new Set(prev).add(lead.id))
         try {
-            const updated = await leadsApi.updateStatus(lead.id, next)
-            setData(prev => prev ? {
-                ...prev,
-                content: prev.content.map(l => l.id === updated.id ? updated : l),
-            } : prev)
+            const updated = await leadsApi.updateStatus(lead.id, status)
+            applyStatusUpdate(updated)
         } catch {
-
+            // silent
         } finally {
             setUpdating(prev => { const s = new Set(prev); s.delete(lead.id); return s })
         }
     }
 
-    const handleIgnore = async (lead: Lead) => {
-        setUpdating(prev => new Set(prev).add(lead.id))
-        try {
-            const updated = await leadsApi.updateStatus(lead.id, 'IGNORED')
-            setData(prev => prev ? {
-                ...prev,
-                content: prev.content.map(l => l.id === updated.id ? updated : l),
-            } : prev)
-        } catch {
-
-        } finally {
-            setUpdating(prev => { const s = new Set(prev); s.delete(lead.id); return s })
+    const handleOpen = (lead: Lead) => {
+        if (lead.status === 'NEW') {
+            void setStatus(lead, 'VIEWED')
         }
     }
 
-    const visibleContent = data?.content.filter(lead =>
-        currentFilterDef.excludeIgnored ? lead.status !== 'IGNORED' : true
-    ) ?? []
+    // FIX: убраны (lead as any).contextMessages — поле contextMessages: string[]
+    // уже присутствует в интерфейсе Lead, поэтому приведение к any излишне.
+    // @typescript-eslint/no-explicit-any
+    const visibleContent = (data?.content ?? []).filter(lead =>
+        filter === '' ? lead.status !== 'IGNORED' : true
+    )
 
     if (loading) {
         return (
@@ -170,16 +168,20 @@ export default function LeadsPage() {
     return (
         <div className={s.page}>
             <div className={s.header}>
-                <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <h1 className={s.title}>Лиды</h1>
-                    {data && data.newCount > 0 && (
+                    {(data?.newCount ?? 0) > 0 && (
                         <span style={{
-                            fontSize: 12, fontWeight: 600,
-                            background: 'rgba(239,68,68,.1)', color: '#dc2626',
-                            padding: '2px 9px', borderRadius: 100,
-                            marginTop: 4, display: 'inline-block',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            padding: '3px 10px',
+                            borderRadius: 100,
+                            background: 'rgba(239,68,68,.1)',
+                            color: '#dc2626',
+                            fontSize: 12,
+                            fontWeight: 700,
                         }}>
-                            {data.newCount} новых
+                            {data!.newCount} новых
                         </span>
                     )}
                 </div>
@@ -189,9 +191,7 @@ export default function LeadsPage() {
                             key={f.value}
                             className={`${s.tab} ${filter === f.value ? s.tabActive : ''}`}
                             onClick={() => changeFilter(f.value)}
-                            style={f.value === 'IGNORED' ? { display: 'flex', alignItems: 'center', gap: 5 } : undefined}
                         >
-                            {f.value === 'IGNORED' && <IconArchive />}
                             {f.label}
                         </button>
                     ))}
@@ -208,7 +208,7 @@ export default function LeadsPage() {
                     <p>{filter === 'IGNORED' ? 'Архив пуст' : 'Лидов нет'}</p>
                     <span>
                         {filter === 'IGNORED'
-                            ? 'Здесь будут лиды, отмеченные как проигнорированные'
+                            ? 'Здесь будут лиды, перемещённые в архив'
                             : 'Добавьте чаты и ключевые слова для мониторинга'}
                     </span>
                 </div>
@@ -216,26 +216,25 @@ export default function LeadsPage() {
                 <>
                     <div className={s.list}>
                         {visibleContent.map(lead => {
-                            const color = STATUS_COLOR[lead.status] || STATUS_COLOR.NEW
-                            const isNew = lead.status === 'NEW'
+                            const color      = STATUS_COLOR[lead.status] || STATUS_COLOR.NEW
+                            const isNew      = lead.status === 'NEW'
                             const isArchived = lead.status === 'IGNORED'
                             const isExpanded = expanded.has(lead.id)
+                            const isUpdating = updating.has(lead.id)
 
-                            const hasContext = Array.isArray((lead as any).contextMessages)
-                                ? (lead as any).contextMessages.length > 0
-                                : false
-                            const contextMsgs: string[] = hasContext ? (lead as any).contextMessages : []
+                            // FIX: contextMessages типизировано в Lead — as any убран.
+                            const contextMsgs: string[] = lead.contextMessages ?? []
 
                             return (
                                 <div
                                     key={lead.id}
                                     className={s.leadCard}
                                     style={{
-                                        ...(isNew ? { borderLeftColor: '#dc2626', borderLeftWidth: 3 } : {}),
-                                        ...(isArchived ? { opacity: 0.7 } : {}),
+                                        ...(isNew      ? { borderLeftColor: '#dc2626', borderLeftWidth: 3 } : {}),
+                                        ...(isArchived ? { opacity: 0.65 } : {}),
                                     }}
                                 >
-                                    {}
+                                    {/* ─── Шапка: чат + дата + статус ─── */}
                                     <div className={s.leadHead}>
                                         <div className={s.leadMeta}>
                                             <div style={{
@@ -267,126 +266,88 @@ export default function LeadsPage() {
                                                 </span>
                                             )}
                                         </div>
-                                        <button
-                                            className={s.statusBtn}
-                                            style={{ background: color.bg, color: color.text }}
-                                            onClick={() => handleStatusChange(lead)}
-                                            disabled={updating.has(lead.id)}
-                                            title={`Изменить на: ${STATUS_LABEL[STATUS_NEXT[lead.status] || 'VIEWED']}`}
-                                        >
-                                            {updating.has(lead.id) ? '...' : STATUS_LABEL[lead.status] || lead.status}
-                                        </button>
+
+                                        <span style={{
+                                            ...color,
+                                            fontSize: 11, fontWeight: 700,
+                                            padding: '3px 10px', borderRadius: 100,
+                                            flexShrink: 0, letterSpacing: '.2px',
+                                        }}>
+                                            {STATUS_LABEL[lead.status] ?? lead.status}
+                                        </span>
                                     </div>
 
-                                    {}
+                                    {/* ─── Текст сообщения ─── */}
                                     <div className={s.leadTextBlock}>
                                         <div className={s.leadTextInner}>
                                             <div className={s.leadText}>{lead.messageText}</div>
                                         </div>
                                     </div>
 
-                                    {}
-                                    {(contextMsgs.length > 0 || lead.aiValid !== null && lead.aiValid !== undefined) && (
+                                    {/* ─── Детали (контекст + AI) ─── */}
+                                    {(contextMsgs.length > 0 || (lead.aiValid !== null && lead.aiValid !== undefined)) && (
                                         <button
                                             onClick={() => toggleExpand(lead.id)}
                                             style={{
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: 5,
-                                                padding: '4px 0',
-                                                background: 'none',
-                                                border: 'none',
-                                                color: 'var(--c-ink-3)',
-                                                fontSize: 12,
-                                                fontWeight: 500,
-                                                cursor: 'pointer',
-                                                fontFamily: 'var(--font-body)',
-                                                width: 'fit-content',
-                                                transition: 'color .15s',
+                                                display: 'flex', alignItems: 'center', gap: 5,
+                                                padding: '4px 0', background: 'none', border: 'none',
+                                                color: 'var(--c-ink-3)', fontSize: 12, fontWeight: 500,
+                                                cursor: 'pointer', fontFamily: 'var(--font-body)',
+                                                width: 'fit-content', transition: 'color .15s',
                                             }}
-                                            onMouseEnter={e => (e.currentTarget.style.color = 'var(--c-accent)')}
-                                            onMouseLeave={e => (e.currentTarget.style.color = 'var(--c-ink-3)')}
+                                            onMouseEnter={e => { e.currentTarget.style.color = 'var(--c-accent)' }}
+                                            onMouseLeave={e => { e.currentTarget.style.color = 'var(--c-ink-3)' }}
                                         >
                                             <IconChevron open={isExpanded} />
                                             {isExpanded
                                                 ? 'Скрыть детали'
-                                                : `Детали${contextMsgs.length > 0 ? ` · ${contextMsgs.length} сообщ. контекста` : ''}${lead.aiValid !== null ? ' · AI' : ''}`
+                                                : `Детали${contextMsgs.length > 0 ? ` · ${contextMsgs.length} сообщ.` : ''}${lead.aiValid !== null ? ' · AI' : ''}`
                                             }
                                         </button>
                                     )}
 
-                                    {/* ─── раскрытый блок: контекст + AI причина ─── */}
                                     {isExpanded && (
                                         <div style={{
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            gap: 10,
-                                            padding: '10px 14px',
-                                            background: 'var(--c-bg)',
-                                            borderRadius: 10,
-                                            border: '1px solid var(--c-border)',
+                                            display: 'flex', flexDirection: 'column', gap: 10,
+                                            padding: '10px 14px', background: 'var(--c-bg)',
+                                            borderRadius: 10, border: '1px solid var(--c-border)',
                                         }}>
-                                            {}
                                             {lead.aiValid !== null && lead.aiValid !== undefined && (
                                                 <div style={{
-                                                    display: 'flex',
-                                                    alignItems: 'flex-start',
-                                                    gap: 8,
-                                                    padding: '8px 12px',
-                                                    borderRadius: 8,
-                                                    background: lead.aiValid
-                                                        ? 'rgba(16,185,129,.08)'
-                                                        : 'rgba(239,68,68,.08)',
+                                                    display: 'flex', alignItems: 'flex-start', gap: 8,
+                                                    padding: '8px 12px', borderRadius: 8,
+                                                    background: lead.aiValid ? 'rgba(16,185,129,.08)' : 'rgba(239,68,68,.08)',
                                                     border: `1px solid ${lead.aiValid ? 'rgba(16,185,129,.2)' : 'rgba(239,68,68,.2)'}`,
                                                 }}>
                                                     <span style={{
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        gap: 4,
-                                                        fontSize: 11,
-                                                        fontWeight: 700,
+                                                        display: 'flex', alignItems: 'center', gap: 4,
+                                                        fontSize: 11, fontWeight: 700,
                                                         color: lead.aiValid ? '#10b981' : '#ef4444',
-                                                        flexShrink: 0,
-                                                        marginTop: 1,
+                                                        flexShrink: 0, marginTop: 1,
                                                     }}>
                                                         <IconAI valid={lead.aiValid} />
                                                         AI {lead.aiValid ? 'одобрил' : 'отклонил'}
                                                     </span>
                                                     {lead.aiReason && (
-                                                        <span style={{
-                                                            fontSize: 12,
-                                                            color: 'var(--c-ink-2)',
-                                                            lineHeight: 1.5,
-                                                        }}>
+                                                        <span style={{ fontSize: 12, color: 'var(--c-ink-2)', lineHeight: 1.5 }}>
                                                             {lead.aiReason}
                                                         </span>
                                                     )}
                                                 </div>
                                             )}
 
-                                            {}
                                             {contextMsgs.length > 0 && (
                                                 <div>
                                                     <div style={{
-                                                        fontSize: 11,
-                                                        fontWeight: 700,
-                                                        textTransform: 'uppercase',
-                                                        letterSpacing: '.5px',
-                                                        color: 'var(--c-ink-3)',
-                                                        marginBottom: 8,
+                                                        fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
+                                                        letterSpacing: '.5px', color: 'var(--c-ink-3)', marginBottom: 8,
                                                     }}>
                                                         Контекст чата
                                                     </div>
-                                                    <div style={{
-                                                        display: 'flex',
-                                                        flexDirection: 'column',
-                                                        gap: 6,
-                                                    }}>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                                                         {contextMsgs.map((msg, i) => (
                                                             <div key={i} style={{
-                                                                fontSize: 13,
-                                                                color: 'var(--c-ink-2)',
-                                                                lineHeight: 1.5,
+                                                                fontSize: 13, color: 'var(--c-ink-2)', lineHeight: 1.5,
                                                                 padding: '6px 10px',
                                                                 borderLeft: '2px solid var(--c-border)',
                                                                 background: 'var(--c-surface)',
@@ -402,26 +363,22 @@ export default function LeadsPage() {
                                         </div>
                                     )}
 
-                                    {}
+                                    {/* ─── Футер: автор + действия ─── */}
                                     <div className={s.leadFooter}>
                                         <div className={s.leadAuthor}>
-                                            <span style={{ color: 'var(--c-ink-3)', flexShrink: 0 }}>
-                                                <IconUser />
-                                            </span>
+                                            <span style={{ color: 'var(--c-ink-3)', flexShrink: 0 }}><IconUser /></span>
                                             <span className={s.authorName}>{lead.authorName || 'Аноним'}</span>
                                             {lead.authorUsername && (
                                                 <span className={s.authorUsername}>@{lead.authorUsername}</span>
                                             )}
                                         </div>
+
                                         <div className={s.leadActions}>
-                                            {}
                                             {lead.aiValid !== null && lead.aiValid !== undefined && (
                                                 <div
                                                     className={s.aiBadge}
                                                     style={{
-                                                        background: lead.aiValid
-                                                            ? 'rgba(16,185,129,.12)'
-                                                            : 'rgba(239,68,68,.12)',
+                                                        background: lead.aiValid ? 'rgba(16,185,129,.12)' : 'rgba(239,68,68,.12)',
                                                         color: lead.aiValid ? '#10b981' : '#ef4444',
                                                         display: 'flex', alignItems: 'center', gap: 4,
                                                         cursor: 'pointer',
@@ -434,11 +391,32 @@ export default function LeadsPage() {
                                                 </div>
                                             )}
 
-                                            {/* Кнопка «в архив» — только для не-архивных лидов */}
+                                            {(lead.status === 'NEW' || lead.status === 'VIEWED') && (
+                                                <button
+                                                    onClick={() => void setStatus(lead, 'REPLIED')}
+                                                    disabled={isUpdating}
+                                                    title="Отметить как отвечено"
+                                                    style={{
+                                                        display: 'flex', alignItems: 'center', gap: 4,
+                                                        padding: '4px 10px', borderRadius: 100,
+                                                        border: '1.5px solid rgba(16,185,129,.35)',
+                                                        background: 'rgba(16,185,129,.06)',
+                                                        color: '#059669', fontSize: 11,
+                                                        fontWeight: 600, cursor: 'pointer',
+                                                        fontFamily: 'var(--font-body)', transition: 'all .15s',
+                                                    }}
+                                                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(16,185,129,.14)' }}
+                                                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(16,185,129,.06)' }}
+                                                >
+                                                    <IconCheck />
+                                                    Ответил
+                                                </button>
+                                            )}
+
                                             {lead.status !== 'IGNORED' && (
                                                 <button
-                                                    onClick={() => handleIgnore(lead)}
-                                                    disabled={updating.has(lead.id)}
+                                                    onClick={() => void setStatus(lead, 'IGNORED')}
+                                                    disabled={isUpdating}
                                                     title="В архив"
                                                     style={{
                                                         display: 'flex', alignItems: 'center', gap: 4,
@@ -447,8 +425,7 @@ export default function LeadsPage() {
                                                         background: 'none',
                                                         color: 'var(--c-ink-3)', fontSize: 11,
                                                         fontWeight: 600, cursor: 'pointer',
-                                                        fontFamily: 'var(--font-body)',
-                                                        transition: 'all .15s',
+                                                        fontFamily: 'var(--font-body)', transition: 'all .15s',
                                                     }}
                                                     onMouseEnter={e => {
                                                         (e.currentTarget as HTMLButtonElement).style.borderColor = '#6b7280'
@@ -464,24 +441,34 @@ export default function LeadsPage() {
                                                 </button>
                                             )}
 
+                                            {lead.status === 'IGNORED' && (
+                                                <button
+                                                    onClick={() => void setStatus(lead, 'NEW')}
+                                                    disabled={isUpdating}
+                                                    title="Вернуть из архива"
+                                                    style={{
+                                                        display: 'flex', alignItems: 'center', gap: 4,
+                                                        padding: '4px 10px', borderRadius: 100,
+                                                        border: '1.5px solid var(--c-border)',
+                                                        background: 'none',
+                                                        color: 'var(--c-ink-3)', fontSize: 11,
+                                                        fontWeight: 600, cursor: 'pointer',
+                                                        fontFamily: 'var(--font-body)', transition: 'all .15s',
+                                                    }}
+                                                >
+                                                    Восстановить
+                                                </button>
+                                            )}
+
+                                            {/* FIX: onClick был standalone-выражением без void/присваивания.
+                                                @typescript-eslint/no-unused-expressions */}
                                             <a
                                                 href={lead.messageLink}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 className={s.openLink}
                                                 style={{ display: 'flex', alignItems: 'center', gap: 4 }}
-                                                onClick={() => {
-                                                    if (lead.status === 'NEW') {
-                                                        leadsApi.updateStatus(lead.id, 'VIEWED').then(updated => {
-                                                            setData(prev => prev ? {
-                                                                ...prev,
-                                                                content: prev.content.map(l =>
-                                                                    l.id === updated.id ? updated : l
-                                                                ),
-                                                            } : prev)
-                                                        }).catch(() => {})
-                                                    }
-                                                }}
+                                                onClick={() => handleOpen(lead)}
                                             >
                                                 Открыть
                                                 <IconExternalLink />

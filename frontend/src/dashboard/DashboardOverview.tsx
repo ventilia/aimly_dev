@@ -88,7 +88,6 @@ const txt = {
     },
 } as const
 
-
 const IconWarning = () => (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
@@ -141,11 +140,14 @@ export default function DashboardOverview({ lang }: Props) {
     const [lastLead, setLastLead] = useState<import('../api/leads').Lead | null>(null)
 
     useEffect(() => {
-        leadsApi.list({ size: 1 })
+        // Загружаем лиды — исключаем IGNORED для "последнего лида"
+        leadsApi.list({ size: 20 })
             .then(p => {
                 setTotalLeads(p.totalElements)
                 setNewLeads(p.newCount)
-                setLastLead(p.content[0] ?? null)
+                // Последний лид — первый не-архивный
+                const firstActive = p.content.find(l => l.status !== 'IGNORED') ?? null
+                setLastLead(firstActive)
             })
             .catch(() => {})
 
@@ -202,7 +204,7 @@ export default function DashboardOverview({ lang }: Props) {
                 <p className={s.pageSub}>{l.welcome}</p>
             </div>
 
-            {}
+            {/* ─── Статистика ─── */}
             <div className={s.statsRow}>
                 <div className={s.statCard}>
                     <div className={s.statVal}>{fmt(totalLeads)}</div>
@@ -224,7 +226,7 @@ export default function DashboardOverview({ lang }: Props) {
                 </div>
             </div>
 
-            {/* ─── Последний лид (увеличенный) ─── */}
+            {/* ─── Последний лид (только не-архивный) ─── */}
             <div style={{
                 background: 'var(--c-surface)',
                 border: '1.5px solid var(--c-border)',
@@ -245,7 +247,6 @@ export default function DashboardOverview({ lang }: Props) {
 
                 {lastLead ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                        {/* Автор + чат + дата */}
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
                             <div style={{
                                 width: 44, height: 44, borderRadius: '50%', flexShrink: 0,
@@ -257,7 +258,6 @@ export default function DashboardOverview({ lang }: Props) {
                                     .replace('@', '').charAt(0).toUpperCase()}
                             </div>
                             <div style={{ flex: 1, minWidth: 0 }}>
-                                {/* Имя */}
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 2 }}>
                                     {lastLead.authorName?.trim() && (
                                         <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--c-ink)' }}>
@@ -280,11 +280,10 @@ export default function DashboardOverview({ lang }: Props) {
                                         }}>NEW</span>
                                     )}
                                 </div>
-                                {/* Чат + дата */}
                                 <div style={{ fontSize: 12, color: 'var(--c-ink-3)' }}>
                                     {(lastLead.chatTitle || lastLead.chatLink) && (
                                         <span style={{ marginRight: 10 }}>
-                                            💬 {lastLead.chatTitle || lastLead.chatLink}
+                                            {lastLead.chatTitle || lastLead.chatLink}
                                         </span>
                                     )}
                                     <span>
@@ -294,7 +293,6 @@ export default function DashboardOverview({ lang }: Props) {
                                         })}
                                     </span>
                                 </div>
-                                {/* Ключевое слово */}
                                 {lastLead.matchedKeyword && (
                                     <span style={{
                                         display: 'inline-block', marginTop: 4,
@@ -302,30 +300,22 @@ export default function DashboardOverview({ lang }: Props) {
                                         background: 'var(--c-accent-soft)', color: 'var(--c-accent)',
                                         padding: '2px 9px', borderRadius: 100,
                                     }}>
-                                        🔑 {lastLead.matchedKeyword}
+                                        {lastLead.matchedKeyword}
                                     </span>
                                 )}
                             </div>
                         </div>
 
-                        {/* Текст сообщения */}
                         <div style={{
-                            fontSize: 14,
-                            color: 'var(--c-ink)',
-                            lineHeight: 1.6,
-                            background: 'var(--c-bg)',
-                            borderRadius: 10,
-                            padding: '12px 14px',
-                            border: '1px solid var(--c-border)',
-                            wordBreak: 'break-word',
-                            maxHeight: 160,
-                            overflow: 'hidden',
-                            position: 'relative',
+                            fontSize: 14, color: 'var(--c-ink)', lineHeight: 1.6,
+                            background: 'var(--c-bg)', borderRadius: 10,
+                            padding: '12px 14px', border: '1px solid var(--c-border)',
+                            wordBreak: 'break-word', maxHeight: 160,
+                            overflow: 'hidden', position: 'relative',
                         }}>
                             {lastLead.messageText}
                         </div>
 
-                        {/* AI-результат если есть */}
                         {lastLead.aiValid !== null && lastLead.aiValid !== undefined && (
                             <div style={{
                                 display: 'flex', alignItems: 'flex-start', gap: 8,
@@ -333,10 +323,7 @@ export default function DashboardOverview({ lang }: Props) {
                                 background: lastLead.aiValid ? 'rgba(16,185,129,.08)' : 'rgba(239,68,68,.08)',
                                 border: `1px solid ${lastLead.aiValid ? 'rgba(16,185,129,.2)' : 'rgba(239,68,68,.2)'}`,
                             }}>
-                                <span style={{
-                                    fontSize: 12, fontWeight: 700, flexShrink: 0,
-                                    color: lastLead.aiValid ? '#10b981' : '#ef4444',
-                                }}>
+                                <span style={{ fontSize: 12, fontWeight: 700, flexShrink: 0, color: lastLead.aiValid ? '#10b981' : '#ef4444' }}>
                                     AI {lastLead.aiValid ? '✓' : '✗'}
                                 </span>
                                 {lastLead.aiReason && (
@@ -347,7 +334,6 @@ export default function DashboardOverview({ lang }: Props) {
                             </div>
                         )}
 
-                        {/* Кнопки действий */}
                         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                             {lastLead.messageLink ? (
                                 <a
@@ -373,11 +359,8 @@ export default function DashboardOverview({ lang }: Props) {
                                     display: 'inline-flex', alignItems: 'center', gap: 6,
                                     padding: '9px 18px', borderRadius: 9,
                                     border: '1.5px solid var(--c-border)',
-                                    color: 'var(--c-ink-3)', fontSize: 13, fontWeight: 600,
-                                    cursor: 'default',
-                                }}
-                                      title={l.linkNote}
-                                >
+                                    color: 'var(--c-ink-3)', fontSize: 13, fontWeight: 600, cursor: 'default',
+                                }} title={l.linkNote}>
                                     {l.linkUnavailable}
                                 </span>
                             )}
@@ -414,7 +397,9 @@ export default function DashboardOverview({ lang }: Props) {
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             fontSize: 22, marginBottom: 4,
                         }}>
-                            📭
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                                <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                            </svg>
                         </div>
                         <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--c-ink)' }}>
                             {l.lastLeadEmpty}
@@ -426,13 +411,11 @@ export default function DashboardOverview({ lang }: Props) {
                 )}
             </div>
 
-            {}
+            {/* ─── Telegram ─── */}
             {!tgLinked ? (
                 <div className={s.tgAlert}>
                     <div className={s.tgAlertLeft}>
-                        <div className={s.tgAlertIcon}>
-                            <IconWarning />
-                        </div>
+                        <div className={s.tgAlertIcon}><IconWarning /></div>
                         <div>
                             <div className={s.tgAlertTitle}>{l.tgAlertTitle}</div>
                             <div className={s.tgAlertSub}>{l.tgAlertSub}</div>
@@ -468,7 +451,6 @@ export default function DashboardOverview({ lang }: Props) {
                 <div style={{ color: '#dc2626', fontSize: 13, padding: '4px 0' }}>{tgError}</div>
             )}
 
-            {}
             {!tgLinked && tgLink && (
                 <div className={s.instrCard}>
                     <h3 className={s.instrTitle}>{l.howTitle}</h3>
@@ -502,14 +484,11 @@ export default function DashboardOverview({ lang }: Props) {
                 </div>
             )}
 
-            {}
             {stepsLeft > 0 && (
                 <div className={s.setupRow}>
                     <div className={s.setupCard}>
                         <div className={s.setupCardHead}>
-                            <div className={s.setupCardIcon}>
-                                <IconGear />
-                            </div>
+                            <div className={s.setupCardIcon}><IconGear /></div>
                             <div>
                                 <div className={s.setupCardTitle}>{l.setupTitle}</div>
                                 <div className={s.setupCardSub}>{l.setupSub}</div>
@@ -535,7 +514,6 @@ export default function DashboardOverview({ lang }: Props) {
                 </div>
             )}
 
-            {}
             {stepsLeft === 0 && !lastLead && (
                 <div style={{
                     display: 'flex', alignItems: 'center', gap: 10,

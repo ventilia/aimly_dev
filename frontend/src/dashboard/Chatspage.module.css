@@ -801,4 +801,24 @@
     display: inline-block;
 }
 
+.searchToggleBtn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    font-family: var(--font-body);
+    gap: 8px;
+    text-align: left;
+    color: inherit;
+}
+
+.searchToggleBtn:hover .searchTitle {
+    color: var(--c-accent);
+}
+
+
 @keyframes spin { to { transform: rotate(360deg) } }

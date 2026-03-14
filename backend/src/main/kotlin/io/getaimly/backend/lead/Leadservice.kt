@@ -259,7 +259,13 @@ class LeadService(
             }
         }
     }
-
+    internal fun String.normalizeKeyword(): String =
+        this.trim()
+            .lowercase()
+            .trimEnd('?', '!', '.', ',', ';', ':', '…')
+            .trimStart('?', '!', '.', ',', ';', ':')
+            .replace(Regex("\\s{2,}"), " ")
+            .trim()
 
     fun getSubscriptions(user: User): List<ChatSubscriptionDto> =
         subscriptionRepo.findByUserIdAndIsActiveTrue(user.id).map { it.toDto() }
@@ -333,7 +339,7 @@ class LeadService(
 
     @Transactional
     fun addKeyword(user: User, keyword: String): KeywordDto {
-        val trimmed = keyword.trim().lowercase()
+        val trimmed = keyword.normalizeKeyword()   // <-- ИЗМЕНЕНО
         if (trimmed.isBlank()) throw IllegalArgumentException("ключевое слово не может быть пустым")
         if (trimmed.length > 100) throw IllegalArgumentException("слишком длинное ключевое слово")
 

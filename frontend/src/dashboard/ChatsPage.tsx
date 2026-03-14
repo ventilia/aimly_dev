@@ -4,7 +4,6 @@ import { useAuthContext } from '../context/AuthContext'
 import s from './Chatspage.module.css'
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
-
 function TgIcon() {
     return (
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
@@ -15,7 +14,7 @@ function TgIcon() {
 
 function SparkleIcon() {
     return (
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed"
              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17 5.8 21.3l2.4-7.4L2 9.4h7.6z" />
         </svg>
@@ -62,8 +61,35 @@ function LockIcon() {
     )
 }
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+function ChevronIcon({ open }: { open: boolean }) {
+    return (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+             style={{ transition: 'transform .2s', transform: open ? 'rotate(180deg)' : 'rotate(0)' }}>
+            <polyline points="6 9 12 15 18 9" />
+        </svg>
+    )
+}
 
+function CheckIcon() {
+    return (
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+        </svg>
+    )
+}
+
+function CloseIcon() {
+    return (
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             strokeWidth="2.5" strokeLinecap="round">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+    )
+}
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 interface TgstatResult {
     title: string
     username: string | null
@@ -71,6 +97,7 @@ interface TgstatResult {
     participantsCount: number
     link: string
     tgstatLink: string | null
+    peerType?: string
 }
 
 interface TgstatSearchResponse {
@@ -79,7 +106,6 @@ interface TgstatSearchResponse {
 }
 
 // ─── API ──────────────────────────────────────────────────────────────────────
-
 const BASE: string = import.meta.env.VITE_API_URL || ''
 
 async function searchChatsApi(query: string): Promise<TgstatSearchResponse> {
@@ -97,7 +123,6 @@ async function searchChatsApi(query: string): Promise<TgstatSearchResponse> {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
 function buildTelegramUrl(link: string): string {
     const raw = link.trim()
     if (raw.startsWith('https://t.me/') || raw.startsWith('http://t.me/')) return raw
@@ -108,12 +133,14 @@ function buildTelegramUrl(link: string): string {
 
 function formatCount(n: number): string {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
-    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+    if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}K`
     return String(n)
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// Минимальный порог участников для отображения в результатах поиска
+const MIN_MEMBERS = 600
 
+// ─── Sub-components ───────────────────────────────────────────────────────────
 function StatusDot({ active }: { active: boolean }) {
     return (
         <span
@@ -124,19 +151,25 @@ function StatusDot({ active }: { active: boolean }) {
     )
 }
 
+// Карточка результата поиска — с кнопками принять/отклонить
 function ResultCard({
                         result,
                         onAdd,
+                        onDismiss,
                         isAdding,
                         isAdded,
+                        isDismissed,
                     }: {
     result: TgstatResult
     onAdd: (link: string) => void
+    onDismiss: (link: string) => void
     isAdding: boolean
     isAdded: boolean
+    isDismissed: boolean
 }) {
+    if (isDismissed) return null
+
     const cardCls = `${s.resultCard}${isAdded ? ` ${s.resultAdded}` : ''}`
-    const btnCls  = `${s.resultAddBtn} ${isAdding ? s.isAdding : isAdded ? s.isDone : s.isDefault}`
 
     return (
         <div className={cardCls}>
@@ -163,18 +196,51 @@ function ResultCard({
             )}
 
             <div className={s.resultActions}>
+                {/* Кнопка принять */}
                 <button
-                    className={btnCls}
+                    style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 5,
+                        padding: '7px 14px', borderRadius: 8, border: 'none',
+                        fontSize: 12, fontWeight: 600, cursor: isAdded || isAdding ? 'default' : 'pointer',
+                        fontFamily: 'var(--font-body)', transition: 'opacity .15s',
+                        background: isAdded ? 'rgba(16,185,129,.12)' : isAdding ? 'var(--c-accent)' : 'var(--c-accent)',
+                        color: isAdded ? '#10b981' : '#fff',
+                        opacity: isAdded || isAdding ? 0.8 : 1,
+                    }}
                     onClick={() => !isAdded && !isAdding && result.link && onAdd(result.link)}
                     disabled={isAdding || isAdded || !result.link}
                 >
                     {isAdding
                         ? <><span className={s.spinnerAccent} /> Добавляем…</>
                         : isAdded
-                            ? '✓ Добавлен'
-                            : <><PlusIcon /> Добавить в мониторинг</>
+                            ? <><CheckIcon /> Добавлен</>
+                            : <><PlusIcon /> Добавить</>
                     }
                 </button>
+
+                {/* Кнопка отклонить — скрыта если уже добавлен */}
+                {!isAdded && (
+                    <button
+                        onClick={() => onDismiss(result.link)}
+                        title="Не показывать этот чат"
+                        style={{
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            width: 30, height: 30, borderRadius: 8,
+                            border: '1.5px solid var(--c-border)', background: 'transparent',
+                            color: 'var(--c-ink-3)', cursor: 'pointer', transition: 'all .15s',
+                        }}
+                        onMouseEnter={e => {
+                            (e.currentTarget as HTMLButtonElement).style.borderColor = '#ef4444'
+                            ;(e.currentTarget as HTMLButtonElement).style.color = '#ef4444'
+                        }}
+                        onMouseLeave={e => {
+                            (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--c-border)'
+                            ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--c-ink-3)'
+                        }}
+                    >
+                        <CloseIcon />
+                    </button>
+                )}
 
                 {result.tgstatLink && (
                     <a href={result.tgstatLink} target="_blank" rel="noopener noreferrer"
@@ -188,7 +254,6 @@ function ResultCard({
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
-
 export default function ChatsPage() {
     const { user } = useAuthContext()
 
@@ -199,13 +264,16 @@ export default function ChatsPage() {
     const [error,    setError]    = useState('')
     const [removing, setRemoving] = useState<number | null>(null)
 
-    const [searchQuery,   setSearchQuery]   = useState('')
-    const [searching,     setSearching]     = useState(false)
-    const [searchResults, setSearchResults] = useState<TgstatResult[] | null>(null)
-    const [searchError,   setSearchError]   = useState('')
-    const [searchQueries, setSearchQueries] = useState<string[]>([])
-    const [addingLink,    setAddingLink]    = useState<string | null>(null)
-    const [addedLinks,    setAddedLinks]    = useState<Set<string>>(new Set())
+    // AI-поиск — состояние
+    const [searchOpen,     setSearchOpen]     = useState(false)
+    const [searchQuery,    setSearchQuery]    = useState('')
+    const [searching,      setSearching]      = useState(false)
+    const [searchResults,  setSearchResults]  = useState<TgstatResult[] | null>(null)
+    const [searchError,    setSearchError]    = useState('')
+    const [searchQueries,  setSearchQueries]  = useState<string[]>([])
+    const [addingLink,     setAddingLink]     = useState<string | null>(null)
+    const [addedLinks,     setAddedLinks]     = useState<Set<string>>(new Set())
+    const [dismissedLinks, setDismissedLinks] = useState<Set<string>>(new Set())
 
     const plan  = user?.subscriptionPlan   ?? null
     const st    = user?.subscriptionStatus ?? null
@@ -246,10 +314,16 @@ export default function ChatsPage() {
     }
 
     const handleSearch = async () => {
-        setSearching(true); setSearchError(''); setSearchResults(null); setSearchQueries([])
+        setSearching(true)
+        setSearchError('')
+        setSearchResults(null)
+        setSearchQueries([])
+        setDismissedLinks(new Set())
         try {
             const resp = await searchChatsApi(searchQuery.trim())
-            setSearchResults(resp.results)
+            // Фильтруем чаты с менее чем MIN_MEMBERS участников
+            const filtered = resp.results.filter(r => r.participantsCount === 0 || r.participantsCount >= MIN_MEMBERS)
+            setSearchResults(filtered)
             setSearchQueries(resp.queries)
         } catch (e: unknown) {
             setSearchError(e instanceof Error ? e.message : 'Ошибка поиска')
@@ -270,6 +344,26 @@ export default function ChatsPage() {
         } finally { setAddingLink(null) }
     }
 
+    const handleDismiss = (link: string) => {
+        setDismissedLinks(prev => new Set([...prev, link]))
+    }
+
+    const handleDismissAll = () => {
+        if (!searchResults) return
+        setDismissedLinks(new Set(searchResults.map(r => r.link)))
+    }
+
+    const handleAddAll = async () => {
+        if (!searchResults) return
+        const toAdd = searchResults.filter(r => !addedLinks.has(r.link) && !dismissedLinks.has(r.link) && r.link)
+        for (const result of toAdd) {
+            await handleAddFromSearch(result.link)
+        }
+    }
+
+    const visibleResults = searchResults?.filter(r => !dismissedLinks.has(r.link)) ?? []
+    const pendingCount   = visibleResults.filter(r => !addedLinks.has(r.link)).length
+
     const formatDate = (iso: string) => {
         try { return new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' }) }
         catch { return '' }
@@ -288,91 +382,6 @@ export default function ChatsPage() {
                     <div className={s.counter}>
                         <span className={s.counterNum}>{chats.length}</span>
                         <span className={s.counterLabel}>чатов</span>
-                    </div>
-                )}
-            </div>
-
-            {/* ─── AI-поиск чатов через TGStat ───────────────── */}
-            <div className={s.searchBlock}>
-                <div className={s.searchHeader}>
-                    <SparkleIcon />
-                    <p className={s.searchTitle}>Найти чаты по AI</p>
-                    <span className={s.searchBadge}>New</span>
-                </div>
-
-                {hasAi ? (
-                    <>
-                        <p className={s.searchDesc}>
-                            Опишите себя или нишу — AI подберёт подходящие Telegram-чаты через TGStat.
-                            {user?.businessContext ? ' Оставьте поле пустым для поиска по AI-профилю.' : ''}
-                        </p>
-
-                        <div className={s.searchRow}>
-                            <input
-                                className={s.searchInput}
-                                value={searchQuery}
-                                onChange={e => setSearchQuery(e.target.value)}
-                                onKeyDown={e => e.key === 'Enter' && !searching && handleSearch()}
-                                placeholder={
-                                    user?.businessContext
-                                        ? 'Пусто = поиск по AI-профилю, или введите запрос...'
-                                        : 'Например: я SMM-специалист, ищу заказчиков...'
-                                }
-                                disabled={searching}
-                            />
-                            <button
-                                className={s.searchBtn}
-                                onClick={handleSearch}
-                                disabled={searching || (!searchQuery.trim() && !user?.businessContext)}
-                            >
-                                {searching
-                                    ? <><span className={s.spinnerAccent} /> Ищем…</>
-                                    : <><SearchIcon /> Найти чаты</>
-                                }
-                            </button>
-                        </div>
-
-                        {searchError && <div className={s.searchError}>{searchError}</div>}
-
-                        {searchQueries.length > 0 && (
-                            <div className={s.searchUsed}>
-                                <span className={s.searchUsedLabel}>AI искал по:</span>
-                                {searchQueries.map(q => <span key={q} className={s.searchTag}>{q}</span>)}
-                            </div>
-                        )}
-
-                        {searchResults !== null && (
-                            searchResults.length === 0
-                                ? <div className={s.searchEmpty}>Чаты не найдены — попробуйте другой запрос</div>
-                                : <>
-                                    <p className={s.searchResultsTitle}>
-                                        Найдено {searchResults.length} {searchResults.length === 1 ? 'чат' : 'чатов'}:
-                                    </p>
-                                    <div className={s.searchResults}>
-                                        {searchResults.map(r => (
-                                            <ResultCard
-                                                key={r.link || r.title}
-                                                result={r}
-                                                onAdd={handleAddFromSearch}
-                                                isAdding={addingLink === r.link}
-                                                isAdded={addedLinks.has(r.link)}
-                                            />
-                                        ))}
-                                    </div>
-                                </>
-                        )}
-                    </>
-                ) : (
-                    <div className={s.searchLockedInner}>
-                        <div className={s.searchLockedIcon}><LockIcon /></div>
-                        <div className={s.searchLockedText}>
-                            <p className={s.searchLockedTitle}>Доступно на тарифе МИНИМУМ</p>
-                            <p className={s.searchLockedSub}>
-                                AI проанализирует ваш профиль и подберёт подходящие Telegram-чаты
-                                через TGStat — где сидит ваша целевая аудитория
-                            </p>
-                        </div>
-                        <a href="/checkout" className={s.searchLockedBtn}>Подключить →</a>
                     </div>
                 )}
             </div>
@@ -415,7 +424,7 @@ export default function ChatsPage() {
                 <div className={s.empty}>
                     <div className={s.emptyIcon}><TgIcon /></div>
                     <p className={s.emptyTitle}>Нет добавленных чатов</p>
-                    <span className={s.emptySub}>Введите ссылку выше или найдите чаты через AI</span>
+                    <span className={s.emptySub}>Введите ссылку выше или найдите чаты через AI поиск ниже</span>
                 </div>
             ) : (
                 <div className={s.list}>
@@ -461,6 +470,161 @@ export default function ChatsPage() {
                     })}
                 </div>
             )}
+
+            {/* ─── AI-поиск чатов (внизу, сворачиваемый) ────── */}
+            <div className={s.searchBlock}>
+                {/* Заголовок — кликабельный для сворачивания */}
+                <button
+                    className={s.searchToggleBtn}
+                    onClick={() => setSearchOpen(v => !v)}
+                    aria-expanded={searchOpen}
+                >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <SparkleIcon />
+                        <span className={s.searchTitle}>Найти чаты по AI</span>
+                        {/* Плашка AI-функция */}
+                        {hasAi && (
+                            <span style={{
+                                fontSize: 11, fontWeight: 700, padding: '3px 8px',
+                                borderRadius: 6, background: 'var(--c-accent-soft)',
+                                color: 'var(--c-accent)', letterSpacing: '0.5px',
+                            }}>
+                                AI-функция
+                            </span>
+                        )}
+                    </div>
+                    <ChevronIcon open={searchOpen} />
+                </button>
+
+                {/* Контент — виден только когда открыт */}
+                {searchOpen && (
+                    <>
+                        {hasAi ? (
+                            <>
+                                <p className={s.searchDesc}>
+                                    Опишите себя или нишу — AI подберёт подходящие Telegram-чаты.
+                                    {user?.businessContext ? ' Оставьте поле пустым для поиска по AI-профилю.' : ''}
+                                </p>
+
+                                <div className={s.searchRow}>
+                                    <input
+                                        className={s.searchInput}
+                                        value={searchQuery}
+                                        onChange={e => setSearchQuery(e.target.value)}
+                                        onKeyDown={e => e.key === 'Enter' && !searching && handleSearch()}
+                                        placeholder={
+                                            user?.businessContext
+                                                ? 'Пусто = поиск по AI-профилю, или введите запрос...'
+                                                : 'Например: дизайн, smm, веб-разработка...'
+                                        }
+                                        disabled={searching}
+                                    />
+                                    <button
+                                        className={s.searchBtn}
+                                        onClick={handleSearch}
+                                        disabled={searching || (!searchQuery.trim() && !user?.businessContext)}
+                                    >
+                                        {searching
+                                            ? <><span className={s.spinnerAccent} /> Ищем…</>
+                                            : <><SearchIcon /> Найти чаты</>
+                                        }
+                                    </button>
+                                </div>
+
+                                {searchError && <div className={s.searchError}>{searchError}</div>}
+
+                                {searchQueries.length > 0 && (
+                                    <div className={s.searchUsed}>
+                                        <span className={s.searchUsedLabel}>AI искал по:</span>
+                                        {searchQueries.map(q => <span key={q} className={s.searchTag}>{q}</span>)}
+                                    </div>
+                                )}
+
+                                {searchResults !== null && (
+                                    visibleResults.length === 0 && dismissedLinks.size === 0
+                                        ? <div className={s.searchEmpty}>Чаты не найдены — попробуйте другой запрос</div>
+                                        : <>
+                                            {/* Управление всеми результатами */}
+                                            {visibleResults.length > 0 && (
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                                                    <p className={s.searchResultsTitle}>
+                                                        Найдено {visibleResults.length} {visibleResults.length === 1 ? 'чат' : visibleResults.length < 5 ? 'чата' : 'чатов'}
+                                                        {searchResults.length !== visibleResults.length && ` (из ${searchResults.length})`}
+                                                    </p>
+                                                    {pendingCount > 1 && (
+                                                        <div style={{ display: 'flex', gap: 8 }}>
+                                                            <button
+                                                                onClick={handleAddAll}
+                                                                style={{
+                                                                    padding: '6px 14px', borderRadius: 8,
+                                                                    background: 'var(--c-accent)', color: '#fff',
+                                                                    border: 'none', fontSize: 12, fontWeight: 600,
+                                                                    cursor: 'pointer', fontFamily: 'var(--font-body)',
+                                                                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                                                                }}
+                                                            >
+                                                                <CheckIcon />
+                                                                Добавить все
+                                                            </button>
+                                                            <button
+                                                                onClick={handleDismissAll}
+                                                                style={{
+                                                                    padding: '6px 14px', borderRadius: 8,
+                                                                    background: 'transparent', color: 'var(--c-ink-3)',
+                                                                    border: '1.5px solid var(--c-border)',
+                                                                    fontSize: 12, fontWeight: 600,
+                                                                    cursor: 'pointer', fontFamily: 'var(--font-body)',
+                                                                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                                                                    transition: 'all .15s',
+                                                                }}
+                                                                onMouseEnter={e => {
+                                                                    (e.currentTarget as HTMLButtonElement).style.borderColor = '#ef4444'
+                                                                    ;(e.currentTarget as HTMLButtonElement).style.color = '#ef4444'
+                                                                }}
+                                                                onMouseLeave={e => {
+                                                                    (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--c-border)'
+                                                                    ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--c-ink-3)'
+                                                                }}
+                                                            >
+                                                                <CloseIcon />
+                                                                Отклонить все
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                            <div className={s.searchResults}>
+                                                {searchResults.map(r => (
+                                                    <ResultCard
+                                                        key={r.link || r.title}
+                                                        result={r}
+                                                        onAdd={handleAddFromSearch}
+                                                        onDismiss={handleDismiss}
+                                                        isAdding={addingLink === r.link}
+                                                        isAdded={addedLinks.has(r.link)}
+                                                        isDismissed={dismissedLinks.has(r.link)}
+                                                    />
+                                                ))}
+                                            </div>
+                                        </>
+                                )}
+                            </>
+                        ) : (
+                            <div className={s.searchLockedInner}>
+                                <div className={s.searchLockedIcon}><LockIcon /></div>
+                                <div className={s.searchLockedText}>
+                                    <p className={s.searchLockedTitle}>Доступно на тарифе МИНИМУМ</p>
+                                    <p className={s.searchLockedSub}>
+                                        AI проанализирует ваш профиль и подберёт подходящие Telegram-чаты —
+                                        где сидит ваша целевая аудитория
+                                    </p>
+                                </div>
+                                <a href="/checkout" className={s.searchLockedBtn}>Подключить →</a>
+                            </div>
+                        )}
+                    </>
+                )}
+            </div>
         </div>
     )
 }

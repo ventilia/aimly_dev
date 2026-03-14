@@ -16,9 +16,7 @@ import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.RestTemplate
 
 // ─── DTOs ─────────────────────────────────────────────────────────────────────
-data class TgstatSearchRequest(
-    val query: String = "",
-)
+data class TgstatSearchRequest(val query: String = "")
 
 data class TgstatChannelResult(
     val title: String,
@@ -45,6 +43,9 @@ class TgstatSearchController(
     private val log = LoggerFactory.getLogger(TgstatSearchController::class.java)
     private val restTemplate = RestTemplate()
 
+    // Минимум участников — чаты с меньшим числом не возвращаем
+    private val MIN_MEMBERS = 600
+
     @PostMapping
     fun search(
         @AuthenticationPrincipal user: User,
@@ -63,21 +64,22 @@ class TgstatSearchController(
                 .body(mapOf("error" to "TGStat API ключ не настроен"))
         }
 
-        val inputText = req.query.trim().ifBlank {
-            user.businessContext?.trim() ?: ""
-        }
+        val inputText = req.query.trim().ifBlank { user.businessContext?.trim() ?: "" }
         if (inputText.isBlank()) {
             return ResponseEntity.badRequest()
                 .body(mapOf("error" to "Введите запрос или заполните AI-профиль в настройках"))
         }
 
+        // AI генерирует запросы в приоритетном порядке:
+        // 1. тема + вакансии (рус), 2. тема + jobs (eng),
+        // 3. просто тема (рус), 4. просто тема (eng), 5. смежное
         val queries = aiService.generateTgstatQueries(inputText)
         log.info("TGStat поиск для user=${user.id}: запросы=$queries")
 
         val seen    = mutableSetOf<String>()
         val results = mutableListOf<TgstatChannelResult>()
 
-        // Проход 1: только чаты — это то что нужно пользователю для мониторинга
+        // Проход 1: только чаты (peer_type=chat) в порядке приоритетных запросов
         for (query in queries) {
             if (results.size >= 5) break
             addUnique(searchTgstat(query, peerType = "chat", limit = 20), seen, results)
@@ -91,7 +93,7 @@ class TgstatSearchController(
             }
         }
 
-        // Проход 3: fallback — первые слова каждого запроса
+        // Проход 3: fallback — первые слова запросов, увеличенный limit
         if (results.isEmpty()) {
             val fallback = queries
                 .map { it.trim().split("\\s+".toRegex()).first().lowercase() }
@@ -124,13 +126,11 @@ class TgstatSearchController(
     /**
      * Один запрос к TGStat API.
      *
-     * КЛЮЧЕВЫЕ ПРАВИЛА по документации:
-     * 1. token    — обязателен
-     * 2. country  — обязателен (используем "ru")
-     * 3. language — НЕ передаём совсем! Дефолт в API = "russian".
-     *               Любое переданное значение (включая "ru" и "russian") вызывает wrong_language_param.
-     * 4. peer_type = "chat" для поиска групп, "all" для расширенного поиска
-     * 5. q        — минимум 3 символа
+     * Правила:
+     * - token    — обязателен (НЕ key)
+     * - country  — обязателен (ru)
+     * - language — НЕ передаём: дефолт в API = "russian", любая явная передача вызывает wrong_language_param
+     * - peer_type = "chat" для чатов, "all" для fallback
      */
     private fun searchTgstat(
         query: String,
@@ -155,55 +155,46 @@ class TgstatSearchController(
         log.info("TGStat запрос: q='$query' peer_type=$peerType limit=$limit")
 
         return try {
-            val headers = HttpHeaders().apply {
-                accept = listOf(MediaType.APPLICATION_JSON)
-            }
-            val response = restTemplate.exchange(
-                url,
-                HttpMethod.GET,
-                HttpEntity<Void>(headers),
-                TgstatApiResponse::class.java,
-            )
+            val headers = HttpHeaders().apply { accept = listOf(MediaType.APPLICATION_JSON) }
+            val response = restTemplate.exchange(url, HttpMethod.GET, HttpEntity<Void>(headers), TgstatApiResponse::class.java)
+            val body = response.body ?: run { log.warn("TGStat: пустое тело для '$query'"); return emptyList() }
 
-            val body = response.body
-            if (body == null) {
-                log.warn("TGStat: пустое тело ответа для запроса '$query'")
-                return emptyList()
-            }
             if (body.status != "ok") {
                 log.error("TGStat: статус='${body.status}' для '$query'. error=${body.error}")
                 return emptyList()
             }
 
-            val items = body.response?.items
-            log.info("TGStat '$query' peer=$peerType: получено ${items?.size ?: 0} результатов")
-            if (items.isNullOrEmpty()) return emptyList()
+            val items = body.response?.items ?: emptyList()
+            log.info("TGStat '$query' peer=$peerType: получено ${items.size} результатов")
 
             items.mapNotNull { item ->
                 val rawUsername   = item.username?.takeIf { it.isNotBlank() }
-                val cleanUsername = rawUsername?.let {
-                    if (it.startsWith("@")) it else "@$it"
-                }
+                val cleanUsername = rawUsername?.let { if (it.startsWith("@")) it else "@$it" }
 
                 val apiLink = item.link?.takeIf { it.isNotBlank() }
                 val link = when {
-                    apiLink != null -> if (apiLink.startsWith("https://")) apiLink else "https://$apiLink"
+                    apiLink != null    -> if (apiLink.startsWith("https://")) apiLink else "https://$apiLink"
                     rawUsername != null -> "https://t.me/${rawUsername.trimStart('@')}"
-                    else -> return@mapNotNull null
+                    else               -> return@mapNotNull null
                 }
 
-                // Для чатов ссылка на tgstat — /chat/username
-                val tgstatLink = rawUsername?.let {
-                    val slug = it.trimStart('@')
-                    if (item.peerType == "chat") "https://tgstat.ru/chat/$slug"
-                    else "https://tgstat.ru/channel/$slug"
+                val members = item.participantsCount ?: 0
+
+                // Фильтр: не возвращаем чаты с менее чем MIN_MEMBERS участников
+                // (0 означает что данные не пришли — пропускаем проверку)
+                if (members in 1 until MIN_MEMBERS) return@mapNotNull null
+
+                val tgstatLink = rawUsername?.let { slug ->
+                    val s = slug.trimStart('@')
+                    if (item.peerType == "chat") "https://tgstat.ru/chat/$s"
+                    else "https://tgstat.ru/channel/$s"
                 }
 
                 TgstatChannelResult(
                     title             = item.title?.ifBlank { cleanUsername ?: "Без названия" } ?: cleanUsername ?: "Без названия",
                     username          = cleanUsername,
                     description       = item.about?.trim()?.take(200)?.ifBlank { null },
-                    participantsCount = item.participantsCount ?: 0,
+                    participantsCount = members,
                     link              = link,
                     tgstatLink        = tgstatLink,
                     peerType          = item.peerType ?: peerType,

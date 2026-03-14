@@ -35,6 +35,8 @@ class AiService(
         executor.submit { processQueue() }
     }
 
+    // ─── Data classes ─────────────────────────────────────────────────────────
+
     data class ValidationResult(
         val valid: Boolean,
         val reason: String,
@@ -56,6 +58,8 @@ class AiService(
         val respondToServiceOffers: Boolean = false,
         val callback: (ValidationResult?) -> Unit,
     )
+
+    // ─── Public API ───────────────────────────────────────────────────────────
 
     fun validateAsync(
         messageText: String,
@@ -86,7 +90,6 @@ class AiService(
             callback(null)
         }
     }
-
 
     fun filterRelevantContext(messageText: String, rawContext: List<String>): List<String> {
         if (apiKey.isBlank() || rawContext.isEmpty()) return rawContext
@@ -148,7 +151,6 @@ $contextList
         }
     }
 
-
     fun expandKeyword(keyword: String): List<String> {
         if (apiKey.isBlank()) {
             log.info("keyword expand: groq api key не задан, варианты не генерируются для \"$keyword\"")
@@ -174,7 +176,6 @@ $contextList
             listOf(keyword)
         }
     }
-
 
     fun generateKeywords(businessContext: String): List<String> {
         if (apiKey.isBlank()) {
@@ -255,50 +256,6 @@ $contextList
         return keywords
     }
 
-    private fun extractCityFromContext(context: String): String? {
-        if (apiKey.isBlank()) return null
-
-        return try {
-            val prompt = """
-Определи, упоминается ли в тексте конкретный город, регион или страна как место работы/предоставления услуг.
-
-Текст:
-"$context"
-
-Если город/регион упомянут — верни его название. Если нет — верни пустую строку.
-
-Ответь строго JSON: {"city": "Киев"} или {"city": ""}
-""".trimIndent()
-
-            val body = mapOf(
-                "model" to MAIN_MODEL,
-                "messages" to listOf(
-                    mapOf("role" to "system", "content" to "Отвечай только JSON. Никаких пояснений."),
-                    mapOf("role" to "user", "content" to prompt),
-                ),
-                "max_tokens" to 30,
-                "temperature" to 0.0,
-            )
-
-            val response = restTemplate.postForObject(
-                "https://api.groq.com/openai/v1/chat/completions",
-                HttpEntity(body, HttpHeaders().apply {
-                    contentType = MediaType.APPLICATION_JSON
-                    setBearerAuth(apiKey)
-                }),
-                GroqResponse::class.java,
-            ) ?: return null
-
-            val raw = response.choices.firstOrNull()?.message?.content ?: return null
-            val clean = raw.replace(Regex("```json|```"), "").trim()
-            val city = Regex("\"city\"\\s*:\\s*\"([^\"]*)\"").find(clean)?.groupValues?.get(1)?.trim()
-            if (city.isNullOrBlank()) null else city
-        } catch (e: Exception) {
-            log.warn("extractCityFromContext ошибка: ${e.message}")
-            null
-        }
-    }
-
     fun generateTgstatQueries(input: String): List<String> {
         if (apiKey.isBlank()) {
             log.warn("generateTgstatQueries: groq api key не задан")
@@ -375,6 +332,51 @@ $contextList
         }
     }
 
+    // ─── Private helpers ──────────────────────────────────────────────────────
+
+    private fun extractCityFromContext(context: String): String? {
+        if (apiKey.isBlank()) return null
+
+        return try {
+            val prompt = """
+Определи, упоминается ли в тексте конкретный город, регион или страна как место работы/предоставления услуг.
+
+Текст:
+"$context"
+
+Если город/регион упомянут — верни его название. Если нет — верни пустую строку.
+
+Ответь строго JSON: {"city": "Киев"} или {"city": ""}
+""".trimIndent()
+
+            val body = mapOf(
+                "model" to MAIN_MODEL,
+                "messages" to listOf(
+                    mapOf("role" to "system", "content" to "Отвечай только JSON. Никаких пояснений."),
+                    mapOf("role" to "user", "content" to prompt),
+                ),
+                "max_tokens" to 30,
+                "temperature" to 0.0,
+            )
+
+            val response = restTemplate.postForObject(
+                "https://api.groq.com/openai/v1/chat/completions",
+                HttpEntity(body, HttpHeaders().apply {
+                    contentType = MediaType.APPLICATION_JSON
+                    setBearerAuth(apiKey)
+                }),
+                GroqResponse::class.java,
+            ) ?: return null
+
+            val raw = response.choices.firstOrNull()?.message?.content ?: return null
+            val clean = raw.replace(Regex("```json|```"), "").trim()
+            val city = Regex("\"city\"\\s*:\\s*\"([^\"]*)\"").find(clean)?.groupValues?.get(1)?.trim()
+            if (city.isNullOrBlank()) null else city
+        } catch (e: Exception) {
+            log.warn("extractCityFromContext ошибка: ${e.message}")
+            null
+        }
+    }
 
     private fun callGroqExpand(keyword: String): List<String> {
         val headers = HttpHeaders().apply {
@@ -454,7 +456,6 @@ $contextList
             .toList()
     }
 
-
     private fun processQueue() {
         while (true) {
             val task = queue.poll(5, TimeUnit.SECONDS) ?: continue
@@ -474,7 +475,6 @@ $contextList
             task.callback(result)
         }
     }
-
 
     private fun throttle() {
         val now = Instant.now()
@@ -526,9 +526,9 @@ $contextList
             "\n\nИнформация о бизнесе владельца системы (ищем клиентов именно для этого бизнеса):\n$businessContext"
         } else ""
 
-        // ─── ИСПРАВЛЕНО: тумблер выносится в НАЧАЛО промпта как жёсткое правило,
-        // а не как один из пунктов в конце. Маленькие модели игнорируют правила
-        // в конце длинного промпта — важные инструкции должны быть наверху.
+        // ПАТЧ: тумблер выносится в НАЧАЛО промпта как жёсткое правило, а не как
+        // один из пунктов в конце. Маленькие модели (8b) игнорируют инструкции в
+        // конце длинного промпта — критичные правила должны быть наверху.
         val serviceOffersRule = if (respondToServiceOffers) {
             """
 РЕЖИМ «ПРЕДЛОЖЕНИЯ УСЛУГ»: ВКЛЮЧЁН.
@@ -583,10 +583,12 @@ valid=false если:
             "model" to MAIN_MODEL,
             "messages" to listOf(
                 mapOf("role" to "system", "content" to "Ты фильтруешь лиды. Отвечай только JSON. Никакого текста вне JSON."),
-                mapOf("role" to "user", "content" to prompt)
+                mapOf("role" to "user", "content" to prompt),
             ),
             "max_tokens" to 150,
-            "temperature" to 0.0,  // ИСПРАВЛЕНО: было 0.1, теперь 0.0 — детерминированный ответ
+            // ПАТЧ: temperature 0.0 вместо 0.1 — детерминированный ответ,
+            // убирает случайные false-positive при повторных вызовах.
+            "temperature" to 0.0,
         )
 
         val response = restTemplate.postForObject(
@@ -611,6 +613,8 @@ valid=false если:
         return ValidationResult(valid = valid, reason = reason, confidence = confidence)
     }
 }
+
+// ─── Groq response DTOs ───────────────────────────────────────────────────────
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class GroqResponse(
