@@ -43,24 +43,19 @@ class TgstatSearchController(
     private val log = LoggerFactory.getLogger(TgstatSearchController::class.java)
     private val restTemplate = RestTemplate()
 
-    // Минимум участников — чаты с меньшим числом не возвращаем
     private val MIN_MEMBERS = 600
 
     // ─── Фиксированные рекомендованные чаты ──────────────────────────────────
 
-    // Ключевые слова для определения дизайнерской специальности
     private val DESIGN_SIGNALS = setOf(
         "дизайн", "design", "ui", "ux", "graphic", "график", "иллюстр",
-        "брендинг", "верстк", "figma", "photoshop", "illustrator", "sketch",
-        "motion", "моушн", "анимац",
+        "брендинг", "figma", "photoshop", "illustrator", "sketch", "motion", "моушн",
     )
 
-    // Ключевые слова для творческих/event специальностей
     private val CREATIVE_SIGNALS = setOf(
         "дизайн", "design", "фото", "photo", "видео", "video", "арт", "art",
-        "творч", "креатив", "event", "ивент", "мероприят", "свадьб", "wedding",
-        "съёмк", "оператор", "режиссёр", "продакшн", "production", "стилист",
-        "визаж", "makeup", "флорист",
+        "event", "ивент", "мероприят", "свадьб", "wedding",
+        "съёмк", "оператор", "продакшн", "production", "стилист", "визаж", "флорист",
     )
 
     private val FIXED_DESIGN_CHAT = TgstatChannelResult(
@@ -83,14 +78,44 @@ class TgstatSearchController(
         peerType          = "chat",
     )
 
-    private fun isDesignRelated(input: String): Boolean {
-        val lower = input.lowercase()
-        return DESIGN_SIGNALS.any { lower.contains(it) }
-    }
+    private fun isDesignRelated(input: String): Boolean =
+        DESIGN_SIGNALS.any { input.lowercase().contains(it) }
 
-    private fun isCreativeRelated(input: String): Boolean {
-        val lower = input.lowercase()
-        return CREATIVE_SIGNALS.any { lower.contains(it) }
+    private fun isCreativeRelated(input: String): Boolean =
+        CREATIVE_SIGNALS.any { input.lowercase().contains(it) }
+
+    // ─── Релевантность ────────────────────────────────────────────────────────
+
+    // Стоп-слова: они слишком общие и встречаются в нерелевантных чатах.
+    // При поиске по описанию результат принимается только если его НАЗВАНИЕ
+    // содержит хотя бы один core-термин (не стоп-слово).
+    private val STOP_WORDS = setOf(
+        "вакансии", "вакансия", "jobs", "job", "фриланс", "freelance",
+        "биржа", "работа", "найти", "поиск", "search", "it",
+    )
+
+    /**
+     * Извлекает значимые термины из списка AI-запросов.
+     * Используется для проверки релевантности при поиске с описанием:
+     * если "development" вернул строительный чат — title не содержит
+     * "development"/"разработка"/"developer" — фильтруем.
+     */
+    private fun extractCoreTerms(queries: List<String>): Set<String> =
+        queries
+            .flatMap { it.lowercase().split("\\s+".toRegex()) }
+            .filter { it.length >= 3 && it !in STOP_WORDS }
+            .toSet()
+
+    /**
+     * Проверяет релевантность результата по названию и username.
+     * Это защита от мусора при поиске с search_by_description=1:
+     * "development" не должен тянуть строительство и детское развитие.
+     */
+    private fun isTitleRelevant(result: TgstatChannelResult, coreTerms: Set<String>): Boolean {
+        if (coreTerms.isEmpty()) return true
+        val title    = result.title.lowercase()
+        val username = result.username?.lowercase() ?: ""
+        return coreTerms.any { term -> title.contains(term) || username.contains(term) }
     }
 
     // ─── Search endpoint ──────────────────────────────────────────────────────
@@ -119,55 +144,75 @@ class TgstatSearchController(
                 .body(mapOf("error" to "Введите запрос или заполните AI-профиль в настройках"))
         }
 
-        // AI генерирует запросы в приоритетном порядке:
-        // 1. тема + вакансии (рус), 2. тема + jobs (eng),
-        // 3. просто тема (рус), 4. просто тема (eng), 5. смежное
         val queries = aiService.generateTgstatQueries(inputText)
         log.info("TGStat поиск для user=${user.id}: запросы=$queries")
+
+        val coreTerms = extractCoreTerms(queries)
+        log.info("TGStat core terms для фильтрации: $coreTerms")
 
         val seen    = mutableSetOf<String>()
         val results = mutableListOf<TgstatChannelResult>()
 
-        // Проход 1: только чаты (peer_type=chat) в порядке приоритетных запросов
+        // ─── Проход 1: чаты, поиск ТОЛЬКО по названию/username ───────────────
+        // Самый точный — title содержит нашу тему. Мусор из описаний исключён.
         for (query in queries) {
-            if (results.size >= 5) break
-            addUnique(searchTgstat(query, peerType = "chat", limit = 20), seen, results)
+            if (results.size >= 6) break
+            addUnique(
+                searchTgstat(query, peerType = "chat", limit = 20, searchByDescription = false),
+                seen, results, maxResults = 6,
+            )
         }
 
-        // Проход 2: все типы (chat + channel), дополняем до 5
+        // ─── Проход 2: чаты + каналы, только название ─────────────────────────
         if (results.size < 5) {
             for (query in queries) {
-                if (results.size >= 5) break
-                addUnique(searchTgstat(query, peerType = "all", limit = 20), seen, results)
+                if (results.size >= 6) break
+                addUnique(
+                    searchTgstat(query, peerType = "all", limit = 20, searchByDescription = false),
+                    seen, results, maxResults = 6,
+                )
             }
         }
 
-        // Проход 3: fallback — первые слова запросов, увеличенный limit
+        // ─── Проход 3: поиск с описанием, но только если title релевантен ─────
+        // Берём только первые 3 запроса (наиболее точные).
+        // Каждый результат проходит фильтр isTitleRelevant — иначе мусор.
+        if (results.size < 4 && coreTerms.isNotEmpty()) {
+            for (query in queries.take(3)) {
+                if (results.size >= 7) break
+                val raw      = searchTgstat(query, peerType = "all", limit = 40, searchByDescription = true)
+                val filtered = raw.filter { isTitleRelevant(it, coreTerms) }
+                log.info("TGStat desc '$query': всего=${raw.size} релевантных=${filtered.size}")
+                addUnique(filtered, seen, results, maxResults = 7)
+            }
+        }
+
+        // ─── Проход 4: fallback — только термины, без служебных слов ─────────
         if (results.isEmpty()) {
-            val fallback = queries
-                .map { it.trim().split("\\s+".toRegex()).first().lowercase() }
-                .filter { it.length >= 3 }
-                .distinct()
+            val fallback = coreTerms
+                .filter { it.length >= 4 }
+                .sortedByDescending { it.length }
+                .take(3)
             log.info("TGStat fallback для user=${user.id}: $fallback")
             for (query in fallback) {
                 if (results.size >= 5) break
-                addUnique(searchTgstat(query, peerType = "all", limit = 50), seen, results)
+                addUnique(
+                    searchTgstat(query, peerType = "all", limit = 50, searchByDescription = false),
+                    seen, results, maxResults = 5,
+                )
             }
         }
 
-        // ─── Добавляем фиксированные рекомендованные чаты ────────────────────
-        // Для дизайнеров — desgangchat
+        // ─── Фиксированные рекомендованные чаты ──────────────────────────────
         if (isDesignRelated(inputText) && results.none { it.link.contains("desgangchat") }) {
             results.add(FIXED_DESIGN_CHAT)
             seen.add("desgangchat")
-            log.info("TGStat: добавлен фиксированный чат desgangchat для user=${user.id}")
+            log.info("TGStat: добавлен desgangchat для user=${user.id}")
         }
-
-        // Для творческих специальностей — mskeventjob
         if (isCreativeRelated(inputText) && results.none { it.link.contains("mskeventjob") }) {
             results.add(FIXED_EVENT_CHAT)
             seen.add("mskeventjob")
-            log.info("TGStat: добавлен фиксированный чат mskeventjob для user=${user.id}")
+            log.info("TGStat: добавлен mskeventjob для user=${user.id}")
         }
 
         log.info("TGStat итог для user=${user.id}: найдено ${results.size} результатов")
@@ -178,7 +223,7 @@ class TgstatSearchController(
         found: List<TgstatChannelResult>,
         seen: MutableSet<String>,
         results: MutableList<TgstatChannelResult>,
-        maxResults: Int = 5,
+        maxResults: Int = 6,
     ) {
         for (ch in found) {
             if (results.size >= maxResults) break
@@ -188,18 +233,20 @@ class TgstatSearchController(
     }
 
     /**
-     * Один запрос к TGStat API.
+     * Один запрос к TGStat.
      *
-     * Правила:
-     * - token    — обязателен (НЕ key)
-     * - country  — обязателен (ru)
-     * - language — НЕ передаём: дефолт в API = "russian", любая явная передача вызывает wrong_language_param
-     * - peer_type = "chat" для чатов, "all" для fallback
+     * searchByDescription=false: ищем только по названию — самый точный режим.
+     * searchByDescription=true:  ищем и по описанию — больше результатов, но
+     *                             нужна дополнительная фильтрация (isTitleRelevant).
+     *
+     * Примечание: параметр language НЕ передаём — дефолт API = "russian".
+     * Явная передача вызывает ошибку wrong_language_param.
      */
     private fun searchTgstat(
         query: String,
         peerType: String = "chat",
         limit: Int = 20,
+        searchByDescription: Boolean = false,
     ): List<TgstatChannelResult> {
         if (query.length < 3) {
             log.warn("TGStat: пропускаем короткий запрос '$query'")
@@ -212,16 +259,21 @@ class TgstatSearchController(
             append("&q=${java.net.URLEncoder.encode(query, "UTF-8")}")
             append("&peer_type=$peerType")
             append("&country=ru")
-            append("&search_by_description=1")
+            if (searchByDescription) append("&search_by_description=1")
             append("&limit=$limit")
         }
 
-        log.info("TGStat запрос: q='$query' peer_type=$peerType limit=$limit")
+        log.info("TGStat запрос: q='$query' peer_type=$peerType limit=$limit desc=$searchByDescription")
 
         return try {
-            val headers = HttpHeaders().apply { accept = listOf(MediaType.APPLICATION_JSON) }
-            val response = restTemplate.exchange(url, HttpMethod.GET, HttpEntity<Void>(headers), TgstatApiResponse::class.java)
-            val body = response.body ?: run { log.warn("TGStat: пустое тело для '$query'"); return emptyList() }
+            val headers  = HttpHeaders().apply { accept = listOf(MediaType.APPLICATION_JSON) }
+            val response = restTemplate.exchange(
+                url, HttpMethod.GET, HttpEntity<Void>(headers), TgstatApiResponse::class.java,
+            )
+            val body = response.body ?: run {
+                log.warn("TGStat: пустое тело для '$query'")
+                return emptyList()
+            }
 
             if (body.status != "ok") {
                 log.error("TGStat: статус='${body.status}' для '$query'. error=${body.error}")
@@ -229,7 +281,7 @@ class TgstatSearchController(
             }
 
             val items = body.response?.items ?: emptyList()
-            log.info("TGStat '$query' peer=$peerType: получено ${items.size} результатов")
+            log.info("TGStat '$query' peer=$peerType: ${items.size} сырых результатов")
 
             items.mapNotNull { item ->
                 val rawUsername   = item.username?.takeIf { it.isNotBlank() }
@@ -237,15 +289,12 @@ class TgstatSearchController(
 
                 val apiLink = item.link?.takeIf { it.isNotBlank() }
                 val link = when {
-                    apiLink != null    -> if (apiLink.startsWith("https://")) apiLink else "https://$apiLink"
+                    apiLink != null     -> if (apiLink.startsWith("https://")) apiLink else "https://$apiLink"
                     rawUsername != null -> "https://t.me/${rawUsername.trimStart('@')}"
-                    else               -> return@mapNotNull null
+                    else                -> return@mapNotNull null
                 }
 
                 val members = item.participantsCount ?: 0
-
-                // Фильтр: не возвращаем чаты с менее чем MIN_MEMBERS участников
-                // (0 означает что данные не пришли — пропускаем проверку)
                 if (members in 1 until MIN_MEMBERS) return@mapNotNull null
 
                 val tgstatLink = rawUsername?.let { slug ->

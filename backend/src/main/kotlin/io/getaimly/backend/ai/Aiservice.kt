@@ -259,15 +259,21 @@ $contextList
     }
 
     /**
-     * Генерирует поисковые запросы для TGStat в строгом приоритетном порядке:
-     * 1. [тема] вакансии     — ищем чаты с вакансиями по теме (рус)
-     * 2. [topic] jobs        — то же на английском
-     * 3. [тема]              — просто тема (рус)
-     * 4. [topic]             — просто тема (eng)
-     * 5. [смежная тема]      — одна смежная тема
+     * Генерирует поисковые запросы для TGStat.
      *
-     * Такой порядок позволяет сначала найти максимально релевантные чаты
-     * (где ищут специалистов), затем — тематические чаты.
+     * Ключевое требование: запросы должны соответствовать реальным НАЗВАНИЯМ
+     * чатов в Telegram, а не описывать то, что ищет пользователь.
+     *
+     * Порядок запросов:
+     * 1. [короткий термин] вакансии  — чаты с вакансиями по теме (рус)
+     * 2. [short term] jobs            — то же на английском
+     * 3. [короткий термин]            — тематические чаты (рус)
+     * 4. [short term]                 — тематические чаты (eng)
+     * 5. [смежный термин]             — одна смежная тема
+     *
+     * ВАЖНО: поиск идёт по названию чата. "дизайн" найдёт "Дизайн чат",
+     * но НЕ найдёт "ux ui дизайнеры" если мы ищем только "дизайн".
+     * Поэтому запрос 3 и 4 — ОДНО самое узнаваемое слово.
      */
     fun generateTgstatQueries(input: String): List<String> {
         if (apiKey.isBlank()) {
@@ -278,23 +284,28 @@ $contextList
         val trimmed = input.trim()
 
         val prompt = """
-Пользователь описывает свой бизнес или нишу. Сгенерируй ровно 5 поисковых запросов для поиска Telegram-чатов в СТРОГОМ порядке приоритета.
+Тебе нужно придумать 5 поисковых запросов для поиска Telegram-чатов по базе TGStat.
+Поиск идёт по НАЗВАНИЯМ и USERNAME чатов — не по описаниям.
 
-Описание/запрос:
-"$trimmed"
+Пользователь ищет чаты по теме: "$trimmed"
 
-ОБЯЗАТЕЛЬНЫЙ ПОРЯДОК (менять нельзя):
-1. [основная тема] вакансии — тема + слово "вакансии" на русском. Пример: "дизайн вакансии", "smm вакансии"
-2. [topic] jobs             — та же основная тема + "jobs" на английском. Пример: "design jobs", "smm jobs"
-3. [основная тема]          — ТОЛЬКО основная тема, одно слово, на русском. Пример: "дизайн", "smm", "разработка"
-4. [topic]                  — ТОЛЬКО основная тема одним словом на английском. Пример: "design", "smm", "development"
-5. [смежная тема]           — ОДНА смежная тема (не основная), 1-2 слова. Пример: "фриланс биржа", "digital marketing"
+Правила:
+1. Запросы — это слова, которые реально встречаются в НАЗВАНИЯХ Telegram-чатов.
+   Примеры реальных названий: "Дизайнеры РФ", "SMM Chat", "Разработчики вакансии", "IT Jobs RU", "Frontend чат"
+2. Каждый запрос: 1-2 слова, не более.
+3. Запрос 1 (ru+вакансии): самое короткое узнаваемое слово темы + "вакансии". Пример: "дизайн вакансии", "smm вакансии", "разработчики вакансии"
+4. Запрос 2 (en+jobs): то же слово на английском + "jobs". Пример: "design jobs", "smm jobs", "developer jobs"
+5. Запрос 3 (ru одно слово): ТОЛЬКО одно самое узнаваемое слово темы. Пример: "дизайн", "smm", "разработчики", "маркетинг"
+6. Запрос 4 (en одно слово): то же одно слово по-английски. Пример: "design", "smm", "developers", "marketing"
+7. Запрос 5 (смежная тема): одно слово смежной темы. Пример для дизайна: "фриланс", для разработки: "программисты"
 
-ВАЖНЫЕ ПРАВИЛА:
-- Запросы 3 и 4 — ТОЛЬКО одно ключевое слово без уточнений. Если запрос "дизайн" — не писать "ux ui дизайн", только "дизайн"
-- Основная тема — самое прямое слово из описания (например, если описание "ui/ux дизайнер" — основная тема "дизайн")
+КРИТИЧНО:
+- Запрос 3 и 4 — строго ОДНО слово, без уточнений и дополнений
+- Для "разработка"/"программирование" используй "разработчики" (не "разработка") — это реальное слово в названиях чатов
+- Для "дизайн": запрос 3 = "дизайн" (не "ui ux дизайн"), запрос 4 = "design"
+- Для "smm/маркетинг": запрос 3 = "smm", запрос 4 = "smm" или "marketing"
+- НЕ используй: "фриланс биржа" (слишком широко), "it" одиноко (слишком широко)
 - Все запросы в нижнем регистре
-- Не использовать фразы типа "ищу клиентов" — только темы чатов
 
 Верни ТОЛЬКО JSON без пояснений:
 {"queries": ["запрос 1", "запрос 2", "запрос 3", "запрос 4", "запрос 5"]}
@@ -308,7 +319,7 @@ $contextList
                     mapOf("role" to "user", "content" to prompt),
                 ),
                 "max_tokens" to 200,
-                "temperature" to 0.2,
+                "temperature" to 0.1,
             )
 
             val response = restTemplate.postForObject(
@@ -318,29 +329,35 @@ $contextList
                     setBearerAuth(apiKey)
                 }),
                 GroqResponse::class.java,
-            ) ?: return listOf(trimmed.split(" ").first().take(20).lowercase())
+            ) ?: return fallbackQueries(trimmed)
 
             val raw = response.choices.firstOrNull()?.message?.content
-                ?: return listOf(trimmed.split(" ").first().take(20).lowercase())
+                ?: return fallbackQueries(trimmed)
             val clean = raw.replace(Regex("```json|```"), "").trim()
 
             val queriesJson = Regex("\"queries\"\\s*:\\s*\\[([^]]*)]")
                 .find(clean)?.groupValues?.get(1)
-                ?: return listOf(trimmed.split(" ").first().take(20).lowercase())
+                ?: return fallbackQueries(trimmed)
 
             val queries = Regex("\"([^\"]+)\"")
                 .findAll(queriesJson)
                 .map { it.groupValues[1].trim().lowercase() }
-                .filter { it.length >= 3 }
+                .filter { it.length >= 2 }
                 .distinct()
                 .toList()
 
-            log.info("generateTgstatQueries: сгенерировано ${queries.size} запросов для \"${trimmed.take(40)}\"")
-            queries.ifEmpty { listOf(trimmed.split(" ").first().take(20).lowercase()) }
+            log.info("generateTgstatQueries: сгенерировано ${queries.size} запросов для \"${trimmed.take(40)}\": $queries")
+            queries.ifEmpty { fallbackQueries(trimmed) }
         } catch (e: Exception) {
             log.warn("generateTgstatQueries ошибка: ${e.message}")
-            listOf(trimmed.split(" ").first().take(20).lowercase())
+            fallbackQueries(trimmed)
         }
+    }
+
+    // Fallback — берём первое слово запроса как базовый термин
+    private fun fallbackQueries(input: String): List<String> {
+        val term = input.trim().split(" ").first().take(20).lowercase()
+        return listOf("$term вакансии", "$term jobs", term)
     }
 
     // ─── Private helpers ──────────────────────────────────────────────────────
