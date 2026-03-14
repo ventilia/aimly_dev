@@ -96,22 +96,6 @@ async function searchChatsApi(query: string): Promise<TgstatSearchResponse> {
     return res.json() as Promise<TgstatSearchResponse>
 }
 
-async function getServiceOffersApi(): Promise<boolean> {
-    const res = await fetch(`${BASE}/api/v1/settings/service-offers`, { credentials: 'include' })
-    if (!res.ok) return false
-    const data = await res.json() as { respondToServiceOffers: boolean }
-    return data.respondToServiceOffers
-}
-
-async function setServiceOffersApi(enabled: boolean): Promise<void> {
-    await fetch(`${BASE}/api/v1/settings/service-offers`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled }),
-    })
-}
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function buildTelegramUrl(link: string): string {
@@ -137,54 +121,6 @@ function StatusDot({ active }: { active: boolean }) {
             style={{ background: active ? '#10b981' : 'var(--c-border)' }}
             title={active ? 'Мониторинг активен' : 'Ожидание подключения'}
         />
-    )
-}
-
-function ServiceOffersToggle() {
-    const [enabled, setEnabled] = useState(false)
-    const [ready,   setReady]   = useState(false)
-    const [saving,  setSaving]  = useState(false)
-
-    useEffect(() => {
-        getServiceOffersApi().then(v => { setEnabled(v); setReady(true) })
-    }, [])
-
-    const toggle = async () => {
-        if (saving || !ready) return
-        setSaving(true)
-        const next = !enabled
-        setEnabled(next)
-        try {
-            await setServiceOffersApi(next)
-        } catch {
-            setEnabled(!next)
-        } finally {
-            setSaving(false)
-        }
-    }
-
-    if (!ready) return null
-
-    return (
-        <div className={s.toggleBlock}>
-            <div className={s.toggleInfo}>
-                <span className={s.toggleLabel}>Реагировать на предложения услуг</span>
-                <span className={s.toggleDesc}>
-                    {enabled
-                        ? 'AI реагирует на сообщения, где кто-то предлагает услугу — полезно для поиска подрядчиков'
-                        : 'AI игнорирует предложения услуг — стандартный режим для поиска клиентов'}
-                </span>
-            </div>
-            <button
-                className={s.toggleBtn}
-                onClick={toggle}
-                disabled={saving}
-                aria-pressed={enabled}
-                style={{ background: enabled ? 'var(--c-accent)' : 'var(--c-border)' }}
-            >
-                <span className={s.toggleThumb} style={{ left: enabled ? 23 : 3 }} />
-            </button>
-        </div>
     )
 }
 
@@ -356,9 +292,6 @@ export default function ChatsPage() {
                 )}
             </div>
 
-            {/* ─── Тумблер «предложения услуг» ───────────────── */}
-            <ServiceOffersToggle />
-
             {/* ─── AI-поиск чатов через TGStat ───────────────── */}
             <div className={s.searchBlock}>
                 <div className={s.searchHeader}>
@@ -430,14 +363,13 @@ export default function ChatsPage() {
                         )}
                     </>
                 ) : (
-                    /* ─── Заглушка для пользователей без подписки ─── */
                     <div className={s.searchLockedInner}>
                         <div className={s.searchLockedIcon}><LockIcon /></div>
                         <div className={s.searchLockedText}>
                             <p className={s.searchLockedTitle}>Доступно на тарифе МИНИМУМ</p>
                             <p className={s.searchLockedSub}>
-                                AI проанализирует ваш бизнес и подберёт подходящие Telegram-чаты через TGStat —
-                                где сидит ваша целевая аудитория
+                                AI проанализирует ваш профиль и подберёт подходящие Telegram-чаты
+                                через TGStat — где сидит ваша целевая аудитория
                             </p>
                         </div>
                         <a href="/checkout" className={s.searchLockedBtn}>Подключить →</a>

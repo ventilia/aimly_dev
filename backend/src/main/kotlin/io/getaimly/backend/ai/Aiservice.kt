@@ -47,11 +47,6 @@ class AiService(
         val foundAt: String,
     )
 
-    /**
-     * respondToServiceOffers:
-     * false (по умолчанию) — игнорируем сообщения, где автор сам ПРЕДЛАГАЕТ услугу.
-     * true — такие сообщения тоже помечаем как valid (исполнитель ищет заказы).
-     */
     data class ValidationTask(
         val messageText: String,
         val keyword: String,
@@ -183,9 +178,7 @@ $contextList
 
     /**
      * Генерация ключевых слов на основе описания бизнеса.
-     *
-     * ВАЖНО: город включается в ключевые слова ТОЛЬКО если он явно упомянут
-     * в businessContext. Модель не придумывает географию самостоятельно.
+     * Город включается ТОЛЬКО если явно упомянут в businessContext.
      */
     fun generateKeywords(businessContext: String): List<String> {
         if (apiKey.isBlank()) {
@@ -198,7 +191,6 @@ $contextList
             throw IllegalArgumentException("Описание бизнеса слишком короткое")
         }
 
-        // Извлекаем город из описания бизнеса, если он там есть
         val cityHint = extractCityFromContext(trimmed)
         val cityInstruction = if (cityHint != null) {
             "- В описании бизнеса упомянут город: \"$cityHint\". " +
@@ -263,7 +255,7 @@ $contextList
             .filter { it.isNotBlank() }
             .toList()
 
-        log.info("generateKeywords: сгенерировано ${keywords.size} ключевых слов для бизнеса (${trimmed.take(60)}...)")
+        log.info("generateKeywords: сгенерировано ${keywords.size} ключевых слов (${trimmed.take(60)}...)")
         return keywords
     }
 
@@ -316,32 +308,43 @@ $contextList
     }
 
     /**
-     * Генерирует поисковые запросы для TGStat на основе описания бизнеса или произвольного текста.
-     * Возвращает список из 2-4 коротких запросов для поиска подходящих Telegram-чатов.
+     * Генерирует короткие тематические запросы для поиска Telegram-чатов через TGStat.
+     *
+     * ВАЖНО: TGStat ищет по названию и описанию канала/чата.
+     * Нужны ТЕМАТИЧЕСКИЕ слова (1-2 слова), не фразы с намерением типа "ищу клиентов".
+     * Примеры хороших запросов: "дизайн", "smm", "маркетинг", "разработка", "фриланс".
      */
     fun generateTgstatQueries(input: String): List<String> {
         if (apiKey.isBlank()) {
             log.warn("generateTgstatQueries: groq api key не задан")
-            return listOf(input.trim().take(50))
+            return listOf(input.trim().split(" ").first().take(20).lowercase())
         }
 
         val trimmed = input.trim()
 
         val prompt = """
-Ты — AI-помощник. Пользователь ищет Telegram-чаты, где обитает его целевая аудитория.
+Пользователь описывает свой бизнес или нишу. Тебе нужно подобрать поисковые запросы для поиска Telegram-чатов через поисковик.
 
-Описание пользователя:
+Описание:
 "$trimmed"
 
-Задача: сгенерируй 3-4 коротких поисковых запроса для поиска релевантных Telegram-чатов и групп.
-Запросы должны быть такими, как их вводят в поисковике:
-- Короткие (1-4 слова)
-- На русском языке (и 1-2 на английском если тематика международная)
-- Описывают тематику чата, а не услугу пользователя
-- Примеры: "дизайн интерьера", "ремонт квартир", "freelance developers", "smm маркетинг"
+Правила генерации запросов:
+- Запросы — это ТЕМЫ чатов, не услуги пользователя
+- Каждый запрос: 1-2 слова, максимум 3 слова
+- Запросы должны быть такими, которые люди вводят при поиске чатов по теме
+- Используй ОБЩИЕ тематические слова: "дизайн", "smm", "маркетинг", "фриланс", "разработка"
+- НЕ используй фразы типа "ищу клиентов" или "поиск заказчиков" — это не темы чатов
+- Добавь 1-2 запроса на английском если тема международная
+- Сгенерируй 4-5 запросов
+
+Примеры хороших запросов:
+- Для SMM-специалиста: ["smm", "маркетинг", "таргет", "smm специалисты", "реклама"]
+- Для дизайнера: ["дизайн", "графика", "ui ux", "дизайнеры", "design"]
+- Для разработчика: ["разработка", "программисты", "фриланс", "developers", "it"]
+- Для репетитора: ["репетиторы", "образование", "обучение", "учителя"]
 
 Верни ТОЛЬКО JSON без пояснений:
-{"queries": ["запрос 1", "запрос 2", "запрос 3"]}
+{"queries": ["запрос 1", "запрос 2", "запрос 3", "запрос 4"]}
 """.trimIndent()
 
         return try {
@@ -362,25 +365,28 @@ $contextList
                     setBearerAuth(apiKey)
                 }),
                 GroqResponse::class.java,
-            ) ?: return listOf(trimmed.take(50))
+            ) ?: return listOf(trimmed.split(" ").first().take(20).lowercase())
 
-            val raw = response.choices.firstOrNull()?.message?.content ?: return listOf(trimmed.take(50))
+            val raw = response.choices.firstOrNull()?.message?.content
+                ?: return listOf(trimmed.split(" ").first().take(20).lowercase())
             val clean = raw.replace(Regex("```json|```"), "").trim()
 
             val queriesJson = Regex("\"queries\"\\s*:\\s*\\[([^]]*)]")
-                .find(clean)?.groupValues?.get(1) ?: return listOf(trimmed.take(50))
+                .find(clean)?.groupValues?.get(1)
+                ?: return listOf(trimmed.split(" ").first().take(20).lowercase())
 
             val queries = Regex("\"([^\"]+)\"")
                 .findAll(queriesJson)
-                .map { it.groupValues[1].trim() }
-                .filter { it.isNotBlank() }
+                .map { it.groupValues[1].trim().lowercase() }
+                .filter { it.length >= 3 }   // TGStat требует минимум 3 символа
+                .distinct()
                 .toList()
 
             log.info("generateTgstatQueries: сгенерировано ${queries.size} запросов для \"${trimmed.take(40)}\"")
-            queries.ifEmpty { listOf(trimmed.take(50)) }
+            queries.ifEmpty { listOf(trimmed.split(" ").first().take(20).lowercase()) }
         } catch (e: Exception) {
             log.warn("generateTgstatQueries ошибка: ${e.message}")
-            listOf(trimmed.take(50))
+            listOf(trimmed.split(" ").first().take(20).lowercase())
         }
     }
 
@@ -519,43 +525,25 @@ $contextList
 
         val contextBlock = if (contextMessages.isNotEmpty()) {
             val ctx = contextMessages.joinToString("\n") { "    - \"$it\"" }
-            """
-            |
-            |контекст разговора (сообщения перед этим):
-            |$ctx
-            """.trimMargin()
+            "\n\nконтекст разговора (сообщения перед этим):\n$ctx"
         } else ""
 
         val leadsBlock = if (recentLeads.isNotEmpty()) {
             val leads = recentLeads.take(5).joinToString("\n") { l ->
                 "    - @${l.authorUsername}: \"${l.messageText}\" (${l.foundAt})"
             }
-            """
-            |
-            |лиды уже найденные для этого пользователя за последние 7 дней (справочно):
-            |$leads
-            |
-            |ВАЖНО: не отклоняй лид только потому что автор уже встречался.
-            |один человек может искать разные услуги или писать в разных чатах — это нормально.
-            |дубль только если: тот же автор + та же услуга + практически то же сообщение.
-            """.trimMargin()
+            "\n\nлиды уже найденные для этого пользователя за последние 7 дней (справочно):\n$leads\n\n" +
+                    "ВАЖНО: не отклоняй лид только потому что автор уже встречался.\n" +
+                    "один человек может искать разные услуги или писать в разных чатах — это нормально.\n" +
+                    "дубль только если: тот же автор + та же услуга + практически то же сообщение."
         } else ""
 
         val businessBlock = if (!businessContext.isNullOrBlank()) {
-            """
-            |
-            |информация о бизнесе владельца системы (используй для точной фильтрации — ищем клиентов именно для этого бизнеса):
-            |$businessContext
-            """.trimMargin()
+            "\n\nинформация о бизнесе владельца системы (используй для точной фильтрации — ищем клиентов именно для этого бизнеса):\n$businessContext"
         } else ""
 
-        // Динамически формируем правило по тумблеру "реагировать на предложения услуг"
         val serviceOffersValidRule = if (respondToServiceOffers) {
-            """
-            |
-            |ДОПОЛНИТЕЛЬНО valid=true если:
-            |- автор сам предлагает свои услуги и ищет клиентов/заказы — владелец включил режим "реагировать на предложения услуг", такой автор тоже является лидом
-            """.trimMargin()
+            "\n\nДОПОЛНИТЕЛЬНО valid=true если:\n- автор сам предлагает свои услуги и ищет клиентов/заказы — владелец включил режим \"реагировать на предложения услуг\", такой автор тоже является лидом"
         } else ""
 
         val serviceOffersInvalidRule = if (!respondToServiceOffers) {
