@@ -78,7 +78,7 @@ server:
 
 # ─── AI (Groq) ─────────────────────────────────────────────────────────────────
 groq:
-  api-key: ${GROQ_API_KEY:REDACTED_GROQ_KEY}
+  api-key: ${GROQ_API_KEY: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}
 
 # ─── TGStat API ────────────────────────────────────────────────────────────────
 # ИСПРАВЛЕНО: api-token → api-key (соответствует имени переменной в контроллере)

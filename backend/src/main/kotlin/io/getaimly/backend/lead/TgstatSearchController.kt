@@ -27,7 +27,7 @@ data class TgstatChannelResult(
     val participantsCount: Int,
     val link: String,
     val tgstatLink: String?,
-    val peerType: String = "channel",
+    val peerType: String = "chat",
 )
 
 data class TgstatSearchResponse(
@@ -58,7 +58,7 @@ class TgstatSearchController(
                 .body(mapOf("error" to "Поиск чатов доступен на тарифе MINIMUM и выше"))
         }
         if (tgstatApiKey.isBlank()) {
-            log.error("TGStat API ключ не настроен — установите переменную окружения TGSTAT_API_KEY")
+            log.error("TGStat API ключ не настроен")
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(mapOf("error" to "TGStat API ключ не настроен"))
         }
@@ -77,23 +77,21 @@ class TgstatSearchController(
         val seen    = mutableSetOf<String>()
         val results = mutableListOf<TgstatChannelResult>()
 
-        // Проход 1: только каналы (peer_type=channel)
+        // Проход 1: только чаты — это то что нужно пользователю для мониторинга
         for (query in queries) {
             if (results.size >= 5) break
-            val found = searchTgstat(query, peerType = "channel", limit = 10)
-            addUnique(found, seen, results)
+            addUnique(searchTgstat(query, peerType = "chat", limit = 20), seen, results)
         }
 
-        // Проход 2: все типы (peer_type=all), дополняем до 5
+        // Проход 2: все типы (chat + channel), дополняем до 5
         if (results.size < 5) {
             for (query in queries) {
                 if (results.size >= 5) break
-                val found = searchTgstat(query, peerType = "all", limit = 10)
-                addUnique(found, seen, results)
+                addUnique(searchTgstat(query, peerType = "all", limit = 20), seen, results)
             }
         }
 
-        // Проход 3: fallback — только первое слово каждого запроса
+        // Проход 3: fallback — первые слова каждого запроса
         if (results.isEmpty()) {
             val fallback = queries
                 .map { it.trim().split("\\s+".toRegex()).first().lowercase() }
@@ -102,8 +100,7 @@ class TgstatSearchController(
             log.info("TGStat fallback для user=${user.id}: $fallback")
             for (query in fallback) {
                 if (results.size >= 5) break
-                val found = searchTgstat(query, peerType = "all", limit = 20)
-                addUnique(found, seen, results)
+                addUnique(searchTgstat(query, peerType = "all", limit = 50), seen, results)
             }
         }
 
@@ -127,30 +124,30 @@ class TgstatSearchController(
     /**
      * Один запрос к TGStat API.
      *
-     * ИСПРАВЛЕНИЯ:
-     * 1. Параметр авторизации — 'token' (не 'key'). Именно так требует документация TGStat.
-     * 2. Параметр 'country' — обязателен по документации (используем 'ru' для России).
-     * 3. Параметр 'language' — корректный код 'ru' (не 'russian').
-     * 4. peer_type передаётся всегда (включая 'all' вместо null).
+     * КЛЮЧЕВЫЕ ПРАВИЛА по документации:
+     * 1. token    — обязателен
+     * 2. country  — обязателен (используем "ru")
+     * 3. language — НЕ передаём совсем! Дефолт в API = "russian".
+     *               Любое переданное значение (включая "ru" и "russian") вызывает wrong_language_param.
+     * 4. peer_type = "chat" для поиска групп, "all" для расширенного поиска
+     * 5. q        — минимум 3 символа
      */
     private fun searchTgstat(
         query: String,
-        peerType: String = "channel",
-        limit: Int = 10,
+        peerType: String = "chat",
+        limit: Int = 20,
     ): List<TgstatChannelResult> {
         if (query.length < 3) {
-            log.warn("TGStat: пропускаем слишком короткий запрос '$query'")
+            log.warn("TGStat: пропускаем короткий запрос '$query'")
             return emptyList()
         }
 
-        // ИСПРАВЛЕНО: используем 'token', добавлен 'country=ru', language='ru'
         val url = buildString {
             append("https://api.tgstat.ru/channels/search")
             append("?token=${java.net.URLEncoder.encode(tgstatApiKey, "UTF-8")}")
             append("&q=${java.net.URLEncoder.encode(query, "UTF-8")}")
             append("&peer_type=$peerType")
             append("&country=ru")
-            append("&language=ru")
             append("&search_by_description=1")
             append("&limit=$limit")
         }
@@ -173,14 +170,13 @@ class TgstatSearchController(
                 log.warn("TGStat: пустое тело ответа для запроса '$query'")
                 return emptyList()
             }
-
             if (body.status != "ok") {
-                log.error("TGStat: статус='${body.status}' для запроса '$query'. error=${body.error} message=${body.message}")
+                log.error("TGStat: статус='${body.status}' для '$query'. error=${body.error}")
                 return emptyList()
             }
 
             val items = body.response?.items
-            log.info("TGStat '$query' peer=$peerType: получено ${items?.size ?: 0} результатов (count=${body.response?.count})")
+            log.info("TGStat '$query' peer=$peerType: получено ${items?.size ?: 0} результатов")
             if (items.isNullOrEmpty()) return emptyList()
 
             items.mapNotNull { item ->
@@ -189,18 +185,19 @@ class TgstatSearchController(
                     if (it.startsWith("@")) it else "@$it"
                 }
 
-                // Ссылка строится из поля link (из API) или username
                 val apiLink = item.link?.takeIf { it.isNotBlank() }
                 val link = when {
-                    apiLink != null -> {
-                        if (apiLink.startsWith("https://")) apiLink
-                        else "https://$apiLink"
-                    }
+                    apiLink != null -> if (apiLink.startsWith("https://")) apiLink else "https://$apiLink"
                     rawUsername != null -> "https://t.me/${rawUsername.trimStart('@')}"
-                    else -> return@mapNotNull null   // канал без ссылки — пропускаем
+                    else -> return@mapNotNull null
                 }
 
-                val tgstatLink = rawUsername?.let { "https://tgstat.ru/channel/${it.trimStart('@')}" }
+                // Для чатов ссылка на tgstat — /chat/username
+                val tgstatLink = rawUsername?.let {
+                    val slug = it.trimStart('@')
+                    if (item.peerType == "chat") "https://tgstat.ru/chat/$slug"
+                    else "https://tgstat.ru/channel/$slug"
+                }
 
                 TgstatChannelResult(
                     title             = item.title?.ifBlank { cleanUsername ?: "Без названия" } ?: cleanUsername ?: "Без названия",
@@ -213,10 +210,10 @@ class TgstatSearchController(
                 )
             }
         } catch (e: HttpClientErrorException) {
-            log.error("TGStat HTTP ошибка ${e.statusCode} для '$query': ${e.responseBodyAsString}", e)
+            log.error("TGStat HTTP ${e.statusCode} для '$query': ${e.responseBodyAsString}")
             emptyList()
         } catch (e: Exception) {
-            log.error("TGStat исключение для '$query': ${e.javaClass.simpleName}: ${e.message}", e)
+            log.error("TGStat исключение для '$query': ${e.javaClass.simpleName}: ${e.message}")
             emptyList()
         }
     }
@@ -226,8 +223,8 @@ class TgstatSearchController(
 @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
 data class TgstatApiResponse(
     val status: String = "",
-    val error: String? = null,       // поле ошибки из TGStat
-    val message: String? = null,     // дополнительное сообщение
+    val error: String? = null,
+    val message: String? = null,
     val response: TgstatResponseBody? = null,
 )
 
@@ -243,7 +240,6 @@ data class TgstatChannelItem(
     val title: String? = null,
     val username: String? = null,
     val about: String? = null,
-    // Поле link присутствует в ответе TGStat (например "t.me/channel_name")
     val link: String? = null,
     @com.fasterxml.jackson.annotation.JsonProperty("participants_count")
     val participantsCount: Int? = null,
