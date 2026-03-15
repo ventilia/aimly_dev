@@ -7,14 +7,10 @@ import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.*
 
-// ─── Request/Response DTOs ────────────────────────────────────────────────────
 
 data class TgstatSearchRequest(val query: String = "")
 
-/**
- * TgstatChannelResult — публичный DTO для фронтенда.
- * tgstatLink убран: кнопка «Статистика ↗» удалена с фронтенда.
- */
+
 data class TgstatChannelResult(
     val title:             String,
     val username:          String?,
@@ -29,7 +25,7 @@ data class TgstatSearchResponse(
     val queries: List<String>,
 )
 
-// ─── Controller ───────────────────────────────────────────────────────────────
+
 
 @RestController
 @RequestMapping("/api/v1/chats/search")
@@ -43,7 +39,7 @@ class TgstatSearchController(
         @AuthenticationPrincipal user: User,
         @RequestBody req: TgstatSearchRequest,
     ): ResponseEntity<*> {
-        // ─── Проверка доступа ─────────────────────────────────────────────────
+
         val plan      = user.subscriptionPlan
         val status    = user.subscriptionStatus
         val hasAccess = plan in setOf("MINIMUM", "START") || status == "TRIAL"

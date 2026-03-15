@@ -35,7 +35,7 @@ class AiService(
         executor.submit { processQueue() }
     }
 
-    // ─── Data classes ─────────────────────────────────────────────────────────
+
 
     data class ValidationResult(
         val valid: Boolean,
@@ -58,7 +58,6 @@ class AiService(
         val respondToServiceOffers: Boolean = false,
         val callback: (ValidationResult?) -> Unit,
     )
-
 
 
     fun validateAsync(
@@ -153,40 +152,29 @@ $contextList
 
     fun expandKeyword(keyword: String): List<String> {
         if (apiKey.isBlank()) {
-            log.info("keyword expand: groq api key не задан, варианты не генерируются для \"$keyword\"")
+            log.info("keyword expand: groq api key не задан для \"$keyword\"")
             return listOf(keyword)
         }
 
         return try {
             val variants = callGroqExpand(keyword)
-
             val result = (listOf(keyword) + variants)
                 .map { it.trim().lowercase() }
                 .filter { it.isNotBlank() }
                 .distinct()
-
-            log.info(
-                "keyword expand: \"$keyword\" → [${result.joinToString(", ") { "\"$it\"" }}]" +
-                        " (итого ${result.size}: оригинал + ${result.size - 1} сгенерировано)"
-            )
-
+            log.info("keyword expand: \"$keyword\" → ${result.size} вариантов")
             result
         } catch (e: Exception) {
-            log.warn("keyword expand: ошибка для \"$keyword\" — ${e.message}. Используем только оригинал.")
+            log.warn("keyword expand: ошибка для \"$keyword\" — ${e.message}")
             listOf(keyword)
         }
     }
 
     fun generateKeywords(businessContext: String): List<String> {
-        if (apiKey.isBlank()) {
-            log.warn("generateKeywords: groq api key не задан — генерация невозможна")
-            throw IllegalStateException("AI-генерация недоступна: groq api key не задан")
-        }
+        if (apiKey.isBlank()) throw IllegalStateException("AI-генерация недоступна: groq api key не задан")
 
         val trimmed = businessContext.trim()
-        if (trimmed.length < 20) {
-            throw IllegalArgumentException("Описание бизнеса слишком короткое")
-        }
+        if (trimmed.length < 20) throw IllegalArgumentException("Описание бизнеса слишком короткое")
 
         val cityHint = extractCityFromContext(trimmed)
         val cityInstruction = if (cityHint != null) {
@@ -241,8 +229,7 @@ $contextList
         val clean = raw.replace(Regex("```json|```"), "").trim()
 
         val keywordsJson = Regex("\"keywords\"\\s*:\\s*\\[([^]]*)]")
-            .find(clean)
-            ?.groupValues?.get(1)
+            .find(clean)?.groupValues?.get(1)
             ?: run {
                 log.warn("generateKeywords: не удалось распарсить ответ: $clean")
                 throw RuntimeException("Некорректный формат ответа от AI")
@@ -267,49 +254,56 @@ $contextList
         val trimmed = input.trim()
 
         val prompt = """
-You are generating 5 search queries for TGStat — a Telegram channel/chat search engine.
-Queries are matched against channel/chat TITLES and USERNAMES.
+You are generating search queries for TGStat to find Telegram GROUPS/CHATS (peer_type=chat).
+Groups have completely different naming patterns than broadcast channels.
 
 User topic: "$trimmed"
 
-Generate EXACTLY 5 queries in this strict order:
+CRITICAL INSIGHT about Russian Telegram group names:
+- Groups use PLURAL profession nouns: "дизайнеры", "разработчики", "маркетологи", "фотографы"
+- Groups use community words: "дизайн чат", "smm чат", "design chat", "it тусовка"
+- Groups use freelance/orders words: "дизайн фриланс", "design freelance", "дизайн заказы"
+- Simple topic word: "дизайн", "smm", "it"
 
-Query 1: [main Russian term] + "вакансии"
-  Examples: "дизайн вакансии", "smm вакансии", "разработчики вакансии", "маркетинг вакансии"
+DO NOT use "вакансии" or "jobs" — those match broadcast CHANNELS, not groups.
 
-Query 2: [main English term] + "jobs"
-  Examples: "design jobs", "smm jobs", "developers jobs", "marketing jobs"
-  RULE: English term must be the DIRECT TRANSLATION of the Russian term in query 1.
-  "дизайн" → "design jobs"
-  "smm" → "smm jobs"
-  "разработчики" → "developers jobs"
-  "маркетинг" → "marketing jobs"
-  "копирайтер" → "copywriter jobs"
-  "таргет" → "targeting jobs" or "ads jobs"
+Generate EXACTLY 8 queries:
 
-Query 3: ONE single Russian word — the most recognizable topic word.
-  Examples: "дизайн", "smm", "разработчики", "маркетинг", "копирайтеры"
-  NEVER multiple words. NEVER "ux ui дизайн", NEVER "веб разработка". ONE word only.
+q1: Russian profession in PLURAL form (one word only).
+  "дизайнеры" NOT "дизайнер"
+  "разработчики" NOT "разработчик"
+  "маркетологи" NOT "маркетолог"
+  "фотографы" NOT "фотограф"
+  "копирайтеры" NOT "копирайтер"
+  "программисты" NOT "программист"
+  "таргетологи" NOT "таргетолог"
+  "верстальщики" NOT "верстальщик"
 
-Query 4: ONE single English word — DIRECT TRANSLATION of query 3.
-  "дизайн" → "design"
-  "smm" → "smm"
-  "разработчики" → "developers"
-  "программисты" → "developers"
-  "маркетинг" → "marketing"
-  "копирайтеры" → "copywriters"
-  "таргетолог" → "targeting"
-  "верстальщик" → "frontend"
-  NEVER use "design" if the topic is programming/development/marketing.
+q2: English profession in PLURAL form (one word only, direct translation of q1).
+  "designers" "developers" "marketers" "photographers" "copywriters" "programmers"
+  NEVER use singular: "designer" is WRONG, "designers" is CORRECT.
 
-Query 5: ONE related topic word (not the main one).
-  For "дизайн" → "фриланс"
-  For "разработчики"/"программисты" → "программисты" (or "it" or "фриланс")
-  For "smm"/"маркетинг" → "реклама"
+q3: Russian core topic word + "чат" (two words).
+  "дизайн чат" "smm чат" "маркетинг чат" "it чат" "фото чат"
 
-ALL queries must be lowercase.
-Return ONLY JSON, no explanations:
-{"queries": ["query1", "query2", "query3", "query4", "query5"]}
+q4: English core topic word + "chat" (two words).
+  "design chat" "smm chat" "marketing chat" "it chat" "photo chat"
+
+q5: Russian core topic word + "фриланс" (two words).
+  "дизайн фриланс" "smm фриланс" "it фриланс" "фото фриланс"
+
+q6: English core topic word + "freelance" (two words).
+  "design freelance" "smm freelance" "it freelance" "photo freelance"
+
+q7: Russian core topic word + "заказы" (two words).
+  "дизайн заказы" "smm заказы" "фото заказы" "разработка заказы"
+
+q8: Just the single Russian core topic word.
+  "дизайн" "smm" "маркетинг" "it" "фото" "разработка"
+
+All queries must be lowercase.
+Return ONLY JSON, no extra text:
+{"queries": ["q1","q2","q3","q4","q5","q6","q7","q8"]}
 """.trimIndent()
 
         return try {
@@ -319,7 +313,7 @@ Return ONLY JSON, no explanations:
                     mapOf("role" to "system", "content" to "Return only JSON. No explanations. No markdown."),
                     mapOf("role" to "user", "content" to prompt),
                 ),
-                "max_tokens" to 200,
+                "max_tokens" to 300,
                 "temperature" to 0.0,
             )
 
@@ -357,7 +351,14 @@ Return ONLY JSON, no explanations:
 
     private fun fallbackQueries(input: String): List<String> {
         val term = input.trim().split(" ").first().take(20).lowercase()
-        return listOf("$term вакансии", "$term jobs", term)
+
+        return listOf(
+            "${term}ы",        //множественное число
+            "${term}ers",
+            "$term чат",
+            "$term freelance",
+            term,
+        )
     }
 
 
@@ -470,8 +471,7 @@ Return ONLY JSON, no explanations:
         val clean = raw.replace(Regex("```json|```"), "").trim()
 
         val variantsJson = Regex("\"variants\"\\s*:\\s*\\[([^]]*)]")
-            .find(clean)
-            ?.groupValues?.get(1)
+            .find(clean)?.groupValues?.get(1)
             ?: run {
                 log.warn("keyword expand: не смогли распарсить ответ: $clean")
                 return emptyList()
@@ -523,7 +523,6 @@ Return ONLY JSON, no explanations:
         }
     }
 
-
     private fun callGroq(
         messageText: String,
         keyword: String,
@@ -554,7 +553,6 @@ Return ONLY JSON, no explanations:
         val businessBlock = if (!businessContext.isNullOrBlank()) {
             "\n\nИнформация о бизнесе владельца системы (ищем клиентов именно для этого бизнеса):\n$businessContext"
         } else ""
-
 
         val serviceOffersRule = if (respondToServiceOffers) {
             """
@@ -657,7 +655,6 @@ valid=true ТОЛЬКО если:
         return ValidationResult(valid = valid, reason = reason, confidence = confidence)
     }
 }
-
 
 
 @JsonIgnoreProperties(ignoreUnknown = true)
