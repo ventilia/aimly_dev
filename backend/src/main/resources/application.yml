@@ -33,66 +33,56 @@ spring:
       name: disabled
       password: disabled
 
-# ─── JWT ───────────────────────────────────────────────────────────────────────
 jwt:
   secret: ${JWT_SECRET}
   expiration-ms: ${JWT_EXPIRATION_MS}
 
-# ─── Email (Resend) ────────────────────────────────────────────────────────────
 resend:
   api-key: ${RESEND_API_KEY}
   from-email: noreply@getaimly.io
   from-name: AIMLY
 
-# ─── Telegram Bot ──────────────────────────────────────────────────────────────
 telegram:
   bot:
     token: ${TELEGRAM_BOT_TOKEN}
     username: ${TELEGRAM_BOT_USERNAME}
 
-# ─── Rate Limiting ─────────────────────────────────────────────────────────────
 rate-limit:
   login:
     max-attempts: 5
     window-minutes: 15
     block-minutes: 30
 
-# ─── Application ───────────────────────────────────────────────────────────────
 app:
   allowed-origins: ${APP_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
   cookie:
     secure: ${COOKIE_SECURE:false}
     domain: ${COOKIE_DOMAIN:}
 
-# ─── Userbot (Go-сервис) ───────────────────────────────────────────────────────
 userbot:
   url: ${USERBOT_URL:http://localhost:9090}
 
-# ─── Internal API Secret (для связи с userbot) ─────────────────────────────────
 internal:
   api-secret: ${INTERNAL_API_SECRET:aimly_internal_secret_change_in_prod}
 
-# ─── Server ────────────────────────────────────────────────────────────────────
 server:
   port: 8080
 
-# ─── AI (Groq) ─────────────────────────────────────────────────────────────────
 groq:
   api-key: ${GROQ_API_KEY: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}
 
-# ─── TGStat API ────────────────────────────────────────────────────────────────
-# ИСПРАВЛЕНО: api-token → api-key (соответствует имени переменной в контроллере)
 tgstat:
   api-key: ${TGSTAT_API_KEY:028e2ad9731533d769b517c582e3cf6a}
 
-# ─── Management & Monitoring ───────────────────────────────────────────────────
+tribute:
+  api-key: ${TRIBUTE_API_KEY:1ce4424b-515a-443e-8c45-ac3eb2d2}
+
 management:
   endpoints:
     web:
       exposure:
         include: health,info
 
-# ─── Logging ───────────────────────────────────────────────────────────────────
 logging:
   level:
     io.getaimly: DEBUG

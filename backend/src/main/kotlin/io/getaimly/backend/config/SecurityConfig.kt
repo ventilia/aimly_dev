@@ -33,10 +33,6 @@ class SecurityConfig(
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
             .httpBasic { it.disable() }
             .formLogin { it.disable() }
-            // ИСПРАВЛЕНИЕ: при отсутствии/невалидной аутентификации возвращаем 401,
-            // а не 403 от Http403ForbiddenEntryPoint (который срабатывал при pre-auth попытке).
-            // Это позволяет permitAll-эндпоинтам (login, register, verify-email) работать
-            // даже когда в куке лежит протухший токен с несуществующим userId.
             .exceptionHandling { ex ->
                 ex.authenticationEntryPoint { _, response, _ ->
                     response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized")
@@ -56,6 +52,8 @@ class SecurityConfig(
                         "/internal/**",
                         "/actuator/health",
                         "/error",
+
+                        "/api/v1/webhooks/tribute",
                     ).permitAll()
                     .anyRequest().authenticated()
             }
