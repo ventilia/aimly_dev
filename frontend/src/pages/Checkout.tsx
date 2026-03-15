@@ -1,31 +1,43 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Lang } from '../i18n/translations'
+
+import { subscriptionApi } from '../api/auth'
+import { useAuthContext } from '../context/AuthContext'
 import s from './Checkout.module.css'
 
 interface Props { lang: Lang; setLang: (l: Lang) => void }
 
+const PRICES = { MINIMUM: 4999, START: 4999 }
+
 const txt = {
     ru: {
-        back:           '← Назад',
-        title:          'Оформление подписки',
-        sub:            'Выберите подходящий тариф',
-        perMonth:       '/мес',
-        comingSoon:     'В разработке',
+        back:       '← Назад',
+        buyBtn:     (price: number) => `Оплатить — ${price.toLocaleString('ru-RU')} ₽`,
+        noBalance:  'Недостаточно средств на балансе',
+        buying:     'Оформляем...',
+        successMsg: (plan: string, date: string) => `✅ Тариф ${plan} активирован! Действует до ${date}`,
+        errMsg:     'Ошибка оплаты. Попробуйте через поддержку.',
+        title:      'Оформление подписки',
+        sub:        'Выберите подходящий тариф',
+        perMonth:   '/мес',
+        comingSoon: 'В разработке',
         comingSoonDesc: 'Тариф находится в разработке и будет доступен в ближайшее время.',
-        contactSupport: 'Для оформления подписки напишите нам:',
-        supportLink:    '@aimly_support',
-        supportNote:    'Ответим и активируем доступ в течение рабочего дня',
+        skip:       'Пропустить',
     },
     en: {
-        back:           '← Back',
-        title:          'Checkout',
-        sub:            'Choose the right plan',
-        perMonth:       '/month',
-        comingSoon:     'Coming soon',
+        back:       '← Back',
+        buyBtn:     (price: number) => `Pay — ${price} ₽`,
+        noBalance:  'Insufficient balance',
+        buying:     'Purchasing...',
+        successMsg: (plan: string, date: string) => `✅ ${plan} plan activated! Valid until ${date}`,
+        errMsg:     'Payment error. Please contact support.',
+        title:      'Checkout',
+        sub:        'Choose the right plan',
+        perMonth:   '/month',
+        comingSoon: 'Coming soon',
         comingSoonDesc: 'This plan is in development and will be available soon.',
-        contactSupport: 'To subscribe, contact us:',
-        supportLink:    '@aimly_support',
-        supportNote:    'We will respond and activate your access within one business day',
+        skip:       'Skip for now',
     },
 } as const
 
@@ -94,9 +106,40 @@ const PLANS = {
 
 export default function Checkout({ lang, setLang }: Props) {
     const l = txt[lang]
+    const { user, refreshUser } = useAuthContext()
     const navigate = useNavigate()
+    const [buying,   setBuying]  = useState<string | null>(null)
+    const [msg,      setMsg]     = useState<Record<string, string>>({})
+    const [isError,  setIsError] = useState<Record<string, boolean>>({})
 
     const plans = PLANS[lang]
+
+    const handleBuy = async (planId: string) => {
+        const price = PRICES[planId as keyof typeof PRICES]
+        const balance = user?.balance ?? 0
+        if (balance < price) {
+            setIsError(prev => ({ ...prev, [planId]: true }))
+            setMsg(prev => ({ ...prev, [planId]: l.noBalance }))
+            return
+        }
+        setBuying(planId)
+        setIsError(prev => ({ ...prev, [planId]: false }))
+        setMsg(prev => ({ ...prev, [planId]: '' }))
+        try {
+            const res = await subscriptionApi.purchase(planId)
+            await refreshUser()
+            const date = new Date(res.expiresAt).toLocaleDateString(
+                lang === 'ru' ? 'ru-RU' : 'en-US',
+                { day: 'numeric', month: 'long', year: 'numeric' }
+            )
+            setMsg(prev => ({ ...prev, [planId]: l.successMsg(planId, date) }))
+        } catch (e: unknown) {
+            setIsError(prev => ({ ...prev, [planId]: true }))
+            setMsg(prev => ({ ...prev, [planId]: e instanceof Error ? e.message : l.errMsg }))
+        } finally {
+            setBuying(null)
+        }
+    }
 
     return (
         <div className={s.root}>
@@ -155,27 +198,49 @@ export default function Checkout({ lang, setLang }: Props) {
                                             </div>
                                             <ul className={s.planFeatures}>
                                                 {plan.features.map((f, i) => (
-                                                    <li key={i}>{f}</li>
+                                                    <li key={i} style={{ color: f.startsWith('✗') ? '#6b7280' : '#ccc', opacity: f.startsWith('✗') ? 0.65 : 1 }}>{f}</li>
                                                 ))}
                                             </ul>
+                                            <button
+                                                className={s.buyBtn}
+                                                onClick={() => handleBuy(plan.id)}
+                                                disabled={buying === plan.id}
+                                                style={!plan.accent ? { background: 'rgba(255,255,255,.08)', color: 'rgba(255,255,255,.7)' } : undefined}
+                                            >
+                                                {buying === plan.id ? l.buying : l.buyBtn(plan.price)}
+                                            </button>
+                                            {msg[plan.id] && (
+                                                <div className={isError[plan.id] ? s.errorMsg : s.successMsg}>
+                                                    {msg[plan.id]}
+                                                </div>
+                                            )}
                                         </>
                                     )}
                                 </div>
                             ))}
                         </div>
 
-                        {}
-                        <div className={s.supportBlock}>
-                            <p className={s.supportBtnText}>{l.contactSupport}</p>
-                            <a
-                                href="https://t.me/aimly_support"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className={s.supportLink}
+                        {/* Пропустить — ведёт в личный кабинет без тарифа */}
+                        <div style={{ textAlign: 'center', marginTop: 20 }}>
+                            <button
+                                onClick={() => navigate('/dashboard')}
+                                style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: 'var(--c-ink-3)',
+                                    fontSize: 13,
+                                    cursor: 'pointer',
+                                    padding: '6px 12px',
+                                    fontFamily: 'var(--font-body)',
+                                    transition: 'color .15s',
+                                    textDecoration: 'underline',
+                                    textUnderlineOffset: 3,
+                                }}
+                                onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.color = 'var(--c-ink-2)'}
+                                onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.color = 'var(--c-ink-3)'}
                             >
-                                {l.supportLink} →
-                            </a>
-                            <p className={s.supportNote}>{l.supportNote}</p>
+                                {l.skip}
+                            </button>
                         </div>
                     </div>
                 </div>

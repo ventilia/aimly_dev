@@ -201,6 +201,8 @@
     color: var(--c-ink);
     line-height: 1.6;
     word-break: break-word;
+    /* Сохраняем переносы строк из оригинального сообщения */
+    white-space: pre-wrap;
 }
 
 /* нижняя строка */

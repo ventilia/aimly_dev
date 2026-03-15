@@ -16,6 +16,7 @@ import Privacy  from './pages/Privacy'
 import Terms    from './pages/Terms'
 import Refund   from './pages/Refund'
 import Checkout from './pages/Checkout'
+import OAuthCallback from './pages/OAuthCallback'
 import AdminPanel from './pages/AdminPanel'
 import DashboardLayout   from './dashboard/DashboardLayout'
 import DashboardOverview from './dashboard/DashboardOverview'
@@ -56,14 +57,16 @@ export default function App() {
         <AuthProvider>
             <BrowserRouter>
                 <Routes>
-                    <Route path="/"         element={<Home lang={lang} setLang={setLang} />} />
-                    <Route path="/about"    element={<About    {...pp} />} />
-                    <Route path="/blog"     element={<Blog     {...pp} />} />
-                    <Route path="/contacts" element={<Contacts {...pp} />} />
-                    <Route path="/privacy"  element={<Privacy  {...pp} />} />
-                    <Route path="/terms"    element={<Terms    {...pp} />} />
-                    <Route path="/refund"   element={<Refund   {...pp} />} />
-                    <Route path="/checkout" element={<Checkout {...pp} />} />
+                    <Route path="/"              element={<Home lang={lang} setLang={setLang} />} />
+                    <Route path="/about"         element={<About    {...pp} />} />
+                    <Route path="/blog"          element={<Blog     {...pp} />} />
+                    <Route path="/contacts"      element={<Contacts {...pp} />} />
+                    <Route path="/privacy"       element={<Privacy  {...pp} />} />
+                    <Route path="/terms"         element={<Terms    {...pp} />} />
+                    <Route path="/refund"        element={<Refund   {...pp} />} />
+                    <Route path="/checkout"      element={<Checkout {...pp} />} />
+                    {}
+                    <Route path="/oauth/callback" element={<OAuthCallback />} />
 
                     <Route element={<ProtectedRoute />}>
                         <Route path="/dashboard" element={<DashboardLayout lang={lang} onLang={setLang} />}>

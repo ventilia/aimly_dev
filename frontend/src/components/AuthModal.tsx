@@ -49,6 +49,33 @@ function GoogleIcon() {
     )
 }
 
+/**
+ * Запускает Google OAuth 2.0 implicit flow (redirect-based).
+ * Открывает полноэкранную страницу входа Google вместо One Tap popup.
+ *
+ * ⚠️ Важно: в Google Cloud Console нужно добавить URI редиректа:
+ *   https://[ваш-домен]/oauth/callback
+ *   и для локальной разработки: http://localhost:5173/oauth/callback
+ */
+function buildGoogleOAuthUrl(): string {
+    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string
+    const origin = window.location.origin
+    const redirectUri = `${origin}/oauth/callback`
+
+    // nonce для безопасности — случайная строка
+    const nonce = Math.random().toString(36).substring(2) +
+        Math.random().toString(36).substring(2)
+
+    const params = new URLSearchParams({
+        client_id:     clientId,
+        redirect_uri:  redirectUri,
+        response_type: 'id_token',
+        scope:         'openid email profile',
+        nonce:         nonce,
+    })
+
+    return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
+}
 
 const txt = {
     ru: {
@@ -186,7 +213,6 @@ export default function AuthModal({ lang, onClose, initialTab = 'login' }: Props
 
     const codeInputRef = useRef<HTMLInputElement>(null)
 
-    // Обновляем tab если изменился initialTab (при открытии с другим режимом)
     useEffect(() => {
         setTab(initialTab)
     }, [initialTab])
@@ -208,7 +234,6 @@ export default function AuthModal({ lang, onClose, initialTab = 'login' }: Props
         if (step === 'code') setTimeout(() => codeInputRef.current?.focus(), 120)
     }, [step])
 
-    // Автоматический редирект через 2 секунды после успешной верификации
     useEffect(() => {
         if (step === 'success') {
             const timer = setTimeout(() => {
@@ -330,31 +355,16 @@ export default function AuthModal({ lang, onClose, initialTab = 'login' }: Props
         }
     }
 
+    /**
+     * Google OAuth redirect flow.
+     * Вместо GSI One Tap (маленький popup) делаем полный редирект
+     * на страницу входа Google — надёжно, работает во всех браузерах.
+     */
     const handleGoogle = () => {
-        const google = (window as unknown as { google?: { accounts: { id: { initialize: (cfg: object) => void; prompt: () => void } } } }).google
-        if (!google) {
-            setError('Google Sign-In не загружен. Перезагрузите страницу.')
-            return
-        }
-
-        google.accounts.id.initialize({
-            client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-            callback:  async (response: { credential: string }) => {
-                setLoading(true)
-                setError(null)
-                try {
-                    const auth = await authApi.loginWithGoogle(response.credential)
-                    saveSession(auth)
-                    goToDashboard()
-                } catch (e: unknown) {
-                    setError(e instanceof Error ? e.message : 'Ошибка входа через Google')
-                } finally {
-                    setLoading(false)
-                }
-            },
-        })
-
-        google.accounts.id.prompt()
+        // Сохраняем текущий путь для возврата после авторизации
+        sessionStorage.setItem('oauth_return_to', '/dashboard')
+        const url = buildGoogleOAuthUrl()
+        window.location.href = url
     }
 
     if (step === 'success') {
@@ -448,7 +458,7 @@ export default function AuthModal({ lang, onClose, initialTab = 'login' }: Props
                 </div>
 
                 <div className={s.body}>
-                    {/* Google кнопка */}
+                    {/* Google кнопка — полный редирект на экран Google */}
                     <button className={s.googleBtn} onClick={handleGoogle} disabled={loading} type="button">
                         <GoogleIcon />
                         {l.googleBtn}
