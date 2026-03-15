@@ -9,7 +9,6 @@ data class AuthResponse(
     val telegramLinked:        Boolean,
     val telegramUsername:      String? = null,
     val role:                  String = "USER",
-    val balance:               Int = 0,
     val subscriptionStatus:    String? = null,
     val subscriptionPlan:      String? = null,
     val subscriptionExpiresAt: String? = null,

@@ -14,8 +14,6 @@ import org.springframework.web.bind.annotation.*
 import java.time.LocalDateTime
 
 
-private const val PRICE_MINIMUM = 4990
-private const val PRICE_START   = 4999
 private const val DURATION_DAYS = 30
 
 data class PurchaseRequest(
@@ -23,9 +21,8 @@ data class PurchaseRequest(
 )
 
 data class PurchaseResponse(
-    val plan:       String,
-    val expiresAt:  String,
-    val newBalance: Int,
+    val plan:      String,
+    val expiresAt: String,
 )
 
 
@@ -56,22 +53,12 @@ class UserSubscriptionService(
     fun purchase(caller: User, req: PurchaseRequest): PurchaseResponse {
         val plan = req.plan.uppercase()
 
-        val price = when (plan) {
-            "MINIMUM" -> PRICE_MINIMUM
-            "START"   -> PRICE_START
-            else      -> throw BadRequestException("неизвестный тариф: ${req.plan}")
+        if (plan !in setOf("MINIMUM", "START")) {
+            throw BadRequestException("неизвестный тариф: ${req.plan}")
         }
 
         val user = userRepository.findById(caller.id)
             .orElseThrow { NotFoundException("пользователь не найден") }
-
-        if (user.balance < price) {
-            throw BadRequestException(
-                "недостаточно средств: нужно $price ₽, на балансе ${user.balance} ₽"
-            )
-        }
-
-        user.balance = user.balance - price
 
         val existing  = expiryRepository.findByUserId(user.id)
         val base      = if (
@@ -91,21 +78,20 @@ class UserSubscriptionService(
             ?: SubscriptionExpiry(user = user, expiresAt = expiresAt)
         expiryRepository.save(expiry)
 
-        log.info("покупка тарифа $plan пользователем ${user.email}, баланс: ${user.balance} ₽, активна до $expiresAt")
+        log.info("покупка тарифа $plan пользователем ${user.email}, активна до $expiresAt")
 
         user.telegramId?.let { tgId ->
             runCatching {
                 bot.sendText(
                     tgId,
-                    "✅ Тариф $plan активирован!\n\nСписано: $price ₽\nОсталок баланса: ${user.balance} ₽\nДействует до: ${expiresAt.toLocalDate()}"
+                    "✅ Тариф $plan активирован!\n\nДействует до: ${expiresAt.toLocalDate()}"
                 )
             }.onFailure { log.warn("telegram notify purchase: ${it.message}") }
         }
 
         return PurchaseResponse(
-            plan       = plan,
-            expiresAt  = expiresAt.toString(),
-            newBalance = user.balance,
+            plan      = plan,
+            expiresAt = expiresAt.toString(),
         )
     }
 }

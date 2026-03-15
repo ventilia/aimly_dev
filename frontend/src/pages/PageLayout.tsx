@@ -74,10 +74,6 @@ export default function PageLayout({ children, lang, setLang }: Props) {
                         {tr('footer.support')}
                     </a>
                 </div>
-                {}
-                <div className={`container ${s.footerPay}`}>
-                    <img src="/freekassa.png" alt="Способы оплаты" />
-                </div>
             </footer>
         </div>
     )

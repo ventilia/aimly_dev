@@ -1,6 +1,7 @@
 package io.getaimly.backend.config
 
 import io.getaimly.backend.security.JwtAuthFilter
+import jakarta.servlet.http.HttpServletResponse
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -32,6 +33,15 @@ class SecurityConfig(
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
             .httpBasic { it.disable() }
             .formLogin { it.disable() }
+            // ИСПРАВЛЕНИЕ: при отсутствии/невалидной аутентификации возвращаем 401,
+            // а не 403 от Http403ForbiddenEntryPoint (который срабатывал при pre-auth попытке).
+            // Это позволяет permitAll-эндпоинтам (login, register, verify-email) работать
+            // даже когда в куке лежит протухший токен с несуществующим userId.
+            .exceptionHandling { ex ->
+                ex.authenticationEntryPoint { _, response, _ ->
+                    response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized")
+                }
+            }
             .authorizeHttpRequests { auth ->
                 auth
                     .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()

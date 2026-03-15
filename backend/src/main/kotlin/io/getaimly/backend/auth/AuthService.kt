@@ -350,7 +350,6 @@ class AuthService(
         telegramLinked        = user.telegramId != null,
         telegramUsername      = user.telegramUsername,
         role                  = user.role.name,
-        balance               = user.balance,
         subscriptionStatus    = user.subscriptionStatus,
         subscriptionPlan      = user.subscriptionPlan,
         createdAt             = user.createdAt?.toString(),

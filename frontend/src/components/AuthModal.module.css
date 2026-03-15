@@ -174,20 +174,22 @@
 .codeHintEmail { font-weight: 600; color: var(--c-ink); }
 .codeInputWrap { display: flex; justify-content: center; }
 
+
 .codeInput {
-    width: 180px;
-    padding: 14px 12px;
+    width: 260px;
+    padding: 14px 16px;
     border-radius: var(--r-md);
     border: 1.5px solid var(--c-border);
     background: var(--c-bg);
     font-family: var(--font-head);
     font-size: 28px;
     font-weight: 800;
-    letter-spacing: 10px;
+    letter-spacing: 12px;
     text-align: center;
     color: var(--c-ink);
     outline: none;
     transition: border-color .15s, box-shadow .15s;
+    box-sizing: border-box;
 }
 .codeInput:focus {
     border-color: var(--c-accent);

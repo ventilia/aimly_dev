@@ -624,3 +624,164 @@
     .reviewCard    { flex: 0 0 calc(100% - 4px); }
     .pricingCard   { padding: 36px 24px 28px; }
 }
+
+
+/* ─── Trial banner ──────────────────────────────────────────────────────────── */
+
+.trialBanner {
+    max-width: 780px;
+    margin: 0 auto 28px;
+    border-radius: 18px;
+    overflow: hidden;
+    border: 1.5px solid var(--c-border);
+}
+
+.trialInner {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 20px;
+    padding: 28px 32px;
+    background: var(--c-surface);
+    position: relative;
+}
+
+.trialInner::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 0% 50%, rgba(92,57,223,.07) 0%, transparent 65%);
+    pointer-events: none;
+}
+
+.trialBadge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--c-accent);
+    background: var(--c-accent-soft);
+    border: 1px solid rgba(92,57,223,.2);
+    border-radius: 100px;
+    padding: 3px 10px;
+    margin-bottom: 10px;
+    width: fit-content;
+}
+
+.trialBadge::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--c-accent);
+    flex-shrink: 0;
+}
+
+.trialTitle {
+    font-family: var(--font-head);
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--c-ink);
+    margin: 0 0 6px;
+    line-height: 1.25;
+    letter-spacing: -.3px;
+}
+
+.trialSub {
+    font-size: 14.5px;
+    color: var(--c-ink-2);
+    line-height: 1.55;
+    margin: 0;
+}
+
+.trialSteps {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.trialStep {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13.5px;
+    color: var(--c-ink-2);
+}
+
+.trialStepNum {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--c-accent-soft);
+    border: 1px solid rgba(92,57,223,.2);
+    color: var(--c-accent);
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-family: var(--font-head);
+}
+
+.trialDays {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 104px;
+    height: 104px;
+    border-radius: 50%;
+    border: 2px solid rgba(92,57,223,.3);
+    background: var(--c-accent-soft);
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+}
+
+.trialDaysNum {
+    font-family: var(--font-head);
+    font-size: 40px;
+    font-weight: 900;
+    color: var(--c-accent);
+    line-height: 1;
+    letter-spacing: -2px;
+}
+
+.trialDaysLabel {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--c-accent);
+    opacity: .75;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    margin-top: 2px;
+}
+
+.trialNote {
+    font-size: 12.5px;
+    color: var(--c-ink-3);
+    padding: 10px 32px 14px;
+    border-top: 1px solid var(--c-border);
+    background: var(--c-bg);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+@media (max-width: 600px) {
+    .trialInner {
+        grid-template-columns: 1fr;
+        padding: 22px 20px;
+    }
+    .trialDays {
+        width: 80px;
+        height: 80px;
+    }
+    .trialDaysNum { font-size: 30px; }
+    .trialNote { padding: 10px 20px 14px; }
+}

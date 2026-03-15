@@ -2,7 +2,6 @@ package io.getaimly.backend.security
 
 import io.getaimly.backend.user.UserRepository
 import jakarta.servlet.FilterChain
-import jakarta.servlet.http.Cookie
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import org.slf4j.LoggerFactory
@@ -30,6 +29,17 @@ class JwtAuthFilter(
         "/api/v1/auth/me",
     )
 
+    // На этих эндпоинтах контроллер сам управляет кукой (выдаёт новую или очищает).
+    // Фильтр НЕ должен трогать куку здесь — иначе два Set-Cookie в одном ответе
+    // приводят к тому, что браузер игнорирует новую куку от контроллера.
+    private val publicAuthEndpoints = setOf(
+        "/api/v1/auth/register",
+        "/api/v1/auth/login",
+        "/api/v1/auth/verify-email",
+        "/api/v1/auth/resend-code",
+        "/api/v1/auth/logout",
+    )
+
     override fun doFilterInternal(
         request:  HttpServletRequest,
         response: HttpServletResponse,
@@ -45,8 +55,9 @@ class JwtAuthFilter(
 
         if (!jwtService.validateToken(token)) {
             log.warn("невалидный JWT для запроса к ${request.requestURI}")
-            // ИСПРАВЛЕНИЕ: невалидный токен — сразу очищаем куку
-            clearAuthCookie(response)
+            if (!isPublicAuthEndpoint(request.requestURI)) {
+                clearAuthCookie(response)
+            }
             chain.doFilter(request, response)
             return
         }
@@ -77,20 +88,26 @@ class JwtAuthFilter(
             SecurityContextHolder.getContext().authentication = auth
             log.debug("пользователь $userId аутентифицирован через куку, emailVerified=${user.emailVerified}")
         }, {
-            // ИСПРАВЛЕНИЕ: userId из токена не найден в БД (пользователь удалён или БД пересоздана).
-            // Очищаем куку немедленно — без этого браузер будет бесконечно слать протухший токен,
-            // а @AuthenticationPrincipal в контроллерах будет получать null → NPE.
-            log.warn("токен содержит несуществующий userId=$userId — очищаем куку")
-            clearAuthCookie(response)
+            // userId из токена не найден в БД.
+            // На публичных auth-эндпоинтах НЕ очищаем куку — контроллер сам выдаст новую.
+            // На защищённых — очищаем, чтобы браузер не слал протухший токен снова.
+            if (!isPublicAuthEndpoint(request.requestURI)) {
+                log.warn("токен содержит несуществующий userId=$userId — очищаем куку")
+                clearAuthCookie(response)
+            } else {
+                log.warn("токен содержит несуществующий userId=$userId — пропускаем (публичный эндпоинт)")
+            }
         })
 
         chain.doFilter(request, response)
     }
 
+    private fun isPublicAuthEndpoint(uri: String): Boolean =
+        publicAuthEndpoints.any { uri.startsWith(it) }
 
     /**
      * Сбрасывает аутентификационную куку на клиенте.
-     * Используется при обнаружении невалидного или «сиротского» токена.
+     * Вызывается только для защищённых эндпоинтов.
      */
     private fun clearAuthCookie(response: HttpServletResponse) {
         val cookieHeader = buildString {
@@ -105,9 +122,7 @@ class JwtAuthFilter(
         response.addHeader("Set-Cookie", cookieHeader)
     }
 
-
     private fun extractToken(request: HttpServletRequest): String? {
-        // куки
         val cookieToken = request.cookies
             ?.find { it.name == COOKIE_NAME }
             ?.value
@@ -115,7 +130,6 @@ class JwtAuthFilter(
 
         if (cookieToken != null) return cookieToken
 
-        // Authorization header
         val header = request.getHeader("Authorization") ?: return null
         if (!header.startsWith("Bearer ")) return null
         return header.removePrefix("Bearer ").trim().takeIf { it.isNotEmpty() }

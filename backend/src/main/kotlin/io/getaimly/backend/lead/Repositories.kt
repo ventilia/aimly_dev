@@ -46,7 +46,6 @@ interface ChatSubscriptionRepository : JpaRepository<ChatSubscription, Long> {
 
     fun findByUserIdAndIsActiveTrue(userId: Long): List<ChatSubscription>
 
-    // Поиск по userId и chatLink независимо от isActive (для реактивации при повторном добавлении)
     fun findByUserIdAndChatLink(userId: Long, chatLink: String): ChatSubscription?
 
     fun findByUserIdAndChatLinkAndIsActiveTrue(userId: Long, chatLink: String): ChatSubscription?

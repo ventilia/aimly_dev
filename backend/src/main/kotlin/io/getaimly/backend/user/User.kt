@@ -43,11 +43,7 @@ class User(
     @Column(nullable = false)
     var role: Role = Role.USER,
 
-    // баланс
-    @Column(nullable = false)
-    var balance: Int = 0,
 
-    // подписка
     @Column(name = "subscription_status")
     var subscriptionStatus: String? = null,
 
@@ -60,11 +56,6 @@ class User(
     @Column(name = "business_context", columnDefinition = "TEXT")
     var businessContext: String? = null,
 
-    /**
-     * Когда true — AI также будет реагировать на сообщения, в которых
-     * кто-то ПРЕДЛАГАЕТ услугу (исполнитель ищет заказы).
-     * По умолчанию false — такие сообщения игнорируются.
-     */
     @Column(name = "respond_to_service_offers", nullable = false)
     var respondToServiceOffers: Boolean = false,
 

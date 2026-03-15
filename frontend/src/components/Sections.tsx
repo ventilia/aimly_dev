@@ -1,22 +1,47 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import React, { useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import type { Lang } from '../i18n/translations'
 import { t } from '../i18n/translations'
 import s from './Sections.module.css'
 
 const tr = (lang: Lang) => (key: string) => t[lang][key] ?? key
 
+// ─── Компонент якорной ссылки (работает и на главной, и с других страниц) ─────
+function AnchorLink({ href, children, className }: { href: string; children: React.ReactNode; className: string }) {
+    const navigate = useNavigate()
+
+    const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+        e.preventDefault()
+        const hash = href.startsWith('/#') ? href.slice(1) : href
+        const isHome = window.location.pathname === '/'
+
+        if (isHome) {
+            const el = document.querySelector(hash)
+            if (el) el.scrollIntoView({ behavior: 'smooth' })
+        } else {
+            navigate(href)
+            setTimeout(() => {
+                const el = document.querySelector(hash)
+                if (el) el.scrollIntoView({ behavior: 'smooth' })
+            }, 350)
+        }
+    }
+
+    return (
+        <a href={href} onClick={handleClick} className={className}>
+            {children}
+        </a>
+    )
+}
 
 export function Problems({ lang }: { lang: Lang }) {
     const _ = tr(lang)
-
     const items = [
         { bad: _('p1.bad'), good: _('p1.good'), d: ''           },
         { bad: _('p2.bad'), good: _('p2.good'), d: 'fade-in-d1' },
         { bad: _('p3.bad'), good: _('p3.good'), d: 'fade-in-d2' },
         { bad: _('p4.bad'), good: _('p4.good'), d: 'fade-in-d3' },
     ]
-
     return (
         <section className={`section ${s.problems}`}>
             <div className="container">
@@ -41,16 +66,13 @@ export function Problems({ lang }: { lang: Lang }) {
     )
 }
 
-
 export function Features({ lang }: { lang: Lang }) {
     const _ = tr(lang)
-
     const cards = [
         { icon: '🔍', title: _('feat1.title'), adv: _('feat1.adv'), ben: _('feat1.ben'), d: ''           },
         { icon: '💬', title: _('feat2.title'), adv: _('feat2.adv'), ben: _('feat2.ben'), d: 'fade-in-d1' },
         { icon: '📊', title: _('feat3.title'), adv: _('feat3.adv'), ben: _('feat3.ben'), d: 'fade-in-d2' },
     ]
-
     return (
         <section className="section">
             <div className="container">
@@ -75,16 +97,13 @@ export function Features({ lang }: { lang: Lang }) {
     )
 }
 
-
 export function HowItWorks({ lang }: { lang: Lang }) {
     const _ = tr(lang)
-
     const steps = [
         { num: '01', title: _('step1.title'), desc: _('step1.desc'), d: ''           },
         { num: '02', title: _('step2.title'), desc: _('step2.desc'), d: 'fade-in-d1' },
         { num: '03', title: _('step3.title'), desc: _('step3.desc'), d: 'fade-in-d2' },
     ]
-
     return (
         <section className={`section ${s.howSection}`} id="how">
             <div className="container">
@@ -106,17 +125,14 @@ export function HowItWorks({ lang }: { lang: Lang }) {
     )
 }
 
-
 export function Audience({ lang }: { lang: Lang }) {
     const _ = tr(lang)
-
     const cards = [
         { icon: '🎓', title: _('aud1.title'), desc: _('aud1.desc') },
         { icon: '🚀', title: _('aud2.title'), desc: _('aud2.desc') },
         { icon: '🏠', title: _('aud3.title'), desc: _('aud3.desc') },
         { icon: '💼', title: _('aud4.title'), desc: _('aud4.desc') },
     ]
-
     return (
         <section className="section" id="audience">
             <div className="container">
@@ -125,11 +141,7 @@ export function Audience({ lang }: { lang: Lang }) {
                 </div>
                 <div className={s.audienceGrid}>
                     {cards.map((c, i) => (
-                        <div
-                            key={c.title}
-                            className={`${s.audienceCard} fade-in`}
-                            style={{ transitionDelay: `${i * 0.1}s` }}
-                        >
+                        <div key={c.title} className={`${s.audienceCard} fade-in`} style={{ transitionDelay: `${i * 0.1}s` }}>
                             <div className={s.audienceIcon} aria-hidden="true">{c.icon}</div>
                             <h3 className={s.audienceTitle}>{c.title}</h3>
                             <p className={s.audienceDesc}>{c.desc}</p>
@@ -141,26 +153,16 @@ export function Audience({ lang }: { lang: Lang }) {
     )
 }
 
-
 export function Compare({ lang }: { lang: Lang }) {
     const _ = tr(lang)
-
     type Color = 'bad' | 'warn' | 'good' | 'ok'
-
     const rows: Array<{ n: string; m: string; mc: Color; b: string; bc: Color; a: string }> = [
         { n: _('r1.n'), m: _('r1.m'), mc: 'bad',  b: _('r1.b'), bc: 'ok',   a: _('r1.a') },
         { n: _('r2.n'), m: _('r2.m'), mc: 'ok',   b: _('r2.b'), bc: 'warn', a: _('r2.a') },
         { n: _('r3.n'), m: _('r3.m'), mc: 'warn', b: _('r3.b'), bc: 'warn', a: _('r3.a') },
         { n: _('r4.n'), m: _('r4.m'), mc: 'ok',   b: _('r4.b'), bc: 'warn', a: _('r4.a') },
     ]
-
-    const colorClass: Record<Color, string> = {
-        bad:  s.colBad,
-        warn: s.colWarn,
-        good: s.colGood,
-        ok:   s.colOk,
-    }
-
+    const colorClass: Record<Color, string> = { bad: s.colBad, warn: s.colWarn, good: s.colGood, ok: s.colOk }
     return (
         <section className={`section ${s.compareSection}`}>
             <div className="container">
@@ -169,14 +171,12 @@ export function Compare({ lang }: { lang: Lang }) {
                 </div>
                 <div className="fade-in" style={{ overflowX: 'auto' }}>
                     <table className={s.table}>
-                        <thead>
-                        <tr>
+                        <thead><tr>
                             <th className={s.thCrit}>{_('cmp.crit')}</th>
                             <th>{_('cmp.manual')}</th>
                             <th>{_('cmp.bot')}</th>
                             <th className={s.colAimlyHead}>{_('cmp.aim')}</th>
-                        </tr>
-                        </thead>
+                        </tr></thead>
                         <tbody>
                         {rows.map(row => (
                             <tr key={row.n}>
@@ -193,9 +193,6 @@ export function Compare({ lang }: { lang: Lang }) {
         </section>
     )
 }
-
-
-
 
 const MINIMUM_FEATURES: Record<Lang, string[]> = {
     ru: [
@@ -216,6 +213,19 @@ const MINIMUM_FEATURES: Record<Lang, string[]> = {
     ],
 }
 
+const TRIAL_STEPS: Record<Lang, string[]> = {
+    ru: [
+        'Зарегистрируйтесь и войдите в кабинет',
+        'Привяжите Telegram через бота',
+        'Получите 5 дней тарифа Минимум бесплатно',
+    ],
+    en: [
+        'Sign up and log in to the dashboard',
+        'Connect Telegram via the bot',
+        'Get 5 days of the Minimum plan for free',
+    ],
+}
+
 export function Pricing({ lang }: { lang: Lang }) {
     const _ = tr(lang)
     const ru = lang === 'ru'
@@ -228,40 +238,76 @@ export function Pricing({ lang }: { lang: Lang }) {
                     <p className="section__sub">{_('pricing.sub')}</p>
                 </div>
 
+                {/* ─── Trial banner ─────────────────────────────────────────── */}
+                <div className={`${s.trialBanner} fade-in`}>
+                    <div className={s.trialInner}>
+                        <div>
+                            <div className={s.trialBadge}>
+                                {ru ? 'Бесплатный доступ' : 'Free trial'}
+                            </div>
+                            <h3 className={s.trialTitle}>
+                                {ru
+                                    ? '5 дней бесплатно — при привязке Telegram'
+                                    : '5 days free — when you connect Telegram'}
+                            </h3>
+                            <p className={s.trialSub}>
+                                {ru
+                                    ? 'Полный доступ к тарифу Минимум без оплаты. Просто привяжите бота и начните получать лиды.'
+                                    : 'Full access to the Minimum plan at no cost. Just connect the bot and start getting leads.'}
+                            </p>
+                            <div className={s.trialSteps}>
+                                {TRIAL_STEPS[lang].map((step, i) => (
+                                    <div key={i} className={s.trialStep}>
+                                        <div className={s.trialStepNum}>{i + 1}</div>
+                                        <span>{step}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className={s.trialDays} aria-hidden="true">
+                            <div className={s.trialDaysNum}>5</div>
+                            <div className={s.trialDaysLabel}>{ru ? 'дней' : 'days'}</div>
+                        </div>
+                    </div>
+
+                    <div className={s.trialNote}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <circle cx="12" cy="12" r="10"/>
+                            <line x1="12" y1="8" x2="12" y2="12"/>
+                            <line x1="12" y1="16" x2="12.01" y2="16"/>
+                        </svg>
+                        {ru
+                            ? 'Карта не нужна. Триал активируется автоматически при подключении бота.'
+                            : 'No card required. Trial activates automatically when you connect the bot.'}
+                    </div>
+                </div>
+
+                {/* ─── Pricing cards ────────────────────────────────────────── */}
                 <div className={s.pricingWrap}>
-                    {}
                     <div className={`${s.pricingCard} ${s.pricingCardFeatured} fade-in`}>
                         <div className={s.pricingBadge}>{_('plan.badge')}</div>
                         <h3 className={s.pricingName}>{ru ? 'Минимум' : 'Minimum'}</h3>
                         <p className={s.pricingDesc}>{ru ? 'Мониторинг с AI и персонализацией' : 'Monitoring with AI and personalization'}</p>
-
                         <div className={s.priceRow}>
                             <span className={s.priceOld}>{_('plan.old')}</span>
                             <span className={s.price}>{_('plan.price')}</span>
                             <span className={s.priceCurrency}>{_('plan.currency')}</span>
                             <span className={s.pricePeriod}>{_('plan.period')}</span>
                         </div>
-
                         <ul className={s.pricingFeatures}>
                             {MINIMUM_FEATURES[lang].map((f, i) => (
                                 <li key={i} className={s.pricingFeature}>✓ {f}</li>
                             ))}
                         </ul>
-
-                        <Link
-                            to="/checkout"
-                            className={`${s.pricingCta} ${s.pricingCtaPrimary}`}
-                        >
+                        <Link to="/checkout" className={`${s.pricingCta} ${s.pricingCtaPrimary}`}>
                             {ru ? 'Начать' : 'Get started'}
                         </Link>
                     </div>
 
-                    {}
                     <div className={`${s.pricingCard} ${s.pricingCardDisabled} fade-in`} style={{ animationDelay: '.1s' }}>
                         <h3 className={s.pricingName}>{ru ? 'Старт' : 'Start'}</h3>
-                        <div className={s.pricingComingSoonBadge}>
-                            {ru ? 'В разработке' : 'Coming soon'}
-                        </div>
+                        <div className={s.pricingComingSoonBadge}>{ru ? 'В разработке' : 'Coming soon'}</div>
                         <p className={s.pricingComingSoonText}>
                             {ru
                                 ? 'Тариф находится в разработке и будет доступен в ближайшее время.'
@@ -274,16 +320,15 @@ export function Pricing({ lang }: { lang: Lang }) {
     )
 }
 
-
 const REVIEWS = [
-    { emoji: '👨‍💻', name: 'Алексей',  role: 'Владелец SMM-агентства',     niche: 'Маркетинг и продвижение в Telegram',       text: '«Мы раньше держали отдельного человека, который просто сидел в чатах и отсматривал запросы. Всё равно половину пропускали. С AIMLY я просто подключил рабочий аккаунт и пару десятков чатов. Теперь заявки прилетают стабильно каждую неделю.»' },
-    { emoji: '👩‍💻', name: 'Мария',    role: 'Основатель онлайн-школы',    niche: 'Онлайн-образование и курсы',                text: '«У нас сильная воронка, но страдали от того, что не успеваем реагировать в чатах. AIMLY отвечает практически сразу, и люди сами идут в личку.»' },
-    { emoji: '🎧',  name: 'Ольга',    role: 'Продюсер экспертов',          niche: 'Продюсирование и запуски инфопродуктов',   text: '«Раньше я сама мониторила десяток чатов, постоянно боялась что-то пропустить. AIMLY стал для меня ночной сменой.»' },
-    { emoji: '📈',  name: 'Сергей',   role: 'Таргетолог-фрилансер',        niche: 'Реклама и лидогенерация',                  text: '«Я работаю один, и времени разрываться на все чаты нет. Теперь мой аккаунт появляется в обсуждении сам.»' },
-    { emoji: '💅',  name: 'Анна',     role: 'Владелец студии маникюра',    niche: 'Бьюти и локальный сервисный бизнес',       text: '«У нас несколько районных чатов. AIMLY теперь отрабатывает запросы за нас — аккуратно, без спама, вежливо.»' },
-    { emoji: '🏢',  name: 'Илья',     role: 'Сооснователь B2B SaaS',       niche: 'SaaS для бизнеса',                         text: '«Мы продаём сервис для бизнеса. AIMLY оказался удобным способом не упускать запросы в чатах предпринимателей.»' },
-    { emoji: '🏙️', name: 'Роман',    role: 'Агент по недвижимости',        niche: 'Продажа и аренда недвижимости',            text: '«Я в десятке чатов по новостройкам. AIMLY подсвечивает сообщения с потенциальными клиентами и пишет первым.»' },
-    { emoji: '🦉',  name: 'Светлана', role: 'Руководитель отдела продаж',  niche: 'Онлайн-школа английского',                 text: '«Ребята в отделе продаж уже шутят, что у нас появился ещё один менеджер — ночная сова AIMLY.»' },
+    { emoji: '👨‍💻', name: 'Алексей',  role: 'Владелец SMM-агентства',    niche: 'Маркетинг и продвижение в Telegram',      text: '«С AIMLY я просто подключил рабочий аккаунт и пару десятков чатов. Теперь заявки прилетают стабильно каждую неделю.»' },
+    { emoji: '👩‍💻', name: 'Мария',    role: 'Основатель онлайн-школы',   niche: 'Онлайн-образование и курсы',               text: '«AIMLY отвечает практически сразу, и люди сами идут в личку.»' },
+    { emoji: '🎧',  name: 'Ольга',    role: 'Продюсер экспертов',         niche: 'Продюсирование и запуски инфопродуктов',  text: '«Раньше я сама мониторила десяток чатов. AIMLY стал для меня ночной сменой.»' },
+    { emoji: '📈',  name: 'Сергей',   role: 'Таргетолог-фрилансер',       niche: 'Реклама и лидогенерация',                 text: '«Я работаю один. Теперь мой аккаунт появляется в обсуждении сам.»' },
+    { emoji: '💅',  name: 'Анна',     role: 'Владелец студии маникюра',   niche: 'Бьюти и локальный сервисный бизнес',      text: '«AIMLY теперь отрабатывает запросы за нас — аккуратно, без спама, вежливо.»' },
+    { emoji: '🏢',  name: 'Илья',     role: 'Сооснователь B2B SaaS',      niche: 'SaaS для бизнеса',                        text: '«AIMLY оказался удобным способом не упускать запросы в чатах предпринимателей.»' },
+    { emoji: '🏙️', name: 'Роман',    role: 'Агент по недвижимости',       niche: 'Продажа и аренда недвижимости',           text: '«AIMLY подсвечивает сообщения с потенциальными клиентами и пишет первым.»' },
+    { emoji: '🦉',  name: 'Светлана', role: 'Руководитель отдела продаж', niche: 'Онлайн-школа английского',                text: '«Ребята в отделе продаж уже шутят, что у нас появился ещё один менеджер — ночная сова AIMLY.»' },
 ]
 
 const VISIBLE = 3
@@ -291,11 +336,9 @@ const VISIBLE = 3
 export function Reviews({ lang }: { lang: Lang }) {
     const _ = tr(lang)
     const [idx, setIdx] = useState(0)
-
     const max  = REVIEWS.length - VISIBLE
     const prev = () => setIdx(i => Math.max(0, i - 1))
     const next = () => setIdx(i => Math.min(max, i + 1))
-
     const offset = `calc(-${idx} * (100% / ${VISIBLE} + 20px / ${VISIBLE}))`
 
     return (
@@ -305,7 +348,6 @@ export function Reviews({ lang }: { lang: Lang }) {
                     <h2 className="section__title">{_('reviews.title')}</h2>
                     <p className="section__sub">{_('reviews.sub')}</p>
                 </div>
-
                 <div className={s.reviewsWrap}>
                     <div className={s.reviewsTrack} style={{ transform: `translateX(${offset})` }}>
                         {REVIEWS.map(r => (
@@ -324,39 +366,46 @@ export function Reviews({ lang }: { lang: Lang }) {
                         ))}
                     </div>
                 </div>
-
                 <div className={s.reviewsNav}>
-                    <button className={s.navBtn} onClick={prev} disabled={idx === 0} aria-label="Назад">
-                        ←
-                    </button>
+                    <button className={s.navBtn} onClick={prev} disabled={idx === 0} aria-label="Назад">←</button>
                     <span className={s.navDots}>
                         {Array.from({ length: max + 1 }).map((_, i) => (
-                            <span
-                                key={i}
-                                className={`${s.navDot} ${i === idx ? s.navDotActive : ''}`}
-                                onClick={() => setIdx(i)}
-                            />
+                            <span key={i} className={`${s.navDot} ${i === idx ? s.navDotActive : ''}`} onClick={() => setIdx(i)} />
                         ))}
                     </span>
-                    <button className={s.navBtn} onClick={next} disabled={idx === max} aria-label="Вперёд">
-                        →
-                    </button>
+                    <button className={s.navBtn} onClick={next} disabled={idx === max} aria-label="Вперёд">→</button>
                 </div>
             </div>
         </section>
     )
 }
 
+const FAQ_ITEMS: Record<Lang, Array<{ q: string; a: string }>> = {
+    ru: [
+        {
+            q: 'Чем лучше обычного Telegram-бота?',
+            a: 'В отличие от ботов, AIMLY работает через ваш личный Telegram-аккаунт: он мониторит чаты изнутри, как обычный участник, без ограничений по доступу. Боты не могут вступить в большинство групп, где сидит ваша аудитория — AIMLY может. Все найденные лиды собираются в одном кабинете: вы просто заходите, видите список запросов и отвечаете тем, кто вам интересен.',
+        },
+        { q: 'Сколько времени на настройку?', a: 'Обычно 10–15 минут. Вы выбираете чаты и задаёте ключевые фразы. После этого AIMLY начинает показывать подходящие сообщения по вашим триггерам.' },
+        { q: 'Можно только мониторить без автоответов?', a: 'Да. Сейчас это единственный режим: AIMLY только мониторит чаты и собирает потенциальные запросы. Отвечаете вы вручную в Telegram.' },
+        { q: 'Какие гарантии результата?', a: 'Мы не обещаем фиксированное количество лидов, потому что результат зависит от ниши, выбранных чатов и настройки триггеров. AIMLY показывает потенциальные запросы по вашим правилам, а дальше вы сами решаете, как их отрабатывать. Если поймёте, что сервис не ваш, просто отключите продление.' },
+        { q: 'Можно ли отключить подписку?', a: 'Да, в любой момент в личном кабинете. Доступ сохранится до конца оплаченного периода.' },
+    ],
+    en: [
+        {
+            q: 'How is it better than a regular Telegram bot?',
+            a: "Unlike bots, AIMLY works through your personal Telegram account: it monitors chats from the inside, just like a regular member, without access restrictions. Bots can't join most groups where your audience hangs out — AIMLY can. All found leads are collected in one dashboard: you just open it, see the list of requests, and reply to those who interest you.",
+        },
+        { q: 'How long does setup take?', a: 'Usually 10–15 minutes. You pick chats and set key phrases. After that AIMLY starts showing matching messages based on your triggers.' },
+        { q: 'Can I only monitor without auto-replies?', a: "Yes. That's currently the only mode: AIMLY only monitors chats and collects potential requests. You reply manually in Telegram." },
+        { q: 'What results are guaranteed?', a: "We don't promise a fixed number of leads because results depend on your niche, chosen chats and trigger settings. AIMLY shows potential requests by your rules — what you do with them is up to you. If the service isn't a fit, just cancel the renewal." },
+        { q: 'Can I cancel the subscription?', a: "Yes, at any time in your personal dashboard. Access will remain until the end of the paid period." },
+    ],
+}
 
 export function Faq({ lang }: { lang: Lang }) {
     const _ = tr(lang)
     const [open, setOpen] = useState<number | null>(null)
-
-    const items = [1, 2, 3, 4, 5, 6].map(n => ({
-        q: _(`faq.q${n}`),
-        a: _(`faq.a${n}`),
-    }))
-
     return (
         <section className="section" id="faq">
             <div className="container">
@@ -364,12 +413,8 @@ export function Faq({ lang }: { lang: Lang }) {
                     <h2 className="section__title">{_('faq.title')}</h2>
                 </div>
                 <div className={s.faqList}>
-                    {items.map((item, i) => (
-                        <div
-                            key={i}
-                            className={`${s.faqItem} ${open === i ? s.faqItemOpen : ''}`}
-                            onClick={() => setOpen(open === i ? null : i)}
-                        >
+                    {FAQ_ITEMS[lang].map((item, i) => (
+                        <div key={i} className={`${s.faqItem} ${open === i ? s.faqItemOpen : ''}`} onClick={() => setOpen(open === i ? null : i)}>
                             <div className={s.faqQ}>
                                 <span>{item.q}</span>
                                 <span className={s.faqArrow} aria-hidden="true">{open === i ? '−' : '+'}</span>
@@ -383,17 +428,23 @@ export function Faq({ lang }: { lang: Lang }) {
     )
 }
 
-
 export function CtaFinal({ lang }: { lang: Lang }) {
     const _ = tr(lang)
-
     return (
         <section className={`section ${s.ctaSection}`}>
             <div className="container">
                 <div className={s.ctaInner}>
                     <h2 className="section__title">{_('cta.title')}</h2>
                     <p className="section__sub" style={{ margin: '0 auto 36px' }}>{_('cta.sub')}</p>
-                    <Link to="/checkout" className={`btn-primary ${s.ctaBtn}`}>
+                    <Link
+                        to="/checkout"
+                        className="btn-primary"
+                        style={{
+                            background: '#fff',
+                            color: 'var(--c-accent)',
+                            boxShadow: '0 4px 24px rgba(0,0,0,.2)',
+                        }}
+                    >
                         {_('cta.btn')}
                     </Link>
                 </div>
@@ -402,21 +453,20 @@ export function CtaFinal({ lang }: { lang: Lang }) {
     )
 }
 
-
+// ─── Footer ────────────────────────────────────────────────────────────────────
 export function Footer({ lang }: { lang: Lang }) {
     const _ = tr(lang)
-
-    const productLinks = [
-        { key: 'footer.how',     to: '/#how'     },
-        { key: 'footer.pricing', to: '/#pricing'  },
-        { key: 'footer.faq',     to: '/#faq'      },
+    const productLinks: Array<{ key: string; href: string }> = [
+        { key: 'footer.how',     href: '/#how'    },
+        { key: 'footer.pricing', href: '/#pricing' },
+        { key: 'footer.faq',     href: '/#faq'     },
     ]
-    const companyLinks = [
+    const companyLinks: Array<{ key: string; to: string }> = [
         { key: 'footer.about',    to: '/about'    },
         { key: 'footer.blog',     to: '/blog'     },
         { key: 'footer.contacts', to: '/contacts' },
     ]
-    const legalLinks = [
+    const legalLinks: Array<{ key: string; to: string }> = [
         { key: 'footer.privacy', to: '/privacy' },
         { key: 'footer.terms',   to: '/terms'   },
         { key: 'footer.refund',  to: '/refund'  },
@@ -436,9 +486,9 @@ export function Footer({ lang }: { lang: Lang }) {
                     <div>
                         <p className={s.footerColTitle}>{_('footer.product')}</p>
                         <ul className={s.footerLinks}>
-                            {productLinks.map(({ key, to }) => (
+                            {productLinks.map(({ key, href }) => (
                                 <li key={key}>
-                                    <Link to={to} className={s.footerLink}>{_(key)}</Link>
+                                    <AnchorLink href={href} className={s.footerLink}>{_(key)}</AnchorLink>
                                 </li>
                             ))}
                         </ul>
@@ -447,9 +497,7 @@ export function Footer({ lang }: { lang: Lang }) {
                         <p className={s.footerColTitle}>{_('footer.company')}</p>
                         <ul className={s.footerLinks}>
                             {companyLinks.map(({ key, to }) => (
-                                <li key={key}>
-                                    <Link to={to} className={s.footerLink}>{_(key)}</Link>
-                                </li>
+                                <li key={key}><Link to={to} className={s.footerLink}>{_(key)}</Link></li>
                             ))}
                         </ul>
                     </div>
@@ -457,22 +505,14 @@ export function Footer({ lang }: { lang: Lang }) {
                         <p className={s.footerColTitle}>{_('footer.legal')}</p>
                         <ul className={s.footerLinks}>
                             {legalLinks.map(({ key, to }) => (
-                                <li key={key}>
-                                    <Link to={to} className={s.footerLink}>{_(key)}</Link>
-                                </li>
+                                <li key={key}><Link to={to} className={s.footerLink}>{_(key)}</Link></li>
                             ))}
                         </ul>
                     </div>
                 </div>
-
                 <div className={s.footerBottom}>
                     <span className={s.footerCopy}>{_('footer.copy')}</span>
-                    <a
-                        href="https://t.me/aimly_support"
-                        className={s.footerSupport}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                    >
+                    <a href="https://t.me/aimly_support" className={s.footerSupport} target="_blank" rel="noopener noreferrer">
                         {_('footer.support')}
                     </a>
                 </div>

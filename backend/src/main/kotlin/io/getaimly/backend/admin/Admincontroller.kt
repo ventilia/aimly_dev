@@ -20,7 +20,6 @@ data class AdminUserDto(
     val emailVerified: Boolean,
     val isActive: Boolean,
     val role: String,
-    val balance: Int,
     val subscriptionStatus: String?,
     val subscriptionPlan: String?,
     val leadsCount: Int,
@@ -67,7 +66,6 @@ class AdminController(
     ): ResponseEntity<AdminUserDto> {
         requireAdmin(user)
 
-
         if (user.id == id && req.role.uppercase() != "ADMIN") {
             throw BadRequestException("нельзя снять роль ADMIN у самого себя")
         }
@@ -94,7 +92,6 @@ class AdminController(
         emailVerified      = emailVerified,
         isActive           = isActive,
         role               = role.name,
-        balance            = balance,
         subscriptionStatus = subscriptionStatus,
         subscriptionPlan   = subscriptionPlan,
         leadsCount         = leadsCount,

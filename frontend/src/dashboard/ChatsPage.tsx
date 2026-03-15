@@ -102,14 +102,14 @@ function HashIcon() {
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+// tgstatLink убран — кнопка «Статистика ↗» удалена
 interface TgstatResult {
-    title: string
-    username: string | null
-    description: string | null
+    title:             string
+    username:          string | null
+    description:       string | null
     participantsCount: number
-    link: string
-    tgstatLink: string | null
-    peerType?: string
+    link:              string
+    peerType?:         string
 }
 
 interface TgstatSearchResponse {
@@ -121,11 +121,11 @@ interface TgstatSearchResponse {
 const SESSION_KEY = 'aimly_chat_search_state'
 
 interface SearchState {
-    results: TgstatResult[]
-    queries: string[]
-    addedLinks: string[]
+    results:        TgstatResult[]
+    queries:        string[]
+    addedLinks:     string[]
     dismissedLinks: string[]
-    searchQuery: string
+    searchQuery:    string
 }
 
 function saveSearchState(state: SearchState) {
@@ -190,12 +190,12 @@ function StatusDot({ active }: { active: boolean }) {
 function ResultCard({
                         result, onAdd, onDismiss, isAdding, isAdded, isDismissed,
                     }: {
-    result: TgstatResult
-    onAdd: (link: string) => void
-    onDismiss: (link: string) => void
-    isAdding: boolean
-    isAdded: boolean
-    isDismissed: boolean
+    result:     TgstatResult
+    onAdd:      (link: string) => void
+    onDismiss:  (link: string) => void
+    isAdding:   boolean
+    isAdded:    boolean
+    isDismissed:boolean
 }) {
     if (isDismissed) return null
 
@@ -226,11 +226,13 @@ function ResultCard({
             )}
 
             <div className={s.resultActions}>
+                {/* Кнопка добавить */}
                 <button
                     style={{
                         display: 'inline-flex', alignItems: 'center', gap: 5,
                         padding: '7px 14px', borderRadius: 8, border: 'none',
-                        fontSize: 12, fontWeight: 600, cursor: isAdded || isAdding ? 'default' : 'pointer',
+                        fontSize: 12, fontWeight: 600,
+                        cursor: isAdded || isAdding ? 'default' : 'pointer',
                         fontFamily: 'var(--font-body)', transition: 'opacity .15s',
                         background: isAdded ? 'rgba(16,185,129,.12)' : 'var(--c-accent)',
                         color: isAdded ? '#10b981' : '#fff',
@@ -247,6 +249,7 @@ function ResultCard({
                     }
                 </button>
 
+                {/* Кнопка отклонить */}
                 {!isAdded && (
                     <button
                         onClick={() => onDismiss(result.link)}
@@ -270,12 +273,7 @@ function ResultCard({
                     </button>
                 )}
 
-                {result.tgstatLink && (
-                    <a href={result.tgstatLink} target="_blank" rel="noopener noreferrer"
-                       className={s.resultStatBtn}>
-                        Статистика ↗
-                    </a>
-                )}
+                {/* Кнопка «Статистика ↗» убрана */}
             </div>
         </div>
     )

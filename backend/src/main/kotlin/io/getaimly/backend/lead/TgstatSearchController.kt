@@ -7,22 +7,21 @@ import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.*
 
-// ─── Request/Response DTOs (публичные — используются фронтендом) ──────────────
+// ─── Request/Response DTOs ────────────────────────────────────────────────────
 
 data class TgstatSearchRequest(val query: String = "")
 
 /**
  * TgstatChannelResult — публичный DTO для фронтенда.
- * Маппится из внутреннего ChatSearchResult.
+ * tgstatLink убран: кнопка «Статистика ↗» удалена с фронтенда.
  */
 data class TgstatChannelResult(
-    val title: String,
-    val username: String?,
-    val description: String?,
+    val title:             String,
+    val username:          String?,
+    val description:       String?,
     val participantsCount: Int,
-    val link: String,
-    val tgstatLink: String?,
-    val peerType: String = "chat",
+    val link:              String,
+    val peerType:          String = "chat",
 )
 
 data class TgstatSearchResponse(
@@ -69,7 +68,6 @@ class TgstatSearchController(
                 )
             )
         } catch (e: IllegalStateException) {
-            // TGStat API ключ не настроен или другая конфигурационная ошибка
             log.error("chatSearchService.search ошибка конфигурации: ${e.message}")
             ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(mapOf("error" to (e.message ?: "Сервис поиска недоступен")))
@@ -86,7 +84,6 @@ class TgstatSearchController(
         description       = description,
         participantsCount = participantsCount,
         link              = link,
-        tgstatLink        = tgstatLink,
         peerType          = peerType,
     )
 }

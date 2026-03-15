@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Lang } from '../i18n/translations'
 import { t } from '../i18n/translations'
 import { useAuthContext } from '../context/AuthContext.tsx'
@@ -7,15 +7,6 @@ import UserMenu  from './UserMenu'
 import s from './Header.module.css'
 
 
-
-const IconWallet = () => (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-         stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="2" y="7" width="20" height="14" rx="2"/>
-        <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
-        <circle cx="17" cy="14" r="1" fill="currentColor" stroke="none"/>
-    </svg>
-)
 
 const IconBell = () => (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
@@ -31,47 +22,6 @@ const IconShield = () => (
         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
     </svg>
 )
-
-
-
-function BalanceChip({ balance, lang }: { balance: number; lang: Lang }) {
-    const [open, setOpen] = useState(false)
-    const ref = useRef<HTMLDivElement>(null)
-    const topUpTxt   = lang === 'ru' ? 'Пополнить' : 'Top up'
-    const balanceTxt = lang === 'ru' ? 'Баланс'    : 'Balance'
-
-    useEffect(() => {
-        const fn = (e: MouseEvent) => {
-            if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-        }
-        document.addEventListener('mousedown', fn)
-        return () => document.removeEventListener('mousedown', fn)
-    }, [])
-
-    return (
-        <div ref={ref} style={{ position: 'relative' }}>
-            <button className={s.balanceChip} onClick={() => setOpen(v => !v)}>
-                <IconWallet />
-                <span>{balance} ₽</span>
-            </button>
-            {open && (
-                <div className={s.balancePop}>
-                    <div className={s.balancePopLabel}>{balanceTxt}</div>
-                    <div className={s.balancePopAmount}>{balance} ₽</div>
-                    <a
-                        href="https://t.me/yar0309"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={s.balancePopBtn}
-                        onClick={() => setOpen(false)}
-                    >
-                        {topUpTxt}
-                    </a>
-                </div>
-            )}
-        </div>
-    )
-}
 
 
 
@@ -103,6 +53,7 @@ function Header({ lang, onLang }: Props) {
     const [scrolled,    setScrolled]    = useState(false)
     const [menuOpen,    setMenuOpen]    = useState(false)
     const [authVisible, setAuthVisible] = useState(false)
+    const [authTab,     setAuthTab]     = useState<'login' | 'register'>('login')
 
     useEffect(() => {
         const fn = () => setScrolled(window.scrollY > 10)
@@ -125,6 +76,9 @@ function Header({ lang, onLang }: Props) {
     const close   = () => setMenuOpen(false)
     const isAdmin = user?.role === 'ADMIN'
 
+    const openLogin    = () => { setAuthTab('login');    setAuthVisible(true) }
+    const openRegister = () => { setAuthTab('register'); setAuthVisible(true) }
+
     const authBlock = loading ? (
         <div style={{ width: 72, height: 34, borderRadius: 10, background: 'var(--c-border)' }} />
     ) : user ? (
@@ -135,14 +89,18 @@ function Header({ lang, onLang }: Props) {
                     <span>{lang === 'ru' ? 'Админ' : 'Admin'}</span>
                 </a>
             )}
-            <BalanceChip balance={user.balance ?? 0} lang={lang} />
             <NotifBell />
             <UserMenu lang={lang} />
         </div>
     ) : (
-        <button className="btn-ghost" onClick={() => setAuthVisible(true)}>
-            {tr('nav.login')}
-        </button>
+        <div className={s.authRow}>
+            <button className="btn-ghost" onClick={openLogin}>
+                {tr('nav.login')}
+            </button>
+            <button className="btn-primary" onClick={openRegister} style={{ padding: '10px 20px', fontSize: 14 }}>
+                {lang === 'ru' ? 'Регистрация' : 'Sign up'}
+            </button>
+        </div>
     )
 
     return (
@@ -196,11 +154,18 @@ function Header({ lang, onLang }: Props) {
                     </a>
                 ))}
                 {!user && (
-                    <button className="btn-ghost"
-                            onClick={() => { setAuthVisible(true); close() }}
-                            style={{ alignSelf: 'flex-start', marginTop: 8 }}>
-                        {tr('nav.login')}
-                    </button>
+                    <div style={{ display: 'flex', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+                        <button className="btn-ghost"
+                                onClick={() => { openLogin(); close() }}
+                                style={{ alignSelf: 'flex-start' }}>
+                            {tr('nav.login')}
+                        </button>
+                        <button className="btn-primary"
+                                onClick={() => { openRegister(); close() }}
+                                style={{ alignSelf: 'flex-start', padding: '10px 20px', fontSize: 14 }}>
+                            {lang === 'ru' ? 'Регистрация' : 'Sign up'}
+                        </button>
+                    </div>
                 )}
                 <div className={s.langSwitch} style={{ marginTop: 12 }}>
                     {(['ru', 'en'] as Lang[]).map(l => (
@@ -213,7 +178,13 @@ function Header({ lang, onLang }: Props) {
                 </div>
             </div>
 
-            {authVisible && <AuthModal lang={lang} onClose={() => setAuthVisible(false)} />}
+            {authVisible && (
+                <AuthModal
+                    lang={lang}
+                    onClose={() => setAuthVisible(false)}
+                    initialTab={authTab}
+                />
+            )}
         </>
     )
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import type { Lang } from '../i18n/translations'
 import { useAuthContext } from '../context/AuthContext'
@@ -17,8 +17,6 @@ const txt = {
         logout:     'Выход',
         noSub:      'Нет активной подписки',
         noSubBtn:   'Выбрать тариф',
-        balance:    'Баланс',
-        topUp:      'Пополнить',
         adminPanel: 'Админ-панель',
     },
     en: {
@@ -32,8 +30,6 @@ const txt = {
         logout:     'Sign out',
         noSub:      'No active subscription',
         noSubBtn:   'Choose plan',
-        balance:    'Balance',
-        topUp:      'Top up',
         adminPanel: 'Admin Panel',
     },
 } as const
@@ -54,16 +50,7 @@ const NAV_ITEMS = (l: NavLabels) => [
     { to: '/dashboard/profile',  label: l.profile,  exact: false },
 ]
 
-// Имя custom event для мгновенного обновления счётчика лидов
 export const LEADS_COUNT_CHANGED = 'aimly:leads-count-changed'
-
-const IconWallet = () => (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="2" y="7" width="20" height="14" rx="2"/>
-        <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
-        <circle cx="17" cy="14" r="1" fill="currentColor" stroke="none"/>
-    </svg>
-)
 
 const IconShield = () => (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -121,13 +108,11 @@ export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) 
         refreshNewCount()
         const interval = setInterval(refreshNewCount, 30_000)
 
-        // Слушаем событие от LeadsPage — немедленно обновляем счётчик
         const handleCountChanged = (e: Event) => {
             const detail = (e as CustomEvent<{ newCount: number }>).detail
             if (typeof detail?.newCount === 'number') {
                 setNewLeadsCount(detail.newCount)
             } else {
-                // Если конкретное число не передано — перезапрашиваем
                 refreshNewCount()
             }
         }
@@ -158,10 +143,7 @@ export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) 
                 <div className={s.noSubTopBanner}>
                     <span className={s.noSubTopIcon}><IconAlertCircle /></span>
                     <span className={s.noSubTopText}>{l.noSub}</span>
-                    <button
-                        className={s.noSubTopBtn}
-                        onClick={() => navigate('/dashboard/profile')}
-                    >
+                    <button className={s.noSubTopBtn} onClick={() => navigate('/dashboard/profile')}>
                         {l.noSubBtn}
                     </button>
                 </div>
@@ -172,23 +154,13 @@ export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) 
                     <img src="/AIMLY.png" alt="AIMLY" className={s.topbarLogoImg} />
                     <span className={s.topbarLogoText}>AIMLY</span>
                     {isAdmin && (
-                        <span style={{
-                            fontSize: 10, fontWeight: 700,
-                            background: 'var(--c-accent)', color: '#fff',
-                            padding: '2px 6px', borderRadius: 5,
-                            marginLeft: 4, letterSpacing: '.5px',
-                            textTransform: 'uppercase',
-                        }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, background: 'var(--c-accent)', color: '#fff', padding: '2px 6px', borderRadius: 5, marginLeft: 4, letterSpacing: '.5px', textTransform: 'uppercase' }}>
                             Админ
                         </span>
                     )}
                 </a>
 
-                <button
-                    className={s.burger}
-                    onClick={() => setMobileOpen(v => !v)}
-                    aria-label="Меню"
-                >
+                <button className={s.burger} onClick={() => setMobileOpen(v => !v)} aria-label="Меню">
                     <span /><span /><span />
                 </button>
 
@@ -212,7 +184,7 @@ export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) 
                         </a>
                     )}
 
-                    <BalanceChip balance={user?.balance ?? 0} lang={lang} hasSubscription={!!hasSubscription} />
+                    {}
                     <NotifBell />
 
                     <div className={s.userChip}>
@@ -227,9 +199,7 @@ export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) 
             </header>
 
             <div className={s.body}>
-                {mobileOpen && (
-                    <div className={s.mobileOverlay} onClick={() => setMobileOpen(false)} />
-                )}
+                {mobileOpen && <div className={s.mobileOverlay} onClick={() => setMobileOpen(false)} />}
 
                 <aside className={`${s.sidebar} ${mobileOpen ? s.sidebarOpen : ''}`}>
                     <nav className={s.nav}>
@@ -238,28 +208,12 @@ export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) 
                                 key={item.to}
                                 to={item.to}
                                 end={item.exact}
-                                className={({ isActive }) =>
-                                    `${s.navItem} ${isActive ? s.navItemActive : ''}`
-                                }
+                                className={({ isActive }) => `${s.navItem} ${isActive ? s.navItemActive : ''}`}
                                 onClick={() => setMobileOpen(false)}
                             >
                                 <span style={{ flex: 1 }}>{item.label}</span>
                                 {item.to === '/dashboard/leads' && newLeadsCount > 0 && (
-                                    <span style={{
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        minWidth: 18,
-                                        height: 18,
-                                        padding: '0 5px',
-                                        borderRadius: 9,
-                                        background: '#dc2626',
-                                        color: '#fff',
-                                        fontSize: 10,
-                                        fontWeight: 700,
-                                        lineHeight: 1,
-                                        flexShrink: 0,
-                                    }}>
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: '#dc2626', color: '#fff', fontSize: 10, fontWeight: 700, lineHeight: 1, flexShrink: 0 }}>
                                         {newLeadsCount > 99 ? '99+' : newLeadsCount}
                                     </span>
                                 )}
@@ -282,62 +236,6 @@ export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) 
                     </div>
                 </main>
             </div>
-        </div>
-    )
-}
-
-
-// ─── BalanceChip ──────────────────────────────────────────────────────────────
-
-interface BalanceChipProps {
-    balance: number
-    lang: Lang
-    hasSubscription: boolean
-}
-
-function BalanceChip({ balance, lang, hasSubscription }: BalanceChipProps) {
-    const [open, setOpen] = useState(false)
-    const ref = useRef<HTMLDivElement>(null)
-    const ru = lang === 'ru'
-
-    useEffect(() => {
-        if (!open) return
-        const handler = (e: MouseEvent) => {
-            if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-        }
-        document.addEventListener('mousedown', handler)
-        return () => document.removeEventListener('mousedown', handler)
-    }, [open])
-
-    return (
-        <div className={s.balanceWrap} ref={ref}>
-            <button className={s.balanceChip} onClick={() => setOpen(v => !v)}>
-                <IconWallet />
-                <span className={s.balanceVal}>{balance} ₽</span>
-            </button>
-            {open && (
-                <div className={s.balancePop}>
-                    <div className={s.balanceRow}>
-                        <span className={s.balanceLabel}>{ru ? 'Баланс' : 'Balance'}</span>
-                        <span className={s.balanceAmount}>{balance} ₽</span>
-                    </div>
-                    <div className={s.balanceSep} />
-                    {!hasSubscription && (
-                        <a href="/checkout" className={s.balancePopBtn}>
-                            {ru ? 'Купить подписку' : 'Buy subscription'}
-                        </a>
-                    )}
-                    <div className={s.balanceSep} />
-                    <a
-                        href="https://t.me/yar0309"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={s.balancePopBtnPrimary}
-                    >
-                        {ru ? 'Пополнить баланс' : 'Top up balance'}
-                    </a>
-                </div>
-            )}
         </div>
     )
 }

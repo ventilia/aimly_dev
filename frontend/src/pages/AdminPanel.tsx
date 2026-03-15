@@ -21,7 +21,7 @@ const TABS: { id: Tab; label: { ru: string; en: string } }[] = [
     { id: 'notifications', label: { ru: 'Уведомления',  en: 'Notifications' } },
 ]
 
-type SortKey = 'id' | 'firstName' | 'email' | 'role' | 'balance' | 'leadsCount' | 'createdAt'
+type SortKey = 'id' | 'firstName' | 'email' | 'role' | 'leadsCount' | 'createdAt'
 type SortDir = 'asc' | 'desc'
 
 function sortUsers(users: AdminUserDto[], key: SortKey, dir: SortDir): AdminUserDto[] {
@@ -121,7 +121,6 @@ function UsersTable({ users, lang, currentUserId, onRoleChange }: {
                     <th>Telegram</th>
                     <Th col="role"       label={ru ? 'Роль' : 'Role'} />
                     <th>Email ✓</th>
-                    <Th col="balance"    label={ru ? 'Баланс' : 'Balance'} />
                     <Th col="leadsCount" label={ru ? 'Лиды' : 'Leads'} />
                     <th>{ru ? 'Подписка' : 'Plan'}</th>
                     <Th col="createdAt"  label={ru ? 'Дата' : 'Created'} />
@@ -155,7 +154,6 @@ function UsersTable({ users, lang, currentUserId, onRoleChange }: {
                                 {u.emailVerified ? '✓' : '✗'}
                             </span>
                         </td>
-                        <td className={s.cellNum}>{u.balance} ₽</td>
                         <td className={s.cellNum}>{u.leadsCount}</td>
                         <td>
                             {u.subscriptionPlan
@@ -203,7 +201,6 @@ function UserbotTab({ lang }: { lang: Lang }) {
     const [phone,      setPhone]      = useState('')
     const [apiID,      setApiID]      = useState('39327366')
     const [apiHash,    setApiHash]    = useState('826eb33c5d3512e6427818fc2a712d1f')
-    // ИСПРАВЛЕНО: было sessionId/setSessionId — Go возвращает tempId, не sessionId
     const [tempId,     setTempId]     = useState('')
     const [code,       setCode]       = useState('')
     const [password,   setPassword]   = useState('')
@@ -249,7 +246,6 @@ function UserbotTab({ lang }: { lang: Lang }) {
             })
             const data = await res.json()
             if (!res.ok) throw new Error(data.error ?? `Ошибка ${res.status}`)
-            // ИСПРАВЛЕНО: было data.sessionId — Go возвращает поле tempId
             setTempId(data.tempId)
             setStep('code')
         } catch (e: unknown) {
@@ -269,7 +265,6 @@ function UserbotTab({ lang }: { lang: Lang }) {
                 credentials: 'include',
                 headers:     { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    // ИСПРАВЛЕНО: было sessionId — бекенд и Go ожидают поле tempId
                     tempId,
                     code:     code.trim(),
                     password: password.trim() || undefined,
@@ -294,7 +289,6 @@ function UserbotTab({ lang }: { lang: Lang }) {
         setPhone('')
         setCode('')
         setPassword('')
-        // ИСПРАВЛЕНО: было setSessionId('')
         setTempId('')
         setRegError('')
         setRegSuccess('')
@@ -836,11 +830,18 @@ export default function AdminPanel({ lang, setLang }: Props) {
 
     useEffect(() => {
         if (activeTab !== 'users') return
-        setUsersLoading(true)
-        adminApi.getUsers()
-            .then(setUsers)
-            .catch(() => {})
-            .finally(() => setUsersLoading(false))
+        const fetchUsers = async () => {
+            setUsersLoading(true)
+            try {
+                const data = await adminApi.getUsers()
+                setUsers(data)
+            } catch {
+                // silent
+            } finally {
+                setUsersLoading(false)
+            }
+        }
+        void fetchUsers()
     }, [activeTab])
 
     if (loading || !user || user.role !== 'ADMIN') return null

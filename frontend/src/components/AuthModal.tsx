@@ -68,7 +68,7 @@ const txt = {
         resendIn:           'Повторно через',
         sec:                'сек',
         successTitle:       'Добро пожаловать!',
-        successText:        'Email подтверждён. Теперь вы можете пользоваться AIMLY.',
+        successText:        'Email подтверждён. Переходим в личный кабинет…',
         successBtn:         'Перейти в кабинет',
         close:              'Закрыть',
         passwordHint:       'Минимум 8 символов: строчные + заглавные + цифра',
@@ -96,7 +96,7 @@ const txt = {
         resendIn:           'Resend in',
         sec:                's',
         successTitle:       'Welcome!',
-        successText:        'Email confirmed. You can now use AIMLY.',
+        successText:        'Email confirmed. Redirecting to your dashboard…',
         successBtn:         'Go to dashboard',
         close:              'Close',
         passwordHint:       'Min 8 chars: lowercase + uppercase + digit',
@@ -111,7 +111,11 @@ const txt = {
 
 type Step    = 'form' | 'code' | 'success'
 type TabMode = 'login' | 'register'
-interface Props { lang: Lang; onClose: () => void }
+interface Props {
+    lang:        Lang
+    onClose:     () => void
+    initialTab?: TabMode
+}
 
 interface PFProps {
     label:        string
@@ -158,12 +162,12 @@ function PasswordField({ label, value, onChange, onEnter, hasError, errorText, h
 }
 
 
-export default function AuthModal({ lang, onClose }: Props) {
+export default function AuthModal({ lang, onClose, initialTab = 'login' }: Props) {
     const l = txt[lang]
     const { saveSession } = useAuthContext()
     const navigate = useNavigate()
 
-    const [tab,  setTab]  = useState<TabMode>('login')
+    const [tab,  setTab]  = useState<TabMode>(initialTab)
     const [step, setStep] = useState<Step>('form')
 
     const [email,           setEmail]           = useState('')
@@ -172,7 +176,7 @@ export default function AuthModal({ lang, onClose }: Props) {
     const [firstName,       setFirstName]       = useState('')
     const [emailUsed,       setEmailUsed]       = useState('')
 
-    const [code,      setCode]      = useState('')
+    const [code,        setCode]        = useState('')
     const [resendTimer, setResendTimer] = useState(0)
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -181,6 +185,11 @@ export default function AuthModal({ lang, onClose }: Props) {
     const [codeError, setCodeError] = useState<string | null>(null)
 
     const codeInputRef = useRef<HTMLInputElement>(null)
+
+    // Обновляем tab если изменился initialTab (при открытии с другим режимом)
+    useEffect(() => {
+        setTab(initialTab)
+    }, [initialTab])
 
     useEffect(() => {
         const fn = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -198,6 +207,17 @@ export default function AuthModal({ lang, onClose }: Props) {
     useEffect(() => {
         if (step === 'code') setTimeout(() => codeInputRef.current?.focus(), 120)
     }, [step])
+
+    // Автоматический редирект через 2 секунды после успешной верификации
+    useEffect(() => {
+        if (step === 'success') {
+            const timer = setTimeout(() => {
+                onClose()
+                navigate('/dashboard')
+            }, 2000)
+            return () => clearTimeout(timer)
+        }
+    }, [step, navigate, onClose])
 
     const startResendTimer = (seconds = 60) => {
         setResendTimer(seconds)
@@ -230,7 +250,6 @@ export default function AuthModal({ lang, onClose }: Props) {
             const res = await authApi.login(email.trim(), password)
 
             if (res.pendingVerification) {
-                // бэк отправил новый код — показываем экран верификации
                 setEmailUsed(res.email)
                 setStep('code')
                 startResendTimer(60)
@@ -268,7 +287,6 @@ export default function AuthModal({ lang, onClose }: Props) {
                 firstName:      firstName.trim() || undefined,
             })
             if (res.token !== null || res.userId !== null) {
-                // регистрация успешна — токен в куке, показываем экран кода
                 setEmailUsed(email.trim())
                 setStep('code')
                 startResendTimer(60)
@@ -287,7 +305,6 @@ export default function AuthModal({ lang, onClose }: Props) {
         if (code.length !== 6) { setCodeError('Введите 6-значный код'); return }
         setLoading(true)
         try {
-            // токен не передаём — он в куке
             const res = await authApi.verifyEmail(code)
             saveSession(res)
             setStep('success')
@@ -314,8 +331,6 @@ export default function AuthModal({ lang, onClose }: Props) {
     }
 
     const handleGoogle = () => {
-        // Google Identity Services — подключается через скрипт в index.html
-        // window.google должен быть доступен
         const google = (window as unknown as { google?: { accounts: { id: { initialize: (cfg: object) => void; prompt: () => void } } } }).google
         if (!google) {
             setError('Google Sign-In не загружен. Перезагрузите страницу.')

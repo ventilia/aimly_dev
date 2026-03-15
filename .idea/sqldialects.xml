@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="SqlDialectMappings">
+    <file url="file://$PROJECT_DIR$/backend/build/resources/main/db/migration/V10__add_keyword_variants.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/build/resources/main/db/migration/V11__add_context_messages_to_leads.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/build/resources/main/db/migration/V12__plans_and_personalization.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/build/resources/main/db/migration/V13__fix_chat_subscriptions_unique_index.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/build/resources/main/db/migration/V14__fix_chat_subscriptions_unique_index.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/build/resources/main/db/migration/V1__create_users.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/build/resources/main/db/migration/V2__create_email_verifications.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/build/resources/main/db/migration/V3__create_rate_limits.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/build/resources/main/db/migration/V4__fix_email_verifications.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/build/resources/main/db/migration/V5__add_google_oauth.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/build/resources/main/db/migration/V6__admin_notifications.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/build/resources/main/db/migration/V7__create_userbot_tables.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/build/resources/main/db/migration/V8__subscription_expiry.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/build/resources/main/db/migration/V9__trial_status.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/out/production/resources/db/migration/V1__create_users.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/out/production/resources/db/migration/V2__create_email_verifications.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/out/production/resources/db/migration/V3__create_rate_limits.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/out/production/resources/db/migration/V4__fix_email_verifications.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/src/main/resources/db/migration/V10__add_keyword_variants.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/src/main/resources/db/migration/V11__add_context_messages_to_leads.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/src/main/resources/db/migration/V12__plans_and_personalization.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/src/main/resources/db/migration/V13__fix_chat_subscriptions_unique_index.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/src/main/resources/db/migration/V14__fix_chat_subscriptions_unique_index.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/src/main/resources/db/migration/V15__respond_to_service_offers.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/src/main/resources/db/migration/V16__add_user_ai_columns.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/src/main/resources/db/migration/V17__add_user_ai_columns.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/src/main/resources/db/migration/V1__create_users.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/src/main/resources/db/migration/V2__create_email_verifications.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/src/main/resources/db/migration/V3__create_rate_limits.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/src/main/resources/db/migration/V4__fix_email_verifications.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/src/main/resources/db/migration/V5__add_google_oauth.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/src/main/resources/db/migration/V6__admin_notifications.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/src/main/resources/db/migration/V7__create_userbot_tables.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/src/main/resources/db/migration/V8__subscription_expiry.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/src/main/resources/db/migration/V9__trial_status.sql" dialect="GenericSQL" />
+  </component>
+</project>

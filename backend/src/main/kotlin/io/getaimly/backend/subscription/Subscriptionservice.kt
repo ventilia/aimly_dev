@@ -11,38 +11,32 @@ import java.time.LocalDateTime
 
 
 data class SubscriptionDto(
-    val userId: Long,
-    val email: String,
+    val userId:    Long,
+    val email:     String,
     val firstName: String?,
-    val status: String?,
-    val plan: String?,
+    val status:    String?,
+    val plan:      String?,
     val expiresAt: String?,
-    val balance: Int,
 )
 
 
 data class GrantSubscriptionRequest(
-    val userId: Long,
-    val plan: String,
+    val userId:       Long,
+    val plan:         String,
     val durationDays: Int = 30,
 )
 
 
 data class ChangePlanRequest(
     val userId: Long,
-    val plan: String,
+    val plan:   String,
     val status: String = "ACTIVE",
 )
 
 data class SetExpiryRequest(
-    val userId: Long,
-    val plan: String,
+    val userId:       Long,
+    val plan:         String,
     val durationDays: Int,
-)
-
-data class AdjustBalanceRequest(
-    val userId: Long,
-    val amount: Int,
 )
 
 
@@ -51,9 +45,9 @@ private val VALID_PLANS = setOf("MINIMUM", "START", "TRIAL")
 
 @Service
 class SubscriptionService(
-    private val userRepository: UserRepository,
+    private val userRepository:   UserRepository,
     private val expiryRepository: SubscriptionExpiryRepository,
-    private val bot: AimlyBot,
+    private val bot:              AimlyBot,
 ) {
     private val log = LoggerFactory.getLogger(SubscriptionService::class.java)
 
@@ -162,23 +156,12 @@ class SubscriptionService(
         log.info("подписка отозвана: ${user.email} (был план: $oldPlan)")
         user.telegramId?.let { tgId ->
             runCatching {
-                bot.sendText(tgId, "⚠️ Ваша подписка AIMLY деактивирована. Напишите менеджеру для продления.")
+                bot.sendText(tgId, "⚠️ Ваша подписка AIMLY деактивирована. Напишите в поддержку для продления.")
             }.onFailure { }
         }
         return user.toDto()
     }
 
-
-    @Transactional
-    fun adjustBalance(req: AdjustBalanceRequest): SubscriptionDto {
-        val user = userRepository.findById(req.userId)
-            .orElseThrow { NotFoundException("пользователь не найден") }
-        val newBalance = user.balance + req.amount
-        if (newBalance < 0) throw IllegalArgumentException("баланс не может быть отрицательным")
-        user.balance = newBalance
-        userRepository.save(user)
-        return user.toDto()
-    }
 
     fun notifyExpiring() {
         val threshold = LocalDateTime.now().plusDays(3)
@@ -189,10 +172,10 @@ class SubscriptionService(
                 runCatching {
                     val msg = if (isTrial)
                         "⏰ Пробный период AIMLY истекает ${expiry.expiresAt.toLocalDate()}.\n" +
-                                "Для продолжения оформите подписку: t.me/yar0309"
+                                "Для продолжения свяжитесь с поддержкой: @aimly_support"
                     else
                         "⏰ Подписка AIMLY истекает ${expiry.expiresAt.toLocalDate()}.\n" +
-                                "Свяжитесь с менеджером для продления."
+                                "Свяжитесь с поддержкой для продления: @aimly_support"
                     bot.sendText(tgId, msg)
                     expiry.notifiedRenewal = true
                     expiryRepository.save(expiry)
@@ -212,11 +195,12 @@ class SubscriptionService(
                 log.info("подписка истекла: ${user.email} (был ${if (wasTrial) "TRIAL" else "ACTIVE"})")
                 user.telegramId?.let { tgId ->
                     runCatching {
-                        bot.sendText(tgId,
+                        bot.sendText(
+                            tgId,
                             if (wasTrial)
-                                "❌ Пробный период AIMLY истёк.\nОформите подписку: t.me/yar0309"
+                                "❌ Пробный период AIMLY истёк.\nЧтобы продолжить — свяжитесь с поддержкой: @aimly_support"
                             else
-                                "❌ Подписка AIMLY истекла. Напишите менеджеру для продления."
+                                "❌ Подписка AIMLY истекла. Свяжитесь с поддержкой для продления: @aimly_support"
                         )
                     }.onFailure { }
                 }
@@ -232,7 +216,7 @@ class SubscriptionService(
                     "✅ AI-семантический поиск лидов\n" +
                     "✅ AI-фильтрация контекста сообщений\n" +
                     "✅ Персонализация под ваш бизнес\n" +
-                    "Действует до: ${expiresAt.toLocalDate()}\nДля продолжения: t.me/yar0309"
+                    "Действует до: ${expiresAt.toLocalDate()}"
         "MINIMUM" ->
             "🎉 Подписка AIMLY МИНИМУМ активирована!\n" +
                     "✅ Мониторинг по ключевым словам\n" +
@@ -242,7 +226,7 @@ class SubscriptionService(
                     "✅ Персонализация под ваш бизнес\n" +
                     "✅ Уведомления в Telegram\n" +
                     "Действует до: ${expiresAt.toLocalDate()}"
-        else      -> // START — в разработке
+        else      ->
             "🚀 Подписка AIMLY СТАРТ активирована!\n" +
                     "Действует до: ${expiresAt.toLocalDate()}"
     }
@@ -267,6 +251,5 @@ class SubscriptionService(
         status    = subscriptionStatus,
         plan      = subscriptionPlan,
         expiresAt = expiryRepository.findByUserId(id)?.expiresAt?.toString(),
-        balance   = balance,
     )
 }

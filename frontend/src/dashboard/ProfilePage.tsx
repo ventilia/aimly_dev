@@ -123,7 +123,7 @@ export default function ProfilePage({ lang }: Props) {
     const [unlinking,    setUnlinking]    = useState(false)
     const [unlinkError,  setUnlinkError]  = useState<string | null>(null)
 
-    // AI персонализация (только сохранение описания, без генерации ключевых слов)
+    // AI персонализация
     const [bizContext,      setBizContext]      = useState('')
     const [bizContextSaved, setBizContextSaved] = useState('')
     const [bizSaving,       setBizSaving]       = useState(false)
@@ -262,7 +262,7 @@ export default function ProfilePage({ lang }: Props) {
 
             <div className={s.grid}>
 
-                {}
+                {/* аккаунт */}
                 <div className={s.card}>
                     <p className={s.cardTitle}>{l.accountCard}</p>
                     <div className={s.userBlock}>
@@ -355,7 +355,7 @@ export default function ProfilePage({ lang }: Props) {
                     </div>
                 </div>
 
-                {}
+                {/* AI персонализация */}
                 <div className={`${s.card} ${s.gridFull}`}>
                     <p className={s.cardTitle}>{l.aiCard}</p>
 

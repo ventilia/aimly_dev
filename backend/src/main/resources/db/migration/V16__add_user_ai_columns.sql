@@ -1,0 +1,3 @@
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS business_context TEXT,
+    ADD COLUMN IF NOT EXISTS respond_to_service_offers BOOLEAN NOT NULL DEFAULT FALSE;

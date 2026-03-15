@@ -20,21 +20,15 @@ export default function SubscriptionsTab({ lang }: Props) {
 
 
     const [grantUserId,    setGrantUserId]    = useState('')
-    const [grantPlan,      setGrantPlan]      = useState('MINIMUM')  // ✅ дефолт — MINIMUM (дешевле)
+    const [grantPlan,      setGrantPlan]      = useState('MINIMUM')
     const [grantStatus,    setGrantStatus]    = useState('ACTIVE')
     const [grantDays,      setGrantDays]      = useState('30')
     const [grantLoading,   setGrantLoading]   = useState(false)
     const [grantMsg,       setGrantMsg]       = useState<Msg | null>(null)
 
 
-    const [balanceUserId,  setBalanceUserId]  = useState('')
-    const [balanceAmount,  setBalanceAmount]  = useState('')
-    const [balanceLoading, setBalanceLoading] = useState(false)
-    const [balanceMsg,     setBalanceMsg]     = useState<Msg | null>(null)
-
-
     const [editPlanId,     setEditPlanId]     = useState<number | null>(null)
-    const [editPlanValue,  setEditPlanValue]  = useState('MINIMUM')  // ✅ дефолт — MINIMUM
+    const [editPlanValue,  setEditPlanValue]  = useState('MINIMUM')
     const [editStatusValue,setEditStatusValue]= useState('ACTIVE')
 
 
@@ -88,33 +82,6 @@ export default function SubscriptionsTab({ lang }: Props) {
     }
 
 
-    const handleBalance = async () => {
-        const userId = Number(balanceUserId)
-        const amount = Number(balanceAmount)
-        if (!userId || userId <= 0) {
-            setBalanceMsg({ text: ru ? 'Введите корректный ID' : 'Enter valid ID', ok: false })
-            return
-        }
-        if (isNaN(amount)) {
-            setBalanceMsg({ text: ru ? 'Введите сумму' : 'Enter amount', ok: false })
-            return
-        }
-        setBalanceLoading(true)
-        setBalanceMsg(null)
-        try {
-            await adminSubsApi.adjustBalance(userId, amount)
-            setBalanceUserId('')
-            setBalanceAmount('')
-            setBalanceMsg({ text: ru ? 'Баланс изменён' : 'Balance updated', ok: true })
-            await load()
-        } catch (e: unknown) {
-            setBalanceMsg({ text: e instanceof Error ? e.message : 'Ошибка', ok: false })
-        } finally {
-            setBalanceLoading(false)
-        }
-    }
-
-
     const handleRevoke = async (userId: number) => {
         if (!confirm(ru ? 'Отозвать подписку?' : 'Revoke subscription?')) return
         setWorking(userId)
@@ -130,11 +97,10 @@ export default function SubscriptionsTab({ lang }: Props) {
 
 
     const handleEditPlan = async (userId: number) => {
-        const plan   = editPlanValue || 'MINIMUM'  // ✅ ИСПРАВЛЕНО: дефолт MINIMUM
+        const plan   = editPlanValue || 'MINIMUM'
         const status = editStatusValue
         setWorking(userId)
         try {
-
             await adminSubsApi.changePlan(userId, plan)
 
             if (status === 'INACTIVE') {
@@ -151,7 +117,7 @@ export default function SubscriptionsTab({ lang }: Props) {
 
 
     const handleEditExpiry = async (userId: number) => {
-        const plan = subs.find(sub => sub.userId === userId)?.plan ?? 'MINIMUM'  // ✅ ИСПРАВЛЕНО: дефолт MINIMUM
+        const plan = subs.find(sub => sub.userId === userId)?.plan ?? 'MINIMUM'
         const days = Number(editExpiryDays) || 30
         setWorking(userId)
         try {
@@ -187,7 +153,6 @@ export default function SubscriptionsTab({ lang }: Props) {
                         onChange={e => setGrantUserId(e.target.value)}
                         style={{ width: 120 }}
                     />
-                    {/* ✅ ИСПРАВЛЕНО: список тарифов — MINIMUM, START, TRIAL */}
                     <select
                         className={s.formSelect}
                         value={grantPlan}
@@ -228,41 +193,6 @@ export default function SubscriptionsTab({ lang }: Props) {
                 )}
             </div>
 
-            {/* Форма: изменить баланс */}
-            <div className={s.subCard}>
-                <h3 className={s.subCardTitle}>{ru ? 'Изменить баланс' : 'Adjust Balance'}</h3>
-                <div className={s.formRow}>
-                    <input
-                        className={s.formInput}
-                        type="number"
-                        placeholder={ru ? 'ID пользователя' : 'User ID'}
-                        value={balanceUserId}
-                        onChange={e => setBalanceUserId(e.target.value)}
-                        style={{ width: 120 }}
-                    />
-                    <input
-                        className={s.formInput}
-                        type="number"
-                        placeholder={ru ? 'Сумма (+/−)' : 'Amount (+/−)'}
-                        value={balanceAmount}
-                        onChange={e => setBalanceAmount(e.target.value)}
-                        style={{ width: 120 }}
-                    />
-                    <button
-                        className={s.grantBtn}
-                        onClick={handleBalance}
-                        disabled={balanceLoading}
-                    >
-                        {balanceLoading ? '...' : ru ? 'Изменить' : 'Adjust'}
-                    </button>
-                </div>
-                {balanceMsg && (
-                    <div className={balanceMsg.ok ? s.formSuccess : s.formError}>
-                        {balanceMsg.text}
-                    </div>
-                )}
-            </div>
-
             {loadError && <div className={s.formError}>{loadError}</div>}
 
             {loading ? (
@@ -283,7 +213,6 @@ export default function SubscriptionsTab({ lang }: Props) {
                             <th>{ru ? 'Статус' : 'Status'}</th>
                             <th>{ru ? 'Тариф' : 'Plan'}</th>
                             <th>{ru ? 'Истекает' : 'Expires'}</th>
-                            <th>{ru ? 'Баланс' : 'Balance'}</th>
                             <th>{ru ? 'Действия' : 'Actions'}</th>
                         </tr>
                         </thead>
@@ -309,7 +238,6 @@ export default function SubscriptionsTab({ lang }: Props) {
                                 <td>
                                     {editPlanId === sub.userId ? (
                                         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                                            {/* ✅ ИСПРАВЛЕНО: селект тарифов — MINIMUM и START */}
                                             <select
                                                 className={s.formSelect}
                                                 value={editPlanValue}
@@ -351,7 +279,7 @@ export default function SubscriptionsTab({ lang }: Props) {
                                             style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
                                             onClick={() => {
                                                 setEditPlanId(sub.userId)
-                                                setEditPlanValue(sub.plan || 'MINIMUM')  // ✅ дефолт MINIMUM
+                                                setEditPlanValue(sub.plan || 'MINIMUM')
                                                 setEditStatusValue(sub.status || 'ACTIVE')
                                             }}
                                         >
@@ -361,7 +289,7 @@ export default function SubscriptionsTab({ lang }: Props) {
                                     )}
                                 </td>
 
-                                {/* Редактирование срока */}
+                                {}
                                 <td>
                                     {editExpiryId === sub.userId ? (
                                         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -411,7 +339,6 @@ export default function SubscriptionsTab({ lang }: Props) {
                                     )}
                                 </td>
 
-                                <td className={s.cellNum}>{sub.balance} ₽</td>
                                 <td>
                                     <button
                                         className={s.actionBtn}

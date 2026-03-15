@@ -7,7 +7,6 @@ import org.slf4j.LoggerFactory
 import org.springframework.http.ResponseEntity
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.security.core.annotation.AuthenticationPrincipal
-import org.springframework.stereotype.Component
 import org.springframework.web.bind.annotation.*
 
 @RestController
@@ -19,13 +18,11 @@ class SubscriptionController(private val service: SubscriptionService) {
         if (user.role != Role.ADMIN) throw ForbiddenException("только для администраторов")
     }
 
-
     @GetMapping
     fun list(@AuthenticationPrincipal user: User): ResponseEntity<List<SubscriptionDto>> {
         requireAdmin(user)
         return ResponseEntity.ok(service.getAll())
     }
-
 
     @PostMapping("/grant")
     fun grant(
@@ -36,7 +33,6 @@ class SubscriptionController(private val service: SubscriptionService) {
         return ResponseEntity.ok(service.grant(req))
     }
 
-
     @PostMapping("/set-expiry")
     fun setExpiry(
         @AuthenticationPrincipal user: User,
@@ -45,7 +41,6 @@ class SubscriptionController(private val service: SubscriptionService) {
         requireAdmin(user)
         return ResponseEntity.ok(service.setExpiry(req))
     }
-
 
     @PatchMapping("/{userId}/plan")
     fun changePlan(
@@ -65,7 +60,6 @@ class SubscriptionController(private val service: SubscriptionService) {
         )
     }
 
-
     @PostMapping("/{userId}/revoke")
     fun revoke(
         @AuthenticationPrincipal user: User,
@@ -75,16 +69,7 @@ class SubscriptionController(private val service: SubscriptionService) {
         return ResponseEntity.ok(service.revoke(userId))
     }
 
-
-    @PostMapping("/balance")
-    fun adjustBalance(
-        @AuthenticationPrincipal user: User,
-        @RequestBody req: AdjustBalanceRequest,
-    ): ResponseEntity<SubscriptionDto> {
-        requireAdmin(user)
-        return ResponseEntity.ok(service.adjustBalance(req))
-    }
-
+    // Эндпоинт POST /balance удалён — баланс убран из системы
 
     @Scheduled(cron = "0 0 9 * * *")
     fun checkExpiringSubscriptions() {
@@ -93,7 +78,6 @@ class SubscriptionController(private val service: SubscriptionService) {
         service.deactivateExpired()
     }
 }
-
 
 data class ChangePlanBody(
     val plan:   String,

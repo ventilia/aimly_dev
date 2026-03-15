@@ -1,46 +1,31 @@
-import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Lang } from '../i18n/translations'
-
-import { subscriptionApi } from '../api/auth'
-import { useAuthContext } from '../context/AuthContext'
 import s from './Checkout.module.css'
 
 interface Props { lang: Lang; setLang: (l: Lang) => void }
 
-
-const PRICES = { MINIMUM: 4999, START: 4999 }  // было MINIMUM: 2900 — исправлено
-
 const txt = {
     ru: {
-        back:        '← Назад',
-        balanceBtn:  (price: number) => `Оплатить с баланса — ${price} ₽`,
-        supportBtn:  'Оплатить через поддержку',
-        supportNote: 'Свяжитесь с нами для оплаты',
-        noBalance:   'Недостаточно средств на балансе',
-        buying:      'Оформляем...',
-        successMsg:  (plan: string, date: string) => `✅ Тариф ${plan} активирован! Действует до ${date}`,
-        errMsg:      'Ошибка оплаты. Попробуйте через поддержку.',
-        title:       'Оформление подписки',
-        sub:         'Выберите подходящий тариф',
-        perMonth:    '/мес',
-        comingSoon:  'В разработке',
+        back:           '← Назад',
+        title:          'Оформление подписки',
+        sub:            'Выберите подходящий тариф',
+        perMonth:       '/мес',
+        comingSoon:     'В разработке',
         comingSoonDesc: 'Тариф находится в разработке и будет доступен в ближайшее время.',
+        contactSupport: 'Для оформления подписки напишите нам:',
+        supportLink:    '@aimly_support',
+        supportNote:    'Ответим и активируем доступ в течение рабочего дня',
     },
     en: {
-        back:        '← Back',
-        balanceBtn:  (price: number) => `Pay from balance — ${price} ₽`,
-        supportBtn:  'Pay via support',
-        supportNote: 'Contact us to complete payment',
-        noBalance:   'Insufficient balance',
-        buying:      'Purchasing...',
-        successMsg:  (plan: string, date: string) => `✅ ${plan} plan activated! Valid until ${date}`,
-        errMsg:      'Payment error. Try via support.',
-        title:       'Checkout',
-        sub:         'Choose the right plan',
-        perMonth:    '/month',
-        comingSoon:  'Coming soon',
+        back:           '← Back',
+        title:          'Checkout',
+        sub:            'Choose the right plan',
+        perMonth:       '/month',
+        comingSoon:     'Coming soon',
         comingSoonDesc: 'This plan is in development and will be available soon.',
+        contactSupport: 'To subscribe, contact us:',
+        supportLink:    '@aimly_support',
+        supportNote:    'We will respond and activate your access within one business day',
     },
 } as const
 
@@ -49,7 +34,7 @@ const PLANS = {
         {
             id: 'MINIMUM',
             name: 'Минимум',
-            price: 4999,  // было 2900 — исправлено
+            price: 4999,
             badge: 'РЕКОМЕНДУЕМ',
             desc: 'Мониторинг с AI и персонализацией',
             features: [
@@ -109,40 +94,9 @@ const PLANS = {
 
 export default function Checkout({ lang, setLang }: Props) {
     const l = txt[lang]
-    const { user, refreshUser } = useAuthContext()
     const navigate = useNavigate()
-    const [buying,   setBuying]  = useState<string | null>(null)
-    const [msg,      setMsg]     = useState<Record<string, string>>({})
-    const [isError,  setIsError] = useState<Record<string, boolean>>({})
 
-    const balance = user?.balance ?? 0
     const plans = PLANS[lang]
-
-    const handleBuy = async (planId: string) => {
-        const price = PRICES[planId as keyof typeof PRICES]
-        if (balance < price) {
-            setIsError(prev => ({ ...prev, [planId]: true }))
-            setMsg(prev => ({ ...prev, [planId]: l.noBalance }))
-            return
-        }
-        setBuying(planId)
-        setIsError(prev => ({ ...prev, [planId]: false }))
-        setMsg(prev => ({ ...prev, [planId]: '' }))
-        try {
-            const res = await subscriptionApi.purchase(planId)
-            await refreshUser()
-            const date = new Date(res.expiresAt).toLocaleDateString(
-                lang === 'ru' ? 'ru-RU' : 'en-US',
-                { day: 'numeric', month: 'long', year: 'numeric' }
-            )
-            setMsg(prev => ({ ...prev, [planId]: l.successMsg(planId, date) }))
-        } catch (e: unknown) {
-            setIsError(prev => ({ ...prev, [planId]: true }))
-            setMsg(prev => ({ ...prev, [planId]: e instanceof Error ? e.message : l.errMsg }))
-        } finally {
-            setBuying(null)
-        }
-    }
 
     return (
         <div className={s.root}>
@@ -183,13 +137,10 @@ export default function Checkout({ lang, setLang }: Props) {
                                         boxShadow: '0 8px 32px rgba(92,57,223,.18)',
                                     } : undefined}
                                 >
-                                    {plan.badge && (
-                                        <div className={s.planBadge}>{plan.badge}</div>
-                                    )}
+                                    {plan.badge && <div className={s.planBadge}>{plan.badge}</div>}
                                     <h3 className={s.planName}>{plan.name}</h3>
 
                                     {plan.disabled ? (
-
                                         <div className={s.comingSoonBlock}>
                                             <span className={s.comingSoonLabel}>{l.comingSoon}</span>
                                             <p className={s.comingSoonText}>{l.comingSoonDesc}</p>
@@ -198,53 +149,31 @@ export default function Checkout({ lang, setLang }: Props) {
                                         <>
                                             {plan.desc && <p className={s.planDesc}>{plan.desc}</p>}
                                             <div className={s.planPrice}>
-                                                <span className={s.priceVal}>
-                                                    {plan.price.toLocaleString(lang === 'ru' ? 'ru-RU' : 'en-US')}
-                                                </span>
+                                                <span className={s.priceVal}>{plan.price.toLocaleString(lang === 'ru' ? 'ru-RU' : 'en-US')}</span>
                                                 <span className={s.currency}>₽</span>
                                                 <span className={s.period}>{l.perMonth}</span>
                                             </div>
                                             <ul className={s.planFeatures}>
                                                 {plan.features.map((f, i) => (
-                                                    <li key={i} style={{
-                                                        color: f.startsWith('✗') ? '#6b7280' : '#ccc',
-                                                        opacity: f.startsWith('✗') ? 0.65 : 1,
-                                                    }}>
-                                                        {f}
-                                                    </li>
+                                                    <li key={i}>{f}</li>
                                                 ))}
                                             </ul>
-                                            <button
-                                                className={s.buyBtn}
-                                                onClick={() => handleBuy(plan.id)}
-                                                disabled={buying === plan.id}
-                                                style={!plan.accent ? {
-                                                    background: 'rgba(255,255,255,.08)',
-                                                    color: 'rgba(255,255,255,.7)',
-                                                } : undefined}
-                                            >
-                                                {buying === plan.id ? l.buying : l.balanceBtn(plan.price)}
-                                            </button>
-                                            {msg[plan.id] && (
-                                                <div className={isError[plan.id] ? s.errorMsg : s.successMsg}>
-                                                    {msg[plan.id]}
-                                                </div>
-                                            )}
                                         </>
                                     )}
                                 </div>
                             ))}
                         </div>
 
+                        {}
                         <div className={s.supportBlock}>
-                            <p className={s.supportBtnText}>{l.supportBtn}</p>
+                            <p className={s.supportBtnText}>{l.contactSupport}</p>
                             <a
-                                href="https://t.me/yar0309"
+                                href="https://t.me/aimly_support"
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className={s.supportLink}
                             >
-                                Telegram →
+                                {l.supportLink} →
                             </a>
                             <p className={s.supportNote}>{l.supportNote}</p>
                         </div>
