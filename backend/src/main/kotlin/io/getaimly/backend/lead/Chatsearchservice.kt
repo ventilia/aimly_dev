@@ -12,7 +12,6 @@ import org.springframework.stereotype.Service
 import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.RestTemplate
 
-// ─── DTOs ─────────────────────────────────────────────────────────────────────
 
 data class ChatSearchResult(
     val title: String,
@@ -29,7 +28,7 @@ data class ChatSearchResponse(
     val queries: List<String>,
 )
 
-// ─── Service ──────────────────────────────────────────────────────────────────
+
 
 @Service
 class ChatSearchService(
@@ -41,8 +40,11 @@ class ChatSearchService(
     private val log = LoggerFactory.getLogger(ChatSearchService::class.java)
     private val restTemplate = RestTemplate()
 
-    private val MIN_MEMBERS    = 600
-    private val TGSTAT_LANGUAGE = "russian"
+    private val MIN_MEMBERS = 600
+
+    // Языки, считающиеся русскоязычными (поле language в ответе TGStat).
+    // null означает, что поле не заполнено — не фильтруем такие записи.
+    private val ALLOWED_LANGUAGES = setOf("ru", "uk", "be", null)
 
     // ─── Фиксированные рекомендованные чаты ──────────────────────────────────
 
@@ -105,7 +107,7 @@ class ChatSearchService(
     /**
      * Полный цикл поиска чатов:
      * 1. Генерируем поисковые запросы через AI
-     * 2. Ищем по TGStat (3 прохода)
+     * 2. Ищем по TGStat (только peer_type=chat, только русскоязычные)
      * 3. Добавляем фиксированные чаты
      * 4. Фильтруем через второй AI-слой (удаляем нерелевантные, NSFW, спам)
      */
@@ -156,7 +158,7 @@ class ChatSearchService(
 
         log.info("TGStat до AI-фильтра: ${results.size} чатов")
 
-        // ─── Второй AI-слой: фильтрация каналов ──────────────────────────────
+        // ─── Второй AI-слой: фильтрация нерелевантного ───────────────────────
         val filtered = if (results.isNotEmpty()) {
             validateChannels(results, inputText)
         } else {
@@ -170,13 +172,6 @@ class ChatSearchService(
 
     // ─── Второй AI-слой: валидация релевантности каналов ─────────────────────
 
-    /**
-     * Проверяет список найденных каналов через Groq.
-     * Удаляет нерелевантные, NSFW/эротику, спам, крипто-скамы,
-     * каналы без обсуждений (только новости) и не по теме запроса.
-     *
-     * Работает батчами по 10 каналов, чтобы не превышать лимиты Groq.
-     */
     fun validateChannels(channels: List<ChatSearchResult>, query: String): List<ChatSearchResult> {
         if (groqApiKey.isBlank() || channels.isEmpty()) return channels
 
@@ -208,21 +203,21 @@ class ChatSearchService(
 
 Запрос пользователя: "$query"
 
-Список найденных Telegram-каналов/чатов:
+Список найденных Telegram-чатов:
 $channelList
 
 Оцени каждый чат: KEEP (оставить) или REMOVE (удалить).
 
-REMOVE только если канал явно содержит:
+REMOVE только если чат явно содержит:
 - Эротику, 18+, adult/NSFW контент
 - Казино, ставки, букмекеры
 - Крипто-скамы, финансовые пирамиды, обман
-- Тематика кардинально не совпадает с запросом (например, запрос про дизайн, а канал про рыбалку)
+- Тематика кардинально не совпадает с запросом (например, запрос про дизайн, а чат про рыбалку)
 
 KEEP во всех остальных случаях, включая:
 - Профессиональные чаты и каналы по теме (даже если уклон в вакансии/работу — там тоже бывают заказы)
 - Чаты фрилансеров, биржи заказов, чаты с поиском специалистов — они ОСОБЕННО ценны
-- Новостные каналы по теме — там может быть аудитория
+- Новостные чаты по теме — там может быть аудитория
 - Чаты, косвенно связанные с темой (смежные ниши)
 
 Важно: лучше оставить лишний чат, чем удалить нужный. Будь ЩЕДРЫМ с KEEP.
@@ -256,7 +251,6 @@ KEEP во всех остальных случаях, включая:
             val raw   = resp.choices.firstOrNull()?.message?.content ?: return channels.indices.toSet()
             val clean = raw.replace(Regex("```json|```"), "").trim()
 
-            // Парсим {"keep": [1,2,3]}
             val keepJson = Regex("\"keep\"\\s*:\\s*\\[([^]]*)]")
                 .find(clean)?.groupValues?.get(1) ?: return channels.indices.toSet()
 
@@ -264,11 +258,9 @@ KEEP во всех остальных случаях, включая:
                 .findAll(keepJson)
                 .mapNotNull { it.value.toIntOrNull() }
                 .filter { it in 1..channels.size }
-                .map { it - 1 }  // 1-based → 0-based
+                .map { it - 1 }
                 .toSet()
 
-            // Safety threshold: если AI оставил меньше 40% — что-то пошло не так,
-            // возвращаем все каналы без фильтрации (fail-open).
             if (keepIndices.size < channels.size * 0.4 && channels.size >= 3) {
                 log.warn("validateChannelsBatch: AI оставил слишком мало (${keepIndices.size}/${channels.size}), возвращаем все без фильтра")
                 return channels.indices.toSet()
@@ -285,6 +277,14 @@ KEEP во всех остальных случаях, включая:
 
     // ─── TGStat запрос ────────────────────────────────────────────────────────
 
+    /**
+     * Ищет чаты через TGStat API.
+     *
+     * Ключевые изменения:
+     * - peer_type=chat  — только группы/чаты, НЕ каналы (они обычно read-only и бесполезны для лидов)
+     * - Языковой постфильтр: отбрасываем записи с явно не-русским языком (en, de, fr и т.д.)
+     *   Записи без языка (language=null) пропускаем — там могут быть русские чаты без метаданных.
+     */
     private fun searchTgstat(
         query: String,
         limit: Int = 20,
@@ -300,13 +300,12 @@ KEEP во всех остальных случаях, включая:
             append("?token=${java.net.URLEncoder.encode(tgstatApiKey, "UTF-8")}")
             append("&q=${java.net.URLEncoder.encode(query, "UTF-8")}")
             append("&country=${java.net.URLEncoder.encode(tgstatCountry, "UTF-8")}")
-            append("&language=${java.net.URLEncoder.encode(TGSTAT_LANGUAGE, "UTF-8")}")
-            append("&peer_type=all")
+            append("&peer_type=chat")
             if (searchByDescription) append("&search_by_description=1")
             append("&limit=$limit")
         }
 
-        log.info("TGStat запрос: q='$query' country=$tgstatCountry limit=$limit desc=$searchByDescription")
+        log.info("TGStat запрос: q='$query' country=$tgstatCountry peer_type=chat limit=$limit desc=$searchByDescription")
 
         return try {
             val headers  = HttpHeaders().apply { accept = listOf(MediaType.APPLICATION_JSON) }
@@ -324,9 +323,16 @@ KEEP во всех остальных случаях, включая:
             }
 
             val items = body.response?.items ?: emptyList()
-            log.info("TGStat '$query': ${items.size} сырых результатов")
+            log.info("TGStat '$query': ${items.size} сырых результатов (peer_type=chat)")
 
-            items.mapNotNull { item ->
+            val mapped = items.mapNotNull { item ->
+
+                val lang = item.language?.lowercase()?.trim()
+                if (lang != null && lang !in setOf("ru", "uk", "be", "")) {
+                    log.debug("TGStat: пропускаем '${item.title}' — язык=$lang")
+                    return@mapNotNull null
+                }
+
                 val rawUsername   = item.username?.takeIf { it.isNotBlank() }
                 val cleanUsername = rawUsername?.let { if (it.startsWith("@")) it else "@$it" }
 
@@ -342,8 +348,8 @@ KEEP во всех остальных случаях, включая:
 
                 val tgstatLink = rawUsername?.let { slug ->
                     val s = slug.trimStart('@')
-                    if (item.peerType == "chat") "https://tgstat.ru/chat/$s"
-                    else "https://tgstat.ru/channel/$s"
+                    // Для чатов ссылка на tgstat идёт через /chat/
+                    "https://tgstat.ru/chat/$s"
                 }
 
                 ChatSearchResult(
@@ -353,9 +359,13 @@ KEEP во всех остальных случаях, включая:
                     participantsCount = members,
                     link              = link,
                     tgstatLink        = tgstatLink,
-                    peerType          = item.peerType ?: "channel",
+                    peerType          = "chat",
                 )
             }
+
+            log.info("TGStat '$query': ${mapped.size} после языкового фильтра и фильтра участников")
+            mapped
+
         } catch (e: HttpClientErrorException) {
             log.error("TGStat HTTP ${e.statusCode} для '$query': ${e.responseBodyAsString}")
             emptyList()
@@ -406,4 +416,6 @@ data class TgstatChannelItem(
     val participantsCount: Int? = null,
     @com.fasterxml.jackson.annotation.JsonProperty("peer_type")
     val peerType: String? = null,
+
+    val language: String? = null,
 )
