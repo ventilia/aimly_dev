@@ -122,6 +122,7 @@ class GoogleOAuthController(
         email              = user.email,
         firstName          = user.firstName,
         emailVerified      = user.emailVerified,
+        trialUsed = user.trialUsed,
         telegramLinked     = user.telegramId != null,
         role               = user.role.name,
 

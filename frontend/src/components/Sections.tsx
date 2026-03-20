@@ -1,12 +1,14 @@
-import React, { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import React, { useState, useEffect } from 'react'
+import {Link, useNavigate} from 'react-router-dom'
 import type { Lang } from '../i18n/translations'
 import { t } from '../i18n/translations'
+import { useAuthContext } from '../context/AuthContext'
+import { authApi } from '../api/auth'
+import AuthModal from './AuthModal'
 import s from './Sections.module.css'
 
 const tr = (lang: Lang) => (key: string) => t[lang][key] ?? key
 
-// ─── Компонент якорной ссылки (работает и на главной, и с других страниц) ─────
 function AnchorLink({ href, children, className }: { href: string; children: React.ReactNode; className: string }) {
     const navigate = useNavigate()
 
@@ -194,7 +196,7 @@ export function Compare({ lang }: { lang: Lang }) {
     )
 }
 
-const MINIMUM_FEATURES: Record<Lang, string[]> = {
+const START_FEATURES: Record<Lang, string[]> = {
     ru: [
         'Мониторинг чатов по ключевым словам',
         'Чаты без ограничений',
@@ -213,32 +215,110 @@ const MINIMUM_FEATURES: Record<Lang, string[]> = {
     ],
 }
 
-const TRIAL_STEPS: Record<Lang, string[]> = {
+const BUSINESS_FEATURES: Record<Lang, string[]> = {
     ru: [
-        'Зарегистрируйтесь и войдите в кабинет',
-        'Привяжите Telegram через бота',
-        'Получите 5 дней тарифа Минимум бесплатно',
+        'Мониторинг чатов по ключевым словам',
+        'Чаты без ограничений',
+        'Лиды без ограничений',
+        'AI-семантический поиск лидов',
+        'AI-фильтрация контекста сообщений',
+        'Персонализация под ваш бизнес',
+        'ИИ продавец',
+        'Круглосуточная поддержка',
+        'Улучшенный AI',
     ],
     en: [
-        'Sign up and log in to the dashboard',
-        'Connect Telegram via the bot',
-        'Get 5 days of the Minimum plan for free',
+        'Chat monitoring by keywords',
+        'Unlimited chats',
+        'Unlimited leads',
+        'AI semantic lead search',
+        'AI context message filtering',
+        'Business personalization',
+        'AI sales agent',
+        '24/7 support',
+        'Enhanced AI',
+    ],
+}
+
+const TRIAL_STEPS: Record<Lang, string[]> = {
+    ru: [
+        'Зарегистрируйтесь',
+        'Запустите ТГ бот',
+        'Получите 5 дней бесплатно',
+    ],
+    en: [
+        'Sign up',
+        'Launch Telegram bot',
+        'Get 5 days free',
     ],
 }
 
 export function Pricing({ lang }: { lang: Lang }) {
     const _ = tr(lang)
     const ru = lang === 'ru'
+    const { user, refreshUser } = useAuthContext()
+    const [showAuthModal, setShowAuthModal] = useState(false)
+    const [botLoading, setBotLoading] = useState(false)
+    const [trialAlreadyUsed, setTrialAlreadyUsed] = useState(false)
+    const [checkingTrial, setCheckingTrial] = useState(false)
+
+    useEffect(() => {
+        if (user) {
+            setCheckingTrial(true)
+            const hasUsedTrial =
+                user.subscriptionStatus === 'TRIAL' ||
+                (user.subscriptionPlan === 'START' && user.subscriptionStatus === 'ACTIVE') ||
+                (user.subscriptionPlan === 'MINIMUM' && user.subscriptionStatus === 'ACTIVE')
+            setTrialAlreadyUsed(hasUsedTrial)
+            setCheckingTrial(false)
+        }
+    }, [user])
+
+    const openBotForTrial = async () => {
+        setBotLoading(true)
+        try {
+            const res = await authApi.getTelegramLink()
+            const link = `https://t.me/${res.botUsername}?start=${res.linkToken}`
+            window.open(link, '_blank', 'noopener,noreferrer')
+            setTimeout(() => refreshUser(), 5000)
+        } catch {
+            window.open('https://t.me/aimlyAIbot?start=trial', '_blank', 'noopener,noreferrer')
+        } finally {
+            setBotLoading(false)
+        }
+    }
+
+    const handleTrialClick = () => {
+        if (botLoading || checkingTrial) return
+        if (!user) {
+            setShowAuthModal(true)
+            return
+        }
+        if (trialAlreadyUsed) return
+        openBotForTrial()
+    }
+
+    const handleAuthSuccess = () => {
+        setShowAuthModal(false)
+        setTimeout(openBotForTrial, 300)
+    }
 
     return (
         <section className={`section ${s.pricingSection}`} id="pricing">
+            {showAuthModal && (
+                <AuthModal
+                    lang={lang}
+                    onClose={() => setShowAuthModal(false)}
+                    onSuccess={handleAuthSuccess}
+                    initialTab="register"
+                />
+            )}
             <div className="container">
                 <div className="section__head center">
                     <h2 className="section__title">{_('pricing.title')}</h2>
                     <p className="section__sub">{_('pricing.sub')}</p>
                 </div>
 
-                {/* ─── Trial banner ─────────────────────────────────────────── */}
                 <div className={`${s.trialBanner} fade-in`}>
                     <div className={s.trialInner}>
                         <div>
@@ -246,14 +326,12 @@ export function Pricing({ lang }: { lang: Lang }) {
                                 {ru ? 'Бесплатный доступ' : 'Free trial'}
                             </div>
                             <h3 className={s.trialTitle}>
-                                {ru
-                                    ? '5 дней бесплатно — при привязке Telegram'
-                                    : '5 days free — when you connect Telegram'}
+                                {ru ? '5 дней бесплатно' : '5 days free'}
                             </h3>
                             <p className={s.trialSub}>
                                 {ru
-                                    ? 'Полный доступ к тарифу Минимум без оплаты. Просто привяжите бота и начните получать лиды.'
-                                    : 'Full access to the Minimum plan at no cost. Just connect the bot and start getting leads.'}
+                                    ? 'Полный доступ к тарифу Старт без оплаты. Просто привяжите бота и начните получать лиды.'
+                                    : 'Full access to the Start plan at no cost. Just connect the bot and start getting leads.'}
                             </p>
                             <div className={s.trialSteps}>
                                 {TRIAL_STEPS[lang].map((step, i) => (
@@ -281,13 +359,37 @@ export function Pricing({ lang }: { lang: Lang }) {
                             ? 'Карта не нужна. Триал активируется автоматически при подключении бота.'
                             : 'No card required. Trial activates automatically when you connect the bot.'}
                     </div>
+
+                    <div className={s.trialAction}>
+                        {trialAlreadyUsed ? (
+                            <button
+                                disabled
+                                className={`${s.pricingCta} ${s.pricingCtaGhost} ${s.pricingCtaDisabled}`}
+                            >
+                                {ru ? 'Триал уже активирован' : 'Trial already activated'}
+                            </button>
+                        ) : (
+                            <button
+                                onClick={handleTrialClick}
+                                disabled={botLoading || checkingTrial || !user}
+                                className={`${s.pricingCta} ${s.pricingCtaGhost}`}
+                            >
+                                {checkingTrial
+                                    ? '...'
+                                    : botLoading
+                                        ? '...'
+                                        : !user
+                                            ? (ru ? 'Войти для активации' : 'Sign in to activate')
+                                            : (ru ? 'Попробовать 5 дней бесплатно' : 'Try 5 days free')}
+                            </button>
+                        )}
+                    </div>
                 </div>
 
-                {/* ─── Pricing cards ────────────────────────────────────────── */}
                 <div className={s.pricingWrap}>
                     <div className={`${s.pricingCard} ${s.pricingCardFeatured} fade-in`}>
                         <div className={s.pricingBadge}>{_('plan.badge')}</div>
-                        <h3 className={s.pricingName}>{ru ? 'Минимум' : 'Minimum'}</h3>
+                        <h3 className={s.pricingName}>{ru ? 'Start' : 'Start'}</h3>
                         <p className={s.pricingDesc}>{ru ? 'Мониторинг с AI и персонализацией' : 'Monitoring with AI and personalization'}</p>
                         <div className={s.priceRow}>
                             <span className={s.priceOld}>{_('plan.old')}</span>
@@ -296,7 +398,7 @@ export function Pricing({ lang }: { lang: Lang }) {
                             <span className={s.pricePeriod}>{_('plan.period')}</span>
                         </div>
                         <ul className={s.pricingFeatures}>
-                            {MINIMUM_FEATURES[lang].map((f, i) => (
+                            {START_FEATURES[lang].map((f, i) => (
                                 <li key={i} className={s.pricingFeature}>✓ {f}</li>
                             ))}
                         </ul>
@@ -305,9 +407,22 @@ export function Pricing({ lang }: { lang: Lang }) {
                         </Link>
                     </div>
 
-                    <div className={`${s.pricingCard} ${s.pricingCardDisabled} fade-in`} style={{ animationDelay: '.1s' }}>
-                        <h3 className={s.pricingName}>{ru ? 'Старт' : 'Start'}</h3>
+                    <div
+                        className={`${s.pricingCard} ${s.pricingCardDisabled} fade-in`}
+                        style={{ animationDelay: '.1s', opacity: 0.55 }}
+                    >
+                        <h3 className={s.pricingName}>{ru ? 'Business' : 'Business'}</h3>
                         <div className={s.pricingComingSoonBadge}>{ru ? 'В разработке' : 'Coming soon'}</div>
+                        <p className={s.pricingDesc} style={{ marginBottom: 12 }}>
+                            {ru ? 'Всё из Start плюс расширенные возможности' : 'Everything in Start plus advanced features'}
+                        </p>
+                        <ul className={s.pricingFeatures}>
+                            {BUSINESS_FEATURES[lang].map((f, i) => (
+                                <li key={i} className={s.pricingFeature} style={{ opacity: i < START_FEATURES[lang].length ? 0.7 : 1 }}>
+                                    ✓ {f}
+                                </li>
+                            ))}
+                        </ul>
                         <p className={s.pricingComingSoonText}>
                             {ru
                                 ? 'Тариф находится в разработке и будет доступен в ближайшее время.'
@@ -453,7 +568,6 @@ export function CtaFinal({ lang }: { lang: Lang }) {
     )
 }
 
-// ─── Footer ────────────────────────────────────────────────────────────────────
 export function Footer({ lang }: { lang: Lang }) {
     const _ = tr(lang)
     const productLinks: Array<{ key: string; href: string }> = [

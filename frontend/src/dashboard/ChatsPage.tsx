@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { chatsApi, keywordsApi, type ChatSubscription } from '../api/leads.ts'
+import { authApi } from '../api/auth'
 import { useAuthContext } from '../context/AuthContext'
 import s from './Chatspage.module.css'
 
@@ -11,7 +12,6 @@ function TgIcon() {
         </svg>
     )
 }
-
 function SparkleIcon() {
     return (
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed"
@@ -20,7 +20,6 @@ function SparkleIcon() {
         </svg>
     )
 }
-
 function SearchIcon() {
     return (
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -29,19 +28,16 @@ function SearchIcon() {
         </svg>
     )
 }
-
 function UsersIcon() {
     return (
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
             <circle cx="9" cy="7" r="4" />
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
         </svg>
     )
 }
-
 function PlusIcon() {
     return (
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -50,17 +46,14 @@ function PlusIcon() {
         </svg>
     )
 }
-
 function LockIcon() {
     return (
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
         </svg>
     )
 }
-
 function ChevronIcon({ open }: { open: boolean }) {
     return (
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -70,7 +63,6 @@ function ChevronIcon({ open }: { open: boolean }) {
         </svg>
     )
 }
-
 function CheckIcon() {
     return (
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -79,7 +71,6 @@ function CheckIcon() {
         </svg>
     )
 }
-
 function CloseIcon() {
     return (
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -88,21 +79,19 @@ function CloseIcon() {
         </svg>
     )
 }
-
 function HashIcon() {
     return (
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
              strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="4" y1="9" x2="20" y2="9"/>
-            <line x1="4" y1="15" x2="20" y2="15"/>
-            <line x1="10" y1="3" x2="8" y2="21"/>
-            <line x1="16" y1="3" x2="14" y2="21"/>
+            <line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/>
+            <line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/>
         </svg>
     )
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-// tgstatLink убран — кнопка «Статистика ↗» удалена
+type PeerTypeFilter = 'all' | 'chat' | 'channel'
+
 interface TgstatResult {
     title:             string
     username:          string | null
@@ -117,7 +106,6 @@ interface TgstatSearchResponse {
     queries: string[]
 }
 
-// ─── Персистентное состояние AI-поиска ────────────────────────────────────────
 const SESSION_KEY = 'aimly_chat_search_state'
 
 interface SearchState {
@@ -126,6 +114,7 @@ interface SearchState {
     addedLinks:     string[]
     dismissedLinks: string[]
     searchQuery:    string
+    peerType:       PeerTypeFilter
 }
 
 function saveSearchState(state: SearchState) {
@@ -144,15 +133,17 @@ function clearSearchState() {
     try { sessionStorage.removeItem(SESSION_KEY) } catch { /* ignore */ }
 }
 
+import { saveChatSearchQueryForKeywords } from './chatSearchShared'
+
 // ─── API ──────────────────────────────────────────────────────────────────────
 const BASE: string = import.meta.env.VITE_API_URL || ''
 
-async function searchChatsApi(query: string): Promise<TgstatSearchResponse> {
+async function searchChatsApi(query: string, peerType: PeerTypeFilter): Promise<TgstatSearchResponse> {
     const res = await fetch(`${BASE}/api/v1/chats/search`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query, peerType: peerType === 'all' ? undefined : peerType }),
     })
     if (!res.ok) {
         const body = await res.json().catch(() => ({})) as { error?: string; message?: string }
@@ -177,35 +168,54 @@ function formatCount(n: number): string {
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
-function StatusDot({ active }: { active: boolean }) {
+
+function StatusBadge({ active }: { active: boolean }) {
     return (
         <span
-            className={s.statusDot}
-            style={{ background: active ? '#10b981' : 'var(--c-border)' }}
-            title={active ? 'Мониторинг активен' : 'Ожидание подключения'}
-        />
+            style={{
+                fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4,
+                background: active ? 'rgba(16,185,129,.12)' : 'rgba(255,255,255,.06)',
+                color: active ? '#10b981' : 'var(--c-ink-3)', flexShrink: 0,
+                letterSpacing: '.3px', whiteSpace: 'nowrap',
+            }}
+            title={active ? 'Мониторинг активен' : 'Ожидание подключения юзербота'}
+        >
+            {active ? 'в сети' : 'не в сети'}
+        </span>
+    )
+}
+
+function PeerTypeBadge({ peerType }: { peerType?: string }) {
+    if (!peerType) return null
+    const isChat = peerType === 'chat'
+    return (
+        <span style={{
+            fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 4,
+            background: isChat ? 'rgba(59,130,246,.1)' : 'rgba(139,92,246,.1)',
+            color: isChat ? '#3b82f6' : '#8b5cf6',
+            flexShrink: 0, letterSpacing: '.2px',
+        }}>
+            {isChat ? '💬 Группа' : '📢 Канал'}
+        </span>
     )
 }
 
 function ResultCard({
                         result, onAdd, onDismiss, isAdding, isAdded, isDismissed,
                     }: {
-    result:     TgstatResult
-    onAdd:      (link: string) => void
-    onDismiss:  (link: string) => void
-    isAdding:   boolean
-    isAdded:    boolean
-    isDismissed:boolean
+    result: TgstatResult; onAdd: (link: string) => void; onDismiss: (link: string) => void
+    isAdding: boolean; isAdded: boolean; isDismissed: boolean
 }) {
     if (isDismissed) return null
-
     const cardCls = `${s.resultCard}${isAdded ? ` ${s.resultAdded}` : ''}`
-
     return (
         <div className={cardCls}>
             <div className={s.resultTop}>
                 <div className={s.resultTitleWrap}>
-                    <p className={s.resultTitle}>{result.title}</p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <p className={s.resultTitle}>{result.title}</p>
+                        <PeerTypeBadge peerType={result.peerType} />
+                    </div>
                     {result.username && (
                         <a href={result.link} target="_blank" rel="noopener noreferrer"
                            className={s.resultUsername}>
@@ -214,19 +224,11 @@ function ResultCard({
                     )}
                 </div>
                 {result.participantsCount > 0 && (
-                    <div className={s.resultMembers}>
-                        <UsersIcon />
-                        {formatCount(result.participantsCount)}
-                    </div>
+                    <div className={s.resultMembers}><UsersIcon />{formatCount(result.participantsCount)}</div>
                 )}
             </div>
-
-            {result.description && (
-                <p className={s.resultDesc}>{result.description}</p>
-            )}
-
+            {result.description && <p className={s.resultDesc}>{result.description}</p>}
             <div className={s.resultActions}>
-                {/* Кнопка добавить */}
                 <button
                     style={{
                         display: 'inline-flex', alignItems: 'center', gap: 5,
@@ -241,15 +243,10 @@ function ResultCard({
                     onClick={() => !isAdded && !isAdding && result.link && onAdd(result.link)}
                     disabled={isAdding || isAdded || !result.link}
                 >
-                    {isAdding
-                        ? <><span className={s.spinnerAccent} /> Добавляем…</>
-                        : isAdded
-                            ? <><CheckIcon /> Добавлен</>
-                            : <><PlusIcon /> Добавить</>
-                    }
+                    {isAdding ? <><span className={s.spinnerAccent} /> Добавляем…</>
+                        : isAdded ? <><CheckIcon /> Добавлен</>
+                            : <><PlusIcon /> Добавить</>}
                 </button>
-
-                {/* Кнопка отклонить */}
                 {!isAdded && (
                     <button
                         onClick={() => onDismiss(result.link)}
@@ -272,16 +269,47 @@ function ResultCard({
                         <CloseIcon />
                     </button>
                 )}
-
-                {/* Кнопка «Статистика ↗» убрана */}
             </div>
+        </div>
+    )
+}
+
+function PeerTypeSelector({ value, onChange, disabled }: {
+    value: PeerTypeFilter; onChange: (v: PeerTypeFilter) => void; disabled: boolean
+}) {
+    const options: { value: PeerTypeFilter; label: string }[] = [
+        { value: 'all',     label: 'Всё' },
+        { value: 'chat',    label: '💬 Группы' },
+        { value: 'channel', label: '📢 Каналы' },
+    ]
+    return (
+        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+            {options.map(opt => (
+                <button
+                    key={opt.value}
+                    onClick={() => !disabled && onChange(opt.value)}
+                    disabled={disabled}
+                    style={{
+                        padding: '7px 12px', borderRadius: 9, border: '1.5px solid',
+                        borderColor: value === opt.value ? 'var(--c-accent)' : 'var(--c-border)',
+                        background: value === opt.value ? 'var(--c-accent-soft)' : 'transparent',
+                        color: value === opt.value ? 'var(--c-accent)' : 'var(--c-ink-2)',
+                        fontSize: 12, fontWeight: 600, cursor: disabled ? 'default' : 'pointer',
+                        fontFamily: 'var(--font-body)', transition: 'all .15s',
+                        opacity: disabled ? 0.6 : 1,
+                        whiteSpace: 'nowrap',
+                    }}
+                >
+                    {opt.label}
+                </button>
+            ))}
         </div>
     )
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function ChatsPage() {
-    const { user } = useAuthContext()
+    const { user, refreshUser } = useAuthContext()
 
     const [chats,    setChats]    = useState<ChatSubscription[]>([])
     const [loading,  setLoading]  = useState(true)
@@ -300,13 +328,33 @@ export default function ChatsPage() {
     const [addedLinks,     setAddedLinks]     = useState<Set<string>>(new Set())
     const [dismissedLinks, setDismissedLinks] = useState<Set<string>>(new Set())
 
+    const [peerType, setPeerType] = useState<PeerTypeFilter>('chat')
+
     const [userKeywords,        setUserKeywords]        = useState<string[]>([])
     const [loadingKeywords,     setLoadingKeywords]     = useState(false)
     const [searchingByKeywords, setSearchingByKeywords] = useState(false)
 
+    // Trial bot
+    const [trialBotLoading, setTrialBotLoading] = useState(false)
+
     const plan  = user?.subscriptionPlan   ?? null
     const st    = user?.subscriptionStatus ?? null
-    const hasAi = plan === 'MINIMUM' || plan === 'START' || st === 'TRIAL'
+    const hasAi = plan === 'START' || plan === 'BUSINESS' || st === 'TRIAL'
+
+    // Открыть бота для получения trial-периода
+    const handleTrialBotOpen = async () => {
+        setTrialBotLoading(true)
+        try {
+            const res = await authApi.getTelegramLink()
+            const link = `https://t.me/${res.botUsername}?start=${res.linkToken}`
+            window.open(link, '_blank', 'noopener,noreferrer')
+            setTimeout(() => refreshUser(), 5000)
+        } catch {
+            window.open('https://t.me/aimlyAIbot', '_blank', 'noopener,noreferrer')
+        } finally {
+            setTrialBotLoading(false)
+        }
+    }
 
     useEffect(() => {
         const saved = loadSearchState()
@@ -316,6 +364,7 @@ export default function ChatsPage() {
             setAddedLinks(new Set(saved.addedLinks))
             setDismissedLinks(new Set(saved.dismissedLinks))
             setSearchQuery(saved.searchQuery)
+            setPeerType(saved.peerType ?? 'chat')
             setSearchOpen(true)
         }
     }, [])
@@ -328,8 +377,9 @@ export default function ChatsPage() {
             addedLinks:     Array.from(addedLinks),
             dismissedLinks: Array.from(dismissedLinks),
             searchQuery,
+            peerType,
         })
-    }, [searchResults, searchQueries, addedLinks, dismissedLinks, searchQuery])
+    }, [searchResults, searchQueries, addedLinks, dismissedLinks, searchQuery, peerType])
 
     const fetchChats = () =>
         chatsApi.list()
@@ -372,7 +422,7 @@ export default function ChatsPage() {
         } finally { setRemoving(null) }
     }
 
-    const runSearch = async (query: string) => {
+    const runSearch = async (query: string, pt: PeerTypeFilter = peerType) => {
         setSearching(true)
         setSearchError('')
         setSearchResults(null)
@@ -380,8 +430,13 @@ export default function ChatsPage() {
         setDismissedLinks(new Set())
         setAddedLinks(new Set())
         clearSearchState()
+
+        if (query.trim()) {
+            saveChatSearchQueryForKeywords(query.trim())
+        }
+
         try {
-            const resp = await searchChatsApi(query)
+            const resp = await searchChatsApi(query, pt)
             setSearchResults(resp.results)
             setSearchQueries(resp.queries)
             if (resp.results.length > 0) setSearchOpen(true)
@@ -390,12 +445,12 @@ export default function ChatsPage() {
         } finally { setSearching(false) }
     }
 
-    const handleSearch = async () => { await runSearch(searchQuery.trim()) }
+    const handleSearch = async () => { await runSearch(searchQuery.trim(), peerType) }
 
     const handleSearchByKeywords = async () => {
         if (userKeywords.length === 0) return
         setSearchingByKeywords(true)
-        await runSearch(userKeywords.slice(0, 5).join(', '))
+        await runSearch(userKeywords.slice(0, 5).join(', '), peerType)
         setSearchingByKeywords(false)
     }
 
@@ -439,7 +494,6 @@ export default function ChatsPage() {
 
     return (
         <div className={s.page}>
-
             <div className={s.pageHead}>
                 <div>
                     <h1 className={s.title}>Чаты для мониторинга</h1>
@@ -453,83 +507,7 @@ export default function ChatsPage() {
                 )}
             </div>
 
-            <div className={s.addBlock}>
-                <div className={s.addRow}>
-                    <div className={s.inputWrap}>
-                        <span className={s.inputIcon}><TgIcon /></span>
-                        <input
-                            className={s.input}
-                            value={input}
-                            onChange={e => setInput(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && add()}
-                            placeholder="t.me/smm_russia или @channel_name"
-                            disabled={adding}
-                            autoComplete="off"
-                        />
-                    </div>
-                    <button className={s.addBtn} onClick={add} disabled={adding || !input.trim()}>
-                        {adding ? <span className={s.spinner} /> : '+ Добавить'}
-                    </button>
-                </div>
-                <p className={s.addHint}>Поддерживаются публичные каналы, группы и invite-ссылки</p>
-            </div>
-
-            {error && (
-                <div className={s.error}>
-                    <span>{error}</span>
-                    <button className={s.errorClose} onClick={() => setError('')}>✕</button>
-                </div>
-            )}
-
-            {loading ? (
-                <div className={s.skels}>
-                    {[...Array(3)].map((_, i) => <div key={i} className={s.skel} />)}
-                </div>
-            ) : chats.length === 0 ? (
-                <div className={s.empty}>
-                    <div className={s.emptyIcon}><TgIcon /></div>
-                    <p className={s.emptyTitle}>Нет добавленных чатов</p>
-                    <span className={s.emptySub}>Введите ссылку выше или найдите чаты через AI поиск ниже</span>
-                </div>
-            ) : (
-                <div className={s.list}>
-                    {chats.map(c => {
-                        const tgUrl = buildTelegramUrl(c.chatLink)
-                        const displayTitle = c.chatTitle && c.chatTitle !== c.chatLink ? c.chatTitle : c.chatLink
-                        return (
-                            <div key={c.id} className={s.card}>
-                                <div className={s.cardLeft}>
-                                    <div className={s.cardIcon}><TgIcon /></div>
-                                    <div className={s.cardInfo}>
-                                        <div className={s.cardTitle}>
-                                            <StatusDot active={c.chatTgId !== 0} />
-                                            {displayTitle}
-                                        </div>
-                                        <div className={s.cardMeta}>
-                                            <a href={tgUrl} target="_blank" rel="noopener noreferrer"
-                                               className={s.cardLink} onClick={e => e.stopPropagation()}>
-                                                {c.chatLink}
-                                            </a>
-                                            {c.chatTgId !== 0 && <span className={s.cardId}>ID: {c.chatTgId}</span>}
-                                            {c.createdAt && <span className={s.cardDate}>добавлен {formatDate(c.createdAt)}</span>}
-                                        </div>
-                                    </div>
-                                </div>
-                                <button
-                                    className={s.removeBtn}
-                                    onClick={() => remove(c.id)}
-                                    disabled={removing === c.id}
-                                    title="Удалить из мониторинга"
-                                >
-                                    {removing === c.id ? <span className={s.spinnerSm} /> : '✕'}
-                                </button>
-                            </div>
-                        )
-                    })}
-                </div>
-            )}
-
-            {/* ─── AI-поиск чатов ────────────────────────────── */}
+            {/* ─── AI-поиск чатов ────────────────────────── */}
             <div className={s.searchBlock}>
                 <div
                     className={s.searchToggleBtn}
@@ -543,35 +521,30 @@ export default function ChatsPage() {
                         <span className={s.searchTitle}>Найти чаты по AI</span>
                         {hasAi && (
                             <span style={{
-                                fontSize: 11, fontWeight: 700, padding: '3px 8px',
-                                borderRadius: 6, background: 'var(--c-accent-soft)',
-                                color: 'var(--c-accent)', letterSpacing: '0.5px',
-                            }}>
-                                AI-функция
-                            </span>
+                                fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 6,
+                                background: 'var(--c-accent-soft)', color: 'var(--c-accent)', letterSpacing: '0.5px',
+                            }}>AI-функция</span>
                         )}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         {searchResults !== null && (
-                            <button
-                                onClick={e => { e.stopPropagation(); handleClearResults() }}
-                                title="Сбросить результаты"
-                                style={{
-                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                    padding: '4px 10px', borderRadius: 7,
-                                    border: '1.5px solid var(--c-border)',
-                                    background: 'transparent', color: 'var(--c-ink-3)',
-                                    fontSize: 11, fontWeight: 600, cursor: 'pointer',
-                                    fontFamily: 'var(--font-body)', transition: 'all .15s', gap: 4,
-                                }}
-                                onMouseEnter={e => {
-                                    (e.currentTarget as HTMLButtonElement).style.borderColor = '#ef4444'
-                                    ;(e.currentTarget as HTMLButtonElement).style.color = '#ef4444'
-                                }}
-                                onMouseLeave={e => {
-                                    (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--c-border)'
-                                    ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--c-ink-3)'
-                                }}
+                            <button onClick={e => { e.stopPropagation(); handleClearResults() }}
+                                    title="Сбросить результаты"
+                                    style={{
+                                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                        padding: '4px 10px', borderRadius: 7, border: '1.5px solid var(--c-border)',
+                                        background: 'transparent', color: 'var(--c-ink-3)',
+                                        fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                                        fontFamily: 'var(--font-body)', transition: 'all .15s', gap: 4,
+                                    }}
+                                    onMouseEnter={e => {
+                                        (e.currentTarget as HTMLButtonElement).style.borderColor = '#ef4444'
+                                        ;(e.currentTarget as HTMLButtonElement).style.color = '#ef4444'
+                                    }}
+                                    onMouseLeave={e => {
+                                        (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--c-border)'
+                                        ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--c-ink-3)'
+                                    }}
                             >
                                 <CloseIcon /> Сбросить
                             </button>
@@ -609,9 +582,16 @@ export default function ChatsPage() {
                                     >
                                         {searching && !searchingByKeywords
                                             ? <><span className={s.spinnerAccent} /> Ищем…</>
-                                            : <><SearchIcon /> Найти чаты</>
-                                        }
+                                            : <><SearchIcon /> Найти</>}
                                     </button>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <span style={{ fontSize: 12, color: 'var(--c-ink-3)', flexShrink: 0 }}>Искать:</span>
+                                    <PeerTypeSelector
+                                        value={peerType}
+                                        onChange={setPeerType}
+                                        disabled={searching || searchingByKeywords}
+                                    />
                                 </div>
 
                                 {userKeywords.length > 0 && (
@@ -639,8 +619,7 @@ export default function ChatsPage() {
                                     >
                                         {searchingByKeywords
                                             ? <><span className={s.spinnerAccent} style={{ borderTopColor: 'var(--c-accent)', borderColor: 'rgba(92,57,223,.2)' }} /> Ищем по ключевым словам…</>
-                                            : <><HashIcon /> Найти чаты по моим ключевым словам ({userKeywords.length})</>
-                                        }
+                                            : <><HashIcon /> Найти чаты по моим ключевым словам ({userKeywords.length})</>}
                                     </button>
                                 )}
 
@@ -654,7 +633,7 @@ export default function ChatsPage() {
 
                                 {searchResults !== null && (
                                     visibleResults.length === 0 && dismissedLinks.size === 0
-                                        ? <div className={s.searchEmpty}>Чаты не найдены — попробуйте другой запрос</div>
+                                        ? <div className={s.searchEmpty}>Чаты не найдены — попробуйте другой запрос или выберите другой тип</div>
                                         : <>
                                             {visibleResults.length > 0 && (
                                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
@@ -673,9 +652,7 @@ export default function ChatsPage() {
                                                                     cursor: 'pointer', fontFamily: 'var(--font-body)',
                                                                     display: 'inline-flex', alignItems: 'center', gap: 5,
                                                                 }}
-                                                            >
-                                                                <CheckIcon /> Добавить все
-                                                            </button>
+                                                            ><CheckIcon /> Добавить все</button>
                                                             <button
                                                                 onClick={handleDismissAll}
                                                                 style={{
@@ -684,8 +661,7 @@ export default function ChatsPage() {
                                                                     border: '1.5px solid var(--c-border)',
                                                                     fontSize: 12, fontWeight: 600,
                                                                     cursor: 'pointer', fontFamily: 'var(--font-body)',
-                                                                    display: 'inline-flex', alignItems: 'center', gap: 5,
-                                                                    transition: 'all .15s',
+                                                                    display: 'inline-flex', alignItems: 'center', gap: 5, transition: 'all .15s',
                                                                 }}
                                                                 onMouseEnter={e => {
                                                                     (e.currentTarget as HTMLButtonElement).style.borderColor = '#ef4444'
@@ -695,30 +671,23 @@ export default function ChatsPage() {
                                                                     (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--c-border)'
                                                                     ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--c-ink-3)'
                                                                 }}
-                                                            >
-                                                                <CloseIcon /> Отклонить все
-                                                            </button>
+                                                            ><CloseIcon /> Отклонить все</button>
                                                         </div>
                                                     )}
                                                 </div>
                                             )}
-
                                             {searchQueries.length > 0 && (
                                                 <div className={s.searchUsed}>
                                                     <span className={s.searchUsedLabel}>AI искал по:</span>
                                                     {searchQueries.map(q => <span key={q} className={s.searchTag}>{q}</span>)}
                                                 </div>
                                             )}
-
                                             <div className={s.searchResults}>
                                                 {searchResults.map(r => (
                                                     <ResultCard
-                                                        key={r.link || r.title}
-                                                        result={r}
-                                                        onAdd={handleAddFromSearch}
-                                                        onDismiss={handleDismiss}
-                                                        isAdding={addingLink === r.link}
-                                                        isAdded={addedLinks.has(r.link)}
+                                                        key={r.link || r.title} result={r}
+                                                        onAdd={handleAddFromSearch} onDismiss={handleDismiss}
+                                                        isAdding={addingLink === r.link} isAdded={addedLinks.has(r.link)}
                                                         isDismissed={dismissedLinks.has(r.link)}
                                                     />
                                                 ))}
@@ -730,18 +699,108 @@ export default function ChatsPage() {
                             <div className={s.searchLockedInner}>
                                 <div className={s.searchLockedIcon}><LockIcon /></div>
                                 <div className={s.searchLockedText}>
-                                    <p className={s.searchLockedTitle}>Доступно на тарифе МИНИМУМ</p>
+                                    <p className={s.searchLockedTitle}>
+                                        {!user?.trialUsed
+                                            ? 'Доступно на тарифе START — попробуйте trial период на 5 дней'
+                                            : 'Доступно на тарифе START'}
+                                    </p>
                                     <p className={s.searchLockedSub}>
                                         AI проанализирует ваш профиль и подберёт подходящие Telegram-чаты —
                                         где сидит ваша целевая аудитория
                                     </p>
                                 </div>
-                                <a href="/checkout" className={s.searchLockedBtn}>Подключить →</a>
+                                {!user?.trialUsed ? (
+                                    <button
+                                        className={s.searchLockedBtn}
+                                        onClick={handleTrialBotOpen}
+                                        disabled={trialBotLoading}
+                                    >
+                                        {trialBotLoading ? 'Открываем...' : '🚀 Запустить бота бесплатно'}
+                                    </button>
+                                ) : (
+                                    <a href="/checkout" className={s.searchLockedBtn}>Подключить →</a>
+                                )}
                             </div>
                         )}
                     </>
                 )}
             </div>
+
+            {/* ─── Ручное добавление ────────────────────── */}
+            <div className={s.addBlock}>
+                <div className={s.addRow}>
+                    <div className={s.inputWrap}>
+                        <span className={s.inputIcon}><TgIcon /></span>
+                        <input
+                            className={s.input}
+                            value={input}
+                            onChange={e => setInput(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && add()}
+                            placeholder="t.me/smm_russia или @channel_name"
+                            disabled={adding}
+                        />
+                    </div>
+                    <button className={s.addBtn} onClick={add} disabled={adding || !input.trim()}>
+                        {adding ? <span className={s.spinnerSm} /> : <PlusIcon />}
+                        {adding ? 'Добавляем…' : 'Добавить вручную'}
+                    </button>
+                </div>
+                {error && <div className={s.error}>{error}</div>}
+            </div>
+
+            {loading ? (
+                <div className={s.skels}>
+                    {[...Array(3)].map((_, i) => <div key={i} className={s.skel} />)}
+                </div>
+            ) : chats.length === 0 ? (
+                <div className={s.empty}>
+                    <div className={s.emptyIcon}><TgIcon /></div>
+                    <p className={s.emptyTitle}>Нет добавленных чатов</p>
+                    <span className={s.emptySub}>Найдите чаты через AI поиск выше или введите ссылку вручную</span>
+                </div>
+            ) : (
+                <div className={s.list}>
+                    {chats.map(c => {
+                        const tgUrl    = buildTelegramUrl(c.chatLink)
+                        const isOnline = c.chatTgId !== 0
+                        const hasRealTitle =
+                            c.chatTitle && c.chatTitle.trim() !== '' &&
+                            c.chatTitle !== c.chatLink &&
+                            !c.chatTitle.startsWith('https://') &&
+                            !c.chatTitle.startsWith('http://') &&
+                            !c.chatTitle.startsWith('t.me/')
+                        const displayTitle = hasRealTitle ? c.chatTitle : c.chatLink
+                        return (
+                            <div key={c.id} className={s.card}>
+                                <div className={s.cardLeft}>
+                                    <div className={s.cardIcon}><TgIcon /></div>
+                                    <div className={s.cardInfo}>
+                                        <div className={s.cardTitle} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                                            <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                {displayTitle}
+                                            </span>
+                                            <StatusBadge active={isOnline} />
+                                        </div>
+                                        <div className={s.cardMeta}>
+                                            <a href={tgUrl} target="_blank" rel="noopener noreferrer"
+                                               className={s.cardLink} onClick={e => e.stopPropagation()}>
+                                                {c.chatLink}
+                                            </a>
+                                            {c.createdAt && (
+                                                <span className={s.cardDate}>добавлен {formatDate(c.createdAt)}</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                                <button className={s.removeBtn} onClick={() => remove(c.id)}
+                                        disabled={removing === c.id} title="Удалить из мониторинга">
+                                    {removing === c.id ? <span className={s.spinnerSm} /> : '✕'}
+                                </button>
+                            </div>
+                        )
+                    })}
+                </div>
+            )}
         </div>
     )
 }

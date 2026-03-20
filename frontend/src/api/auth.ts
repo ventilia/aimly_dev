@@ -16,8 +16,8 @@ export interface AuthResponse {
     subscriptionPlan:       string | null
     subscriptionExpiresAt?: string | null
     createdAt?:             string | null
-    // Описание бизнеса — нужно для ChatsPage (AI-поиск) и KeywordsPage
     businessContext?:       string | null
+    trialUsed?: boolean
 }
 
 export interface RegisterResponse {
@@ -171,6 +171,25 @@ export const authApi = {
         return request('/api/v1/auth/oauth2/google', {
             method: 'POST',
             body:   JSON.stringify({ id_token: idToken }),
+        })
+    },
+
+
+    forgotPassword(email: string): Promise<{ message: string }> {
+        return request('/api/v1/auth/forgot-password', {
+            method: 'POST',
+            body:   JSON.stringify({ email }),
+        })
+    },
+
+    resetPassword(data: {
+        code:            string
+        newPassword:     string
+        confirmPassword: string
+    }): Promise<AuthResponse> {
+        return request('/api/v1/auth/reset-password', {
+            method: 'POST',
+            body:   JSON.stringify(data),
         })
     },
 }

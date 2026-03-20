@@ -39,7 +39,6 @@ class BotKeywordsHandler(
         val plan     = user.subscriptionPlan
         val hasAi    = plan == "MINIMUM" || plan == "START" || user.subscriptionStatus == "TRIAL"
 
-        // Метка тумблера — одинакова для обоих экранов (пустой и с данными)
         val toggleLabel = if (user.respondToServiceOffers)
             "🟢 Предложения услуг: ВКЛ"
         else
@@ -108,14 +107,10 @@ class BotKeywordsHandler(
     }
 
 
-    /**
-     * Переключает флаг respondToServiceOffers и обновляет экран ключевых слов.
-     */
     fun toggleServiceOffers(chatId: Long, msgId: Int, tgUserId: Long) {
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
             ?: run { sender.editText(chatId, msgId, "Нужно войти. /start"); return }
 
-        // Перечитываем из БД для получения актуального значения флага
         val freshUser = userRepository.findById(user.id).orElse(null) ?: return
         freshUser.respondToServiceOffers = !freshUser.respondToServiceOffers
         userRepository.save(freshUser)
@@ -125,7 +120,7 @@ class BotKeywordsHandler(
                     "respondToServiceOffers=${freshUser.respondToServiceOffers}"
         )
 
-        // Обновляем страницу: тумблер отражает новое состояние
+
         showKeywords(chatId, msgId, tgUserId)
     }
 
@@ -241,10 +236,10 @@ class BotKeywordsHandler(
             sender.editText(
                 chatId, msgId,
                 "🔒 *AI-генерация недоступна*\n\n" +
-                        "Функция доступна на тарифах *МИНИМУМ* и выше.\n\n" +
+                        "Функция доступна на тарифах *START* и выше.\n\n" +
                         "AI анализирует ваш бизнес и подбирает ключевые слова для мониторинга.",
                 keyboard(
-                    row(urlBtn("💳 Выбрать тариф", BotAuthHandler.SITE_URL + "/checkout")),
+                    row(btn("💳 Оплатить подписку", "payment:plans")),
                     row(btn("◀️ Назад", "menu:keywords")),
                 ),
                 parseMarkdown = true,
@@ -368,9 +363,7 @@ class BotKeywordsHandler(
             if (safePage < totalPages - 1) navBtns.add(btn("▶️", "kw:ai:page:${safePage + 1}"))
             rows.add(InlineKeyboardRow(navBtns))
         }
-
         rows.add(row(btn("◀️ Отмена", "kw:ai:reject_all")))
-
         sender.editText(chatId, msgId, sb.toString(), InlineKeyboardMarkup(rows), parseMarkdown = true)
     }
 

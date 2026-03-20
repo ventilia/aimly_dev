@@ -78,6 +78,9 @@ export const leadsApi = {
             body:   JSON.stringify({ status }),
         })
     },
+    markAllRead(): Promise<void> {
+        return req('/api/v1/leads/read-all', { method: 'POST' })
+    },
 }
 
 export const chatsApi = {

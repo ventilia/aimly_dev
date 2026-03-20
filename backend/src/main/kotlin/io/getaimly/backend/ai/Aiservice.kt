@@ -7,6 +7,7 @@ import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
+import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.RestTemplate
 import java.time.Instant
 import java.util.concurrent.ArrayBlockingQueue
@@ -16,13 +17,23 @@ import java.util.concurrent.atomic.AtomicInteger
 
 @Service
 class AiService(
-    @Value("\${groq.api-key:}") private val apiKey: String,
+    @Value("\${groq.api-key:}") private val apiKeyRaw: String,
 ) {
     private val log = LoggerFactory.getLogger(AiService::class.java)
     private val restTemplate = RestTemplate()
 
     private val MAIN_MODEL   = "llama-3.1-8b-instant"
     private val EXPAND_MODEL = "llama-3.3-70b-versatile"
+    private val GROQ_URL     = "https://api.groq.com/openai/v1/chat/completions"
+
+    // Разбиваем строку ключей по запятой, убираем пробелы и пустые элементы
+    private val apiKeys: List<String> = apiKeyRaw
+        .split(",")
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+
+    // Первый ключ — для проверок isBlank во всех местах
+    private val apiKey: String get() = apiKeys.firstOrNull() ?: ""
 
     private val queue = ArrayBlockingQueue<ValidationTask>(50)
     private val requestsThisMinute = AtomicInteger(0)
@@ -33,41 +44,45 @@ class AiService(
 
     init {
         executor.submit { processQueue() }
+        if (apiKeys.isNotEmpty()) {
+            log.info("AiService инициализирован: ${apiKeys.size} Groq API ключ(а/ей)")
+        }
     }
 
-
+    // ─── Data classes ────────────────────────────────────────────────────────────
 
     data class ValidationResult(
-        val valid: Boolean,
-        val reason: String,
+        val valid:      Boolean,
+        val reason:     String,
         val confidence: String = "medium",
     )
 
     data class RecentLead(
         val authorUsername: String,
-        val messageText: String,
-        val foundAt: String,
+        val messageText:    String,
+        val foundAt:        String,
     )
 
     data class ValidationTask(
-        val messageText: String,
-        val keyword: String,
-        val contextMessages: List<String>,
-        val recentLeads: List<RecentLead> = emptyList(),
-        val businessContext: String? = null,
-        val respondToServiceOffers: Boolean = false,
-        val callback: (ValidationResult?) -> Unit,
+        val messageText:            String,
+        val keyword:                String,
+        val contextMessages:        List<String>,
+        val recentLeads:            List<RecentLead> = emptyList(),
+        val businessContext:        String?          = null,
+        val respondToServiceOffers: Boolean          = false,
+        val callback:               (ValidationResult?) -> Unit,
     )
 
+    // ─── Публичные методы ────────────────────────────────────────────────────────
 
     fun validateAsync(
-        messageText: String,
-        keyword: String,
-        contextMessages: List<String> = emptyList(),
-        recentLeads: List<RecentLead> = emptyList(),
-        businessContext: String? = null,
-        respondToServiceOffers: Boolean = false,
-        callback: (ValidationResult?) -> Unit,
+        messageText:            String,
+        keyword:                String,
+        contextMessages:        List<String>     = emptyList(),
+        recentLeads:            List<RecentLead> = emptyList(),
+        businessContext:        String?          = null,
+        respondToServiceOffers: Boolean          = false,
+        callback:               (ValidationResult?) -> Unit,
     ) {
         if (apiKey.isBlank()) {
             log.debug("groq api key не задан — пропускаем ai валидацию")
@@ -83,8 +98,7 @@ class AiService(
             respondToServiceOffers = respondToServiceOffers,
             callback               = callback,
         )
-        val offered = queue.offer(task)
-        if (!offered) {
+        if (!queue.offer(task)) {
             log.warn("очередь ai переполнена — пропускаем лид")
             callback(null)
         }
@@ -109,11 +123,6 @@ $contextList
 Ответь строго JSON без пояснений: {"relevant": [1, 2]} или {"relevant": []}
 """.trimIndent()
 
-            val headers = HttpHeaders().apply {
-                contentType = MediaType.APPLICATION_JSON
-                setBearerAuth(apiKey)
-            }
-
             val body = mapOf(
                 "model" to MAIN_MODEL,
                 "messages" to listOf(
@@ -124,26 +133,20 @@ $contextList
                 "temperature" to 0.0,
             )
 
-            val response = restTemplate.postForObject(
-                "https://api.groq.com/openai/v1/chat/completions",
-                HttpEntity(body, headers),
-                GroqResponse::class.java,
-            ) ?: return rawContext
-
-            val raw = response.choices.firstOrNull()?.message?.content ?: return rawContext
+            val raw = postToGroqWithFallback(body)?.choices?.firstOrNull()?.message?.content
+                ?: return rawContext
             val clean = raw.replace(Regex("```json|```"), "").trim()
 
             val relevantJson = Regex("\"relevant\"\\s*:\\s*\\[([^]]*)]")
                 .find(clean)?.groupValues?.get(1) ?: return emptyList()
 
-            val indices = Regex("\\d+")
+            Regex("\\d+")
                 .findAll(relevantJson)
                 .map { it.value.toIntOrNull() }
                 .filterNotNull()
                 .filter { it in 1..rawContext.size }
+                .map { rawContext[it - 1] }
                 .toList()
-
-            indices.map { rawContext[it - 1] }
         } catch (e: Exception) {
             log.warn("filterRelevantContext ошибка: ${e.message}")
             rawContext
@@ -202,11 +205,6 @@ $contextList
                 "Верни ТОЛЬКО JSON без пояснений и markdown:\n" +
                 "{\"keywords\": [\"фраза 1\", \"фраза 2\", \"#хештег\"]}"
 
-        val headers = HttpHeaders().apply {
-            contentType = MediaType.APPLICATION_JSON
-            setBearerAuth(apiKey)
-        }
-
         val body = mapOf(
             "model" to EXPAND_MODEL,
             "messages" to listOf(
@@ -217,14 +215,8 @@ $contextList
             "temperature" to 0.4,
         )
 
-        val response = restTemplate.postForObject(
-            "https://api.groq.com/openai/v1/chat/completions",
-            HttpEntity(body, headers),
-            GroqResponse::class.java,
-        ) ?: throw RuntimeException("пустой ответ от groq при генерации ключевых слов")
-
-        val raw = response.choices.firstOrNull()?.message?.content
-            ?: throw RuntimeException("нет content в ответе groq")
+        val raw = postToGroqWithFallback(body)?.choices?.firstOrNull()?.message?.content
+            ?: throw RuntimeException("пустой ответ от groq при генерации ключевых слов")
 
         val clean = raw.replace(Regex("```json|```"), "").trim()
 
@@ -245,61 +237,98 @@ $contextList
         return keywords
     }
 
-    fun generateTgstatQueries(input: String): List<String> {
+    fun generateTgstatQueries(input: String, peerType: String? = null): List<String> {
         if (apiKey.isBlank()) {
             log.warn("generateTgstatQueries: groq api key не задан")
-            return fallbackQueries(input)
+            return fallbackQueries(input, peerType)
         }
 
         val trimmed = input.trim()
 
+        val targetDescription = when (peerType) {
+            "channel" -> "Telegram CHANNELS (каналы). Каналы — это одностороннее вещание, там нет диалога."
+            "chat"    -> "Telegram GROUPS/CHATS (группы, чаты). Группы — это место, где люди общаются, задают вопросы, ищут исполнителей."
+            else      -> "Telegram GROUPS и CHANNELS (группы и каналы)."
+        }
+
+        val namingPatterns = when (peerType) {
+            "channel" ->
+                """
+NAMING PATTERNS for Telegram CHANNELS:
+- Channels use topic words directly: "smm", "дизайн", "маркетинг", "разработка"
+- News/blog style: "smm news", "design blog", "it daily"
+- Professional: "маркетологи" (plural profession noun used as channel name)
+- Digest/aggregator style: "ux digest", "frontend digest"
+- Do NOT use "чат" or "chat" — those are group names, not channels
+"""
+            else ->
+                """
+NAMING PATTERNS for Telegram GROUPS:
+- Groups use PLURAL profession nouns: "дизайнеры", "разработчики", "маркетологи", "фотографы"
+- Community words: "дизайн чат", "smm чат", "design chat", "it тусовка"  
+- Freelance/orders: "дизайн фриланс", "design freelance", "дизайн заказы"
+- Simple topic word: "дизайн", "smm", "it"
+- Do NOT use "вакансии" or "jobs" — those match broadcast channels
+"""
+        }
+
         val prompt = """
-You are generating search queries for TGStat to find Telegram GROUPS/CHATS (peer_type=chat).
-Groups have completely different naming patterns than broadcast channels.
+You are generating search queries for TGStat API to find $targetDescription
 
 User topic: "$trimmed"
 
-CRITICAL INSIGHT about Russian Telegram group names:
-- Groups use PLURAL profession nouns: "дизайнеры", "разработчики", "маркетологи", "фотографы"
-- Groups use community words: "дизайн чат", "smm чат", "design chat", "it тусовка"
-- Groups use freelance/orders words: "дизайн фриланс", "design freelance", "дизайн заказы"
-- Simple topic word: "дизайн", "smm", "it"
+STEP 1 — UNDERSTAND THE TOPIC:
+If the topic contains multiple words or is abstract (e.g. "креатив, клиенты, вакансии" or "smm маркетинг продвижение"):
+- Identify the MAIN professional niche, not just the first word
+- "креатив, клиенты, вакансии" → the person is likely in creative/marketing field looking for clients
+- "smm, таргет, реклама" → SMM/digital marketing niche
+- Focus ALL 8 queries on that ONE niche — do not mix unrelated topics
 
-DO NOT use "вакансии" or "jobs" — those match broadcast CHANNELS, not groups.
+$namingPatterns
 
-Generate EXACTLY 8 queries:
+Generate EXACTLY 8 search queries. Each query is a short phrase (1-3 words) that would appear in the name or description of relevant Telegram ${if (peerType == "channel") "channels" else "groups"}.
 
-q1: Russian profession in PLURAL form (one word only).
-  "дизайнеры" NOT "дизайнер"
-  "разработчики" NOT "разработчик"
-  "маркетологи" NOT "маркетолог"
-  "фотографы" NOT "фотограф"
-  "копирайтеры" NOT "копирайтер"
-  "программисты" NOT "программист"
-  "таргетологи" NOT "таргетолог"
-  "верстальщики" NOT "верстальщик"
+CRITICAL RULES:
+- Queries must be SHORT (1-3 words) — TGStat searches by name/title
+- Use BOTH Russian and English variations — many groups have English names
+- Cover different naming conventions people actually use
+- Do NOT generate sentences or full phrases like "ищу дизайнера" — those are keywords, not group names
+- Generate queries that would match the actual NAME of a channel/group, not messages inside it
+- All 8 queries MUST be about the same niche — no mixing topics
 
-q2: English profession in PLURAL form (one word only, direct translation of q1).
-  "designers" "developers" "marketers" "photographers" "copywriters" "programmers"
-  NEVER use singular: "designer" is WRONG, "designers" is CORRECT.
+q1: Russian profession in PLURAL form (one word only for groups) OR core topic (for channels).
+  Groups: "дизайнеры" "разработчики" "маркетологи" "фотографы"
+  Channels: "дизайн" "маркетинг" "smm" "разработка"
 
-q3: Russian core topic word + "чат" (two words).
-  "дизайн чат" "smm чат" "маркетинг чат" "it чат" "фото чат"
+q2: English profession in PLURAL (groups) OR English topic word (channels). 
+  Groups: "designers" "developers" "marketers" "photographers"
+  Channels: "design" "marketing" "smm" "development"
 
-q4: English core topic word + "chat" (two words).
-  "design chat" "smm chat" "marketing chat" "it chat" "photo chat"
+q3: Russian topic + "фриланс" OR topic + "заказы" — specific compound queries.
+  Groups: "разработка фриланс" "дизайн фриланс" "smm фриланс" "программирование фриланс"
+  Channels: "дизайн канал" "разработка канал"
+  CRITICAL: NEVER use "ит чат", "it чат" — too short/generic, matches unrelated chats.
 
-q5: Russian core topic word + "фриланс" (two words).
-  "дизайн фриланс" "smm фриланс" "it фриланс" "фото фриланс"
+q4: Russian topic + "заказы" OR topic + "биржа".
+  Groups: "разработка заказы" "дизайн заказы" "smm заказы" "программирование заказы"
+  Channels: "разработка заказы" "дизайн заказы"
 
-q6: English core topic word + "freelance" (two words).
-  "design freelance" "smm freelance" "it freelance" "photo freelance"
+q5: English SPECIFIC multi-word profession (NEVER single "it", "dev", "chat").
+  Groups: "web developers" "software developers" "frontend developers" "smm specialists"
+  Channels: "web development" "software development" "digital marketing"
+  NEVER: "it chat", "dev chat", "it freelance" — these are too generic.
 
-q7: Russian core topic word + "заказы" (two words).
-  "дизайн заказы" "smm заказы" "фото заказы" "разработка заказы"
+q6: English topic + "freelance" (specific, not generic).
+  Groups: "design freelance" "smm freelance" "development freelance"
+  Channels: "design channel" "smm channel"
 
-q8: Just the single Russian core topic word.
-  "дизайн" "smm" "маркетинг" "it" "фото" "разработка"
+q7: Russian topic + "сообщество" OR topic + "профи".
+  Groups: "разработчики профи" "дизайнеры профи" "smm сообщество"
+  Channels: "разработчики" "маркетологи" "дизайнеры"
+
+q8: Single Russian core topic word (MUST be specific, 4+ chars).
+  "дизайн" "smm" "маркетинг" "фотография" "разработка" "программирование" "автоматизация"
+  NEVER: "ит", "it" — too short and generic.
 
 All queries must be lowercase.
 Return ONLY JSON, no extra text:
@@ -317,22 +346,13 @@ Return ONLY JSON, no extra text:
                 "temperature" to 0.0,
             )
 
-            val response = restTemplate.postForObject(
-                "https://api.groq.com/openai/v1/chat/completions",
-                HttpEntity(body, HttpHeaders().apply {
-                    contentType = MediaType.APPLICATION_JSON
-                    setBearerAuth(apiKey)
-                }),
-                GroqResponse::class.java,
-            ) ?: return fallbackQueries(trimmed)
-
-            val raw = response.choices.firstOrNull()?.message?.content
-                ?: return fallbackQueries(trimmed)
+            val raw = postToGroqWithFallback(body)?.choices?.firstOrNull()?.message?.content
+                ?: return fallbackQueries(trimmed, peerType)
             val clean = raw.replace(Regex("```json|```"), "").trim()
 
             val queriesJson = Regex("\"queries\"\\s*:\\s*\\[([^]]*)]")
                 .find(clean)?.groupValues?.get(1)
-                ?: return fallbackQueries(trimmed)
+                ?: return fallbackQueries(trimmed, peerType)
 
             val queries = Regex("\"([^\"]+)\"")
                 .findAll(queriesJson)
@@ -342,42 +362,33 @@ Return ONLY JSON, no extra text:
                 .toList()
 
             log.info("generateTgstatQueries: запросы для \"${trimmed.take(40)}\": $queries")
-            queries.ifEmpty { fallbackQueries(trimmed) }
+            queries.ifEmpty { fallbackQueries(trimmed, peerType) }
         } catch (e: Exception) {
             log.warn("generateTgstatQueries ошибка: ${e.message}")
-            fallbackQueries(trimmed)
+            fallbackQueries(trimmed, peerType)
         }
     }
 
-    private fun fallbackQueries(input: String): List<String> {
+    // ─── Вспомогательные методы ──────────────────────────────────────────────────
+
+    private fun fallbackQueries(input: String, peerType: String? = null): List<String> {
         val term = input.trim().split(" ").first().take(20).lowercase()
-
-        return listOf(
-            "${term}ы",        //множественное число
-            "${term}ers",
-            "$term чат",
-            "$term freelance",
-            term,
-        )
+        return if (peerType == "channel") {
+            listOf(term, "${term}s", "$term blog", "$term news", "$term канал", "${term}ы")
+        } else {
+            listOf("${term}ы", "${term}ers", "$term чат", "$term freelance", "$term заказы", term)
+        }
     }
-
-
 
     private fun extractCityFromContext(context: String): String? {
         if (apiKey.isBlank()) return null
-
         return try {
             val prompt = """
 Определи, упоминается ли в тексте конкретный город, регион или страна как место работы/предоставления услуг.
-
-Текст:
-"$context"
-
-Если город/регион упомянут — верни его название. Если нет — верни пустую строку.
-
+Текст: "$context"
+Если упомянут — верни название. Если нет — верни пустую строку.
 Ответь строго JSON: {"city": "Киев"} или {"city": ""}
 """.trimIndent()
-
             val body = mapOf(
                 "model" to MAIN_MODEL,
                 "messages" to listOf(
@@ -387,17 +398,7 @@ Return ONLY JSON, no extra text:
                 "max_tokens" to 30,
                 "temperature" to 0.0,
             )
-
-            val response = restTemplate.postForObject(
-                "https://api.groq.com/openai/v1/chat/completions",
-                HttpEntity(body, HttpHeaders().apply {
-                    contentType = MediaType.APPLICATION_JSON
-                    setBearerAuth(apiKey)
-                }),
-                GroqResponse::class.java,
-            ) ?: return null
-
-            val raw = response.choices.firstOrNull()?.message?.content ?: return null
+            val raw = postToGroqWithFallback(body)?.choices?.firstOrNull()?.message?.content ?: return null
             val clean = raw.replace(Regex("```json|```"), "").trim()
             val city = Regex("\"city\"\\s*:\\s*\"([^\"]*)\"").find(clean)?.groupValues?.get(1)?.trim()
             if (city.isNullOrBlank()) null else city
@@ -408,11 +409,6 @@ Return ONLY JSON, no extra text:
     }
 
     private fun callGroqExpand(keyword: String): List<String> {
-        val headers = HttpHeaders().apply {
-            contentType = MediaType.APPLICATION_JSON
-            setBearerAuth(apiKey)
-        }
-
         val prompt = """
 Ты — система генерации вариантов ключевых слов для поиска лидов в Telegram-чатах русскоязычной IT/фриланс аудитории.
 
@@ -459,14 +455,8 @@ Return ONLY JSON, no extra text:
             "temperature" to 0.3,
         )
 
-        val response = restTemplate.postForObject(
-            "https://api.groq.com/openai/v1/chat/completions",
-            HttpEntity(body, headers),
-            GroqResponse::class.java,
-        ) ?: throw RuntimeException("пустой ответ от groq expand")
-
-        val raw = response.choices.firstOrNull()?.message?.content
-            ?: throw RuntimeException("нет content в ответе groq expand")
+        val raw = postToGroqWithFallback(body)?.choices?.firstOrNull()?.message?.content
+            ?: throw RuntimeException("пустой ответ от groq expand")
 
         val clean = raw.replace(Regex("```json|```"), "").trim()
 
@@ -483,6 +473,8 @@ Return ONLY JSON, no extra text:
             .filter { it.isNotBlank() }
             .toList()
     }
+
+    // ─── Очередь и throttle ──────────────────────────────────────────────────────
 
     private fun processQueue() {
         while (true) {
@@ -510,7 +502,6 @@ Return ONLY JSON, no extra text:
             requestsThisMinute.set(0)
             minuteStart = now
         }
-
         val count = requestsThisMinute.incrementAndGet()
         if (count > 25) {
             val waitMs = 60_000 - (now.epochSecond - minuteStart.epochSecond) * 1000
@@ -523,126 +514,161 @@ Return ONLY JSON, no extra text:
         }
     }
 
+    // ─── Основной вызов валидации ─────────────────────────────────────────────────
+
     private fun callGroq(
-        messageText: String,
-        keyword: String,
-        contextMessages: List<String>,
-        recentLeads: List<RecentLead> = emptyList(),
-        businessContext: String? = null,
-        respondToServiceOffers: Boolean = false,
+        messageText:            String,
+        keyword:                String,
+        contextMessages:        List<String>,
+        recentLeads:            List<RecentLead> = emptyList(),
+        businessContext:        String?          = null,
+        respondToServiceOffers: Boolean          = false,
     ): ValidationResult {
-        val headers = HttpHeaders().apply {
-            contentType = MediaType.APPLICATION_JSON
-            setBearerAuth(apiKey)
-        }
+        // Обрезаем сообщение до 600 символов — продающий пост выдаёт себя в первых строках.
+        val messageShort = messageText.take(600)
 
         val contextBlock = if (contextMessages.isNotEmpty()) {
-            val ctx = contextMessages.joinToString("\n") { "    - \"$it\"" }
-            "\n\nКонтекст разговора (предыдущие сообщения в чате):\n$ctx"
+            val ctx = contextMessages.take(2).joinToString("\n") { "  - \"${it.take(100)}\"" }
+            "\nКонтекст чата:\n$ctx"
         } else ""
 
         val leadsBlock = if (recentLeads.isNotEmpty()) {
-            val leads = recentLeads.take(5).joinToString("\n") { l ->
-                "    - @${l.authorUsername}: \"${l.messageText}\" (${l.foundAt})"
+            val leads = recentLeads.take(3).joinToString("\n") { l ->
+                "  - @${l.authorUsername}: \"${l.messageText.take(60)}\""
             }
-            "\n\nЛиды, уже найденные для этого пользователя за последние 7 дней (справочно):\n$leads\n\n" +
-                    "ВАЖНО: не отклоняй лид только потому что автор уже встречался.\n" +
-                    "Дубль только если: тот же автор + та же услуга + практически то же сообщение."
+            "\nНедавние лиды (дубль = тот же автор + та же услуга + то же сообщение):\n$leads"
         } else ""
 
         val businessBlock = if (!businessContext.isNullOrBlank()) {
-            "\n\nИнформация о бизнесе владельца системы (ищем клиентов именно для этого бизнеса):\n$businessContext"
+            "\nБизнес владельца (клиентов ищем для него):\n${businessContext.take(250)}"
         } else ""
 
         val serviceOffersRule = if (respondToServiceOffers) {
-            """
-РЕЖИМ «ПРЕДЛОЖЕНИЯ УСЛУГ»: ВКЛЮЧЁН.
-В этом режиме valid=true также для сообщений, где автор ПРЕДЛАГАЕТ свои услуги и ищет клиентов/заказы.
-Такой автор является потенциальным партнёром или лидом для владельца.
-
-"""
+            "РЕЖИМ: принимать офферы. valid=true если автор предлагает свои услуги и ищет клиентов.\n\n"
         } else {
             """
-РЕЖИМ ПОИСКА ЛИДОВ (стандартный).
-Наш сервис ищет ЛИДОВ — людей, которые НУЖДАЮТСЯ в услуге и готовы платить.
+ЗАДАЧА: определить, является ли сообщение реальным запросом клиента на услугу/исполнителя.
 
-ЖЁСТКОЕ ПРАВИЛО — верни valid=false НЕМЕДЛЕННО если хотя бы один из признаков:
+ГЛАВНЫЙ ТЕСТ — кто субъект действия:
+- Автор говорит что ОН ДЕЛАЕТ / ПРЕДЛАГАЕТ / УМЕЕТ → ОФФЕР → valid=false
+- Автор говорит что ЕМУ НУЖНО / КОГО ОН ИЩЕТ → ЛИД → valid=true
 
-ПРИЗНАКИ ОФФЕРА (автор предлагает, а не ищет):
-  • Автор представляет себя как специалиста: "я дизайнер", "я разработчик", "я аниматор", "я актёр"
-  • Автор предлагает выполнить работу: "выполню", "сделаю", "возьмусь", "помогу с", "занимаюсь"
-  • Автор ищет заказы/клиентов: "ищу заказы", "ищу клиентов", "ищу проекты", "открыт к предложениям"
-  • Автор перечисляет своё портфолио или опыт
-  • Формат резюме или самопрезентации
+ОФФЕР — valid=false если есть хотя бы один признак:
+- "я [профессия]": "я smm-менеджер", "я рилсмейкер", "я дизайнер", "меня зовут X и я Y"
+- Продающий пост: риторический вопрос ("Тяжело вести блог?") + перечисление СВОИХ услуг + CTA
+- Пакеты/тарифы услуг автора: нумерованные списки (1️⃣ 2️⃣ 3️⃣), "под ключ", "ведение аккаунта"
+- Секции "ОБО МНЕ", "МОИ КЕЙСЫ", "МОЁ ПОРТФОЛИО", перечисление своего опыта
+- "Занимаюсь X" / "Выполняю X" / "Делаю X" / "Работаю с X" / "Монтирую X" / "Создаю X" — глагол 1-го лица описывает свою деятельность
+- Наличие "Портфолио" / ссылки на примеры работ (Яндекс.Диск, Behance, Google Drive, GitHub и т.п.)
+- Хэштеги-самопрезентация (#помогу, #монтажер, #дизайнер, #фотограф, #копирайтер) в сочетании с описанием услуг
+- "Ищу заказы / клиентов / проекты" — специалист ищет работу для себя
+- Кастинг, найм сотрудников, реклама своих курсов, партнёрские ссылки
 
-ПРИЗНАКИ МАССОВОГО ОБЪЯВЛЕНИЯ (не персональный запрос на услугу):
-  • Кастинг, кастинги — массовый набор людей (актёров, моделей, аниматоров)
-  • HR и найм: "требуются сотрудники", "открыта вакансия", "приглашаем на работу"
-  • Массовый набор на курсы, тренинги, стажировки
-  • Реклама мероприятий, семинаров (автор организует, а не ищет подрядчика)
-  • Объявление адресовано неограниченному кругу лиц, а не является личным запросом
+ЛИД — valid=true:
+- Личный запрос на исполнителя: "ищу специалиста", "нужен человек", "посоветуйте кого-нибудь"
+- Вопрос сообществу: "кто занимается X?", "есть кто делает Y?"
+- Описание своей задачи/проблемы без предложения услуг
 
-ПРИЗНАКИ РЕКЛАМЫ И СПАМА:
-  • Продвижение своих услуг, продуктов, каналов
-  • Партнёрские программы, реферальные ссылки
-  • "Подписывайтесь", "переходите", "смотрите"
+НЕЙТРАЛЬНО (не решает исход):
+- "Пиши мне" / "напиши в лс" — смотри контекст ДО этой фразы
+- Хештеги — только метки темы
+- "Ищу разработчика" = ЛИД; "Ищу заказы" = ОФФЕР
 
-Поясняй в поле reason: что именно указывает на оффер/объявление/рекламу.
-Пример reason для оффера: "Автор представляет себя аниматором и предлагает услуги, а не ищет их"
-Пример reason для кастинга: "Массовый кастинг на сериалы — объявление о наборе, не персональный запрос"
-Пример reason для лида: "Автор ищет аниматора для детского праздника, указал дату и количество детей"
+ПРИМЕРЫ:
+[ОФФЕР] "Тяжело вести блог?🥺 А что если делегировать: SMM под ключ, Reels от идеи до монтажа. Мои услуги🤳 1️⃣Стратегия 2️⃣Reels ведение 3️⃣SMM. ОБО МНЕ: опыт 3 года. КЕЙСЫ: привела 4 клиентов. Пиши @username"
+→ {"valid":false,"reason":"Продающий пост SMM-специалиста: риторический вопрос + пакеты услуг автора + ОБО МНЕ/КЕЙСЫ","confidence":"high"}
+
+[ОФФЕР] "Привет, меня зовут Маша и я рилсмейкер. Оказываю услуги по продвижению reels. Пиши @mashaageeva"
+→ {"valid":false,"reason":"Самопрезентация специалиста — автор предлагает свои услуги","confidence":"high"}
+
+[ОФФЕР] "#помогу #монтаж #монтажер #рилс Занимаюсь монтажем вертикальных видео (Reels, Short, TikTok). Работаю с русским и английским. Портфолио: disk.yandex.ru/... Тг @q"
+→ {"valid":false,"reason":"'занимаюсь' + 'работаю с' + портфолио + хэштеги-самопрезентация — оффер монтажёра","confidence":"high"}
+
+[ОФФЕР] "Делаю сайты под ключ на WordPress. Работаю с малым бизнесом. Примеры работ: behance.net/... Пишите в лс."
+→ {"valid":false,"reason":"'делаю' + 'работаю с' + ссылка-портфолио — классический оффер разработчика","confidence":"high"}
+
+[ЛИД] "Ребята, ищу SMM-специалиста для магазина одежды. Нужно вести инст, делать рилсы. Пишите в лс"
+→ {"valid":true,"reason":"Владелец бизнеса ищет SMM-специалиста для себя — конкретный запрос заказчика","confidence":"high"}
+
+[ЛИД] "Нужен контент-план для салона красоты, кто делает? Бюджет до 15к"
+→ {"valid":true,"reason":"Владелец салона ищет специалиста по контент-плану с бюджетом","confidence":"high"}
 
 """
         }
 
         val prompt = """
-${serviceOffersRule}Ты — система фильтрации лидов для Telegram-мониторинга.
-Твоя задача: определить, является ли сообщение реальным ЛИЧНЫМ запросом на покупку/поиск услуги.
+${serviceOffersRule}Ключевое слово поиска: "$keyword"$contextBlock$leadsBlock$businessBlock
 
-Ключевое слово, по которому найдено сообщение: "$keyword"
-$contextBlock
-$leadsBlock
-$businessBlock
+Сообщение:
+"$messageShort"
 
-Целевое сообщение:
-"$messageText"
-
-Анализируй последовательно:
-1. Кто автор — покупатель/заказчик или специалист/продавец/организатор?
-2. Это персональный запрос или массовое объявление?
-3. Есть ли конкретная потребность (задача, бюджет, сроки, детали)?
-4. Это живой диалог или рекламная рассылка?
-5. Если задан бизнес-контекст владельца — подходит ли этот лид?
-
-valid=true ТОЛЬКО если:
-- Конкретный человек ИЩЕТ услугу или исполнителя для себя
-- Есть реальная потребность (задача, событие, проект)
-- Сообщение инициирует диалог, а не является рекламой
-
-Ответь строго JSON (без текста вне JSON):
-{"valid": true/false, "reason": "одно конкретное предложение с объяснением решения", "confidence": "low/medium/high"}
+Ответь строго JSON без текста вне JSON:
+{"valid":true/false,"reason":"одно предложение","confidence":"low/medium/high"}
 """.trimIndent()
 
         val body = mapOf(
             "model" to MAIN_MODEL,
             "messages" to listOf(
-                mapOf("role" to "system", "content" to "Ты фильтруешь лиды. Отвечай только JSON. Никакого текста вне JSON."),
+                mapOf("role" to "system", "content" to "Фильтруешь лиды в Telegram. Отвечай только JSON."),
                 mapOf("role" to "user", "content" to prompt),
             ),
-            "max_tokens" to 200,
+            "max_tokens" to 150,
             "temperature" to 0.0,
         )
 
-        val response = restTemplate.postForObject(
-            "https://api.groq.com/openai/v1/chat/completions",
-            HttpEntity(body, headers),
-            GroqResponse::class.java,
-        ) ?: throw RuntimeException("пустой ответ от groq")
-
-        val content = response.choices.firstOrNull()?.message?.content
-            ?: throw RuntimeException("нет content в ответе groq")
+        val content = postToGroqWithFallback(body)?.choices?.firstOrNull()?.message?.content
+            ?: throw RuntimeException("пустой ответ от groq")
 
         return parseResult(content)
+    }
+
+    // ─── Fallback по списку ключей ────────────────────────────────────────────────
+
+    /**
+     * Перебирает ключи из [apiKeys] по порядку.
+     * При 429 (rate limit) или 413 (payload/TPM exceeded) переходит к следующему ключу.
+     * Остальные ошибки (400, 401, 500…) пробрасываются сразу без fallback.
+     *
+     * Пример env:
+     *   GROQ_API_KEY="gsk_key1, gsk_key2, gsk_key3"
+     */
+    private fun postToGroqWithFallback(body: Map<String, Any>): GroqResponse? {
+        var lastException: Exception? = null
+
+        for ((index, key) in apiKeys.withIndex()) {
+            try {
+                return postToGroq(key, body)
+            } catch (e: HttpClientErrorException) {
+                val status = e.statusCode.value()
+                if (status == 429 || status == 413) {
+                    lastException = e
+                    if (index < apiKeys.size - 1) {
+                        log.warn("groq $status на ключе #${index + 1} — переключаемся на ключ #${index + 2}")
+                    } else {
+                        log.warn("groq $status на ключе #${index + 1} — все ${apiKeys.size} ключ(а/ей) исчерпаны")
+                    }
+                } else {
+                    throw e
+                }
+            }
+        }
+
+        throw lastException ?: RuntimeException("нет доступных groq api ключей")
+    }
+
+    /**
+     * Выполняет HTTP-запрос к Groq с конкретным ключом.
+     */
+    private fun postToGroq(key: String, body: Map<String, Any>): GroqResponse? {
+        val headers = HttpHeaders().apply {
+            contentType = MediaType.APPLICATION_JSON
+            setBearerAuth(key)
+        }
+        return restTemplate.postForObject(
+            GROQ_URL,
+            HttpEntity(body, headers),
+            GroqResponse::class.java,
+        )
     }
 
     private fun parseResult(content: String): ValidationResult {

@@ -41,7 +41,7 @@ class BotProfileHandler(
         val expiry     = expiryRepository.findByUserId(user.id)
         val since      = user.createdAt?.toLocalDate()?.toString() ?: "—"
 
-        val plan         = user.subscriptionPlan
+        val plan          = user.subscriptionPlan
         val hasAiFeatures = plan == "MINIMUM" || plan == "START" || user.subscriptionStatus == "TRIAL"
 
         val subLine = when {
@@ -54,9 +54,9 @@ class BotProfileHandler(
         }
 
         val contextLine = when {
-            !hasAiFeatures                      -> "\n🎯 *Бизнес-контекст AI:* 🔒 недоступно"
+            !hasAiFeatures                        -> "\n🎯 *Бизнес-контекст AI:* 🔒 недоступно"
             !user.businessContext.isNullOrBlank() -> "\n🎯 *Бизнес-контекст AI:* ✅ задан"
-            else                                -> "\n🎯 *Бизнес-контекст AI:* не задан"
+            else                                  -> "\n🎯 *Бизнес-контекст AI:* не задан"
         }
 
         val text = "👤 *Профиль*\n\n" +
@@ -73,8 +73,9 @@ class BotProfileHandler(
 
         val rows = mutableListOf<org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow>()
 
+
         if (user.subscriptionStatus != "ACTIVE") {
-            rows.add(row(urlBtn("💳 Выбрать тариф", BotAuthHandler.SITE_URL + "/checkout")))
+            rows.add(row(btn("💳 Оплатить подписку", "payment:plans")))
         }
 
         rows.add(row(btn(
@@ -104,11 +105,11 @@ class BotProfileHandler(
             sender.editText(
                 chatId, msgId,
                 "🔒 *AI-персонализация недоступна*\n\n" +
-                        "На тарифе *МИНИМУМ* и выше вы можете задать описание своего бизнеса — " +
+                        "На тарифе *START* и выше вы можете задать описание своего бизнеса — " +
                         "AI будет отбирать только тех клиентов, которые ищут именно то, что вы предлагаете.\n\n" +
                         "💡 Пример: «Я frontend-разработчик на React, ищу клиентов с бюджетом от 50к»",
                 keyboard(
-                    row(urlBtn("💳 Перейти на МИНИМУМ", BotAuthHandler.SITE_URL + "/checkout")),
+                    row(btn("💳 Оплатить подписку", "payment:plans")),
                     row(btn("◀️ Назад", "menu:profile")),
                 ),
                 parseMarkdown = true,
@@ -150,7 +151,6 @@ class BotProfileHandler(
                 chatId,
                 "⚠️ Слишком длинный текст: ${trimmed.length} символов (макс. 2000).\n\nПожалуйста, сократите описание:",
             )
-
             return
         }
 
@@ -194,7 +194,7 @@ class BotProfileHandler(
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
         if (user == null) { sender.editText(chatId, msgId, "Нужно войти. /start"); return }
 
-        sessions.remove(chatId) // Снимаем сессию WAITING_CONTEXT если была активна
+        sessions.remove(chatId)
 
         runCatching { leadService.saveBusinessContext(user, "") }
             .onSuccess {

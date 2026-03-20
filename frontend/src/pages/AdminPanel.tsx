@@ -40,8 +40,6 @@ function sortUsers(users: AdminUserDto[], key: SortKey, dir: SortDir): AdminUser
     })
 }
 
-//
-
 interface UserbotSessionStats {
     sessionId:  number
     phone:      string
@@ -111,71 +109,63 @@ function UsersTable({ users, lang, currentUserId, onRoleChange }: {
         }
     }
 
+    const sorted = sortUsers(users, sortKey, sortDir)
+
     return (
         <div className={s.tableWrapper}>
             <table className={s.usersTable}>
-                <thead><tr>
+                <thead>
+                <tr>
                     <Th col="id"         label="ID" />
-                    <Th col="firstName"  label={ru ? 'Пользователь' : 'User'} />
+                    <Th col="firstName"  label={ru ? 'Имя'      : 'Name'} />
                     <Th col="email"      label="Email" />
-                    <th>Telegram</th>
-                    <Th col="role"       label={ru ? 'Роль' : 'Role'} />
-                    <th>Email ✓</th>
-                    <Th col="leadsCount" label={ru ? 'Лиды' : 'Leads'} />
-                    <th>{ru ? 'Подписка' : 'Plan'}</th>
-                    <Th col="createdAt"  label={ru ? 'Дата' : 'Created'} />
-                    <th>{ru ? 'Действия' : 'Actions'}</th>
-                </tr></thead>
+                    <Th col="role"       label={ru ? 'Роль'     : 'Role'} />
+                    <Th col="leadsCount" label={ru ? 'Лиды'     : 'Leads'} />
+                    <Th col="createdAt"  label={ru ? 'Создан'   : 'Created'} />
+                    <th>{ru ? 'Подписка' : 'Subscription'}</th>
+                    <th>{ru ? 'Telegram' : 'Telegram'}</th>
+                    <th>{ru ? 'Действие' : 'Action'}</th>
+                </tr>
+                </thead>
                 <tbody>
-                {sortUsers(users, sortKey, sortDir).map(u => (
-                    <tr key={u.id} className={u.role === 'ADMIN' ? s.rowAdmin : ''}>
+                {sorted.map(u => (
+                    <tr key={u.id} className={!u.isActive ? s.rowInactive : ''}>
                         <td className={s.cellId}>{u.id}</td>
-                        <td>
-                            <div className={s.cellUser}>
-                                <div className={s.tableAvatar}>
-                                    {(u.firstName || u.email).charAt(0).toUpperCase()}
-                                </div>
-                                <span className={s.cellName}>{u.firstName || '—'}</span>
-                            </div>
-                        </td>
+                        <td>{u.firstName ?? '—'}</td>
                         <td className={s.cellEmail}>{u.email}</td>
                         <td>
-                            {u.telegramId
-                                ? <span className={s.tgYes}>✓ {u.telegramUsername ? `@${u.telegramUsername}` : u.telegramId}</span>
-                                : <span className={s.tgNo}>—</span>}
-                        </td>
-                        <td>
-                            <span className={`${s.rolePill} ${u.role === 'ADMIN' ? s.roleAdmin : s.roleUser}`}>
-                                {u.role}
-                            </span>
-                        </td>
-                        <td style={{ textAlign: 'center' }}>
-                            <span style={{ color: u.emailVerified ? '#10b981' : '#ef4444', fontSize: 13 }}>
-                                {u.emailVerified ? '✓' : '✗'}
-                            </span>
+                                <span className={u.role === 'ADMIN' ? s.badgeAdmin : s.badgeUser}>
+                                    {u.role}
+                                </span>
                         </td>
                         <td className={s.cellNum}>{u.leadsCount}</td>
-                        <td>
-                            {u.subscriptionPlan
-                                ? <span className={s.planPill}>{u.subscriptionPlan}</span>
-                                : <span className={s.noplan}>—</span>}
-                        </td>
                         <td className={s.cellDate}>
                             {u.createdAt ? new Date(u.createdAt).toLocaleDateString(ru ? 'ru-RU' : 'en-US') : '—'}
                         </td>
                         <td>
-                            {!(u.id === currentUserId && u.role === 'ADMIN') && (
-                                <button
-                                    className={`${s.actionBtn} ${u.role === 'ADMIN' ? s.actionDemote : s.actionPromote}`}
-                                    onClick={() => handleToggleRole(u)}
-                                    disabled={changing === u.id}
-                                >
-                                    {changing === u.id ? '…' : u.role === 'ADMIN' ? '↓ USER' : '↑ ADMIN'}
-                                </button>
-                            )}
-                            {u.id === currentUserId && u.role === 'ADMIN' && (
-                                <span className={s.selfBadge}>{ru ? 'Вы' : 'You'}</span>
-                            )}
+                            {u.subscriptionStatus
+                                ? <span className={u.subscriptionStatus === 'ACTIVE' ? s.badgeActive : s.badgeTrial}>
+                                        {u.subscriptionStatus} {u.subscriptionPlan ? `/ ${u.subscriptionPlan}` : ''}
+                                      </span>
+                                : <span className={s.badgeNone}>—</span>
+                            }
+                        </td>
+                        <td>
+                            {u.telegramId
+                                ? <span className={s.badgeTg}>✓ {u.telegramUsername ? `@${u.telegramUsername}` : u.telegramId}</span>
+                                : <span className={s.badgeNone}>—</span>
+                            }
+                        </td>
+                        <td>
+                            <button
+                                className={s.actionBtn}
+                                onClick={() => handleToggleRole(u)}
+                                disabled={changing === u.id}
+                            >
+                                {changing === u.id ? '...' : u.role === 'ADMIN'
+                                    ? (ru ? 'Снять ADMIN' : 'Remove ADMIN')
+                                    : (ru ? 'Сделать ADMIN' : 'Make ADMIN')}
+                            </button>
                         </td>
                     </tr>
                 ))}
@@ -184,6 +174,7 @@ function UsersTable({ users, lang, currentUserId, onRoleChange }: {
         </div>
     )
 }
+
 
 
 function UserbotTab({ lang }: { lang: Lang }) {
@@ -196,11 +187,18 @@ function UserbotTab({ lang }: { lang: Lang }) {
     const [error,        setError]        = useState('')
     const [expandedUser, setExpandedUser] = useState<number | null>(null)
 
+    // ─── Фильтрация пользователей ─────────────────────────────────────────────
+    const [userSearch, setUserSearch] = useState('')
+
+    // ─── Удаление юзербота ────────────────────────────────────────────────────
+    const [deletingSession, setDeletingSession] = useState<number | null>(null)
+    const [deleteError,     setDeleteError]     = useState('')
+
     type Step = 'idle' | 'phone' | 'code' | 'done'
     const [step,       setStep]       = useState<Step>('idle')
     const [phone,      setPhone]      = useState('')
-    const [apiID,      setApiID]      = useState('39327366')
-    const [apiHash,    setApiHash]    = useState('826eb33c5d3512e6427818fc2a712d1f')
+    const [apiID,      setApiID]      = useState('')
+    const [apiHash,    setApiHash]    = useState('')
     const [tempId,     setTempId]     = useState('')
     const [code,       setCode]       = useState('')
     const [password,   setPassword]   = useState('')
@@ -229,6 +227,34 @@ function UserbotTab({ lang }: { lang: Lang }) {
 
     useEffect(() => { load() }, [load])
 
+    // ─── Удаление юзербота ────────────────────────────────────────────────────
+    const handleDeleteSession = async (sessionId: number, phone: string) => {
+        const confirmed = confirm(ru
+            ? `Удалить юзербота #${sessionId} (${phone})?\n\nОн будет отключён от всех чатов и остановлен.`
+            : `Delete userbot #${sessionId} (${phone})?\n\nIt will be disconnected from all chats and stopped.`
+        )
+        if (!confirmed) return
+
+        setDeletingSession(sessionId)
+        setDeleteError('')
+        try {
+            const res = await fetch(`${BASE}/api/v1/admin/userbot/sessions/delete`, {
+                method:      'POST',
+                credentials: 'include',
+                headers:     { 'Content-Type': 'application/json' },
+                body:        JSON.stringify({ sessionId }),
+            })
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.error ?? `Ошибка ${res.status}`)
+            setTimeout(load, 600)
+        } catch (e: unknown) {
+            setDeleteError(e instanceof Error ? e.message : 'Ошибка удаления')
+        } finally {
+            setDeletingSession(null)
+        }
+    }
+
+    // ─── Регистрация: шаг 1 ───────────────────────────────────────────────────
     const handleSendPhone = async () => {
         if (!phone.trim()) return
         setRegLoading(true)
@@ -255,6 +281,7 @@ function UserbotTab({ lang }: { lang: Lang }) {
         }
     }
 
+    // ─── Регистрация: шаг 2 ───────────────────────────────────────────────────
     const handleConfirmCode = async () => {
         if (!code.trim()) return
         setRegLoading(true)
@@ -273,8 +300,8 @@ function UserbotTab({ lang }: { lang: Lang }) {
             const data = await res.json()
             if (!res.ok) throw new Error(data.error ?? `Ошибка ${res.status}`)
             setRegSuccess(ru
-                ? `✅ Сессия активирована! Телефон: ${data.phone}, ID: ${data.sessionId}`
-                : `✅ Session activated! Phone: ${data.phone}, ID: ${data.sessionId}`)
+                ? `Сессия активирована! Телефон: ${data.phone}, ID: ${data.sessionId}`
+                : `Session activated! Phone: ${data.phone}, ID: ${data.sessionId}`)
             setStep('done')
             setTimeout(load, 1500)
         } catch (e: unknown) {
@@ -285,14 +312,17 @@ function UserbotTab({ lang }: { lang: Lang }) {
     }
 
     const resetWizard = () => {
-        setStep('idle')
-        setPhone('')
-        setCode('')
-        setPassword('')
-        setTempId('')
-        setRegError('')
-        setRegSuccess('')
+        setStep('idle'); setPhone(''); setCode(''); setPassword('')
+        setTempId(''); setRegError(''); setRegSuccess('')
     }
+
+    // ─── Фильтрация пользователей ─────────────────────────────────────────────
+    const filteredUsers = userSearch.trim()
+        ? users.filter(u =>
+            u.email.toLowerCase().includes(userSearch.toLowerCase()) ||
+            String(u.userId).includes(userSearch)
+        )
+        : users
 
     if (loading) return <div className={s.loading}>{ru ? 'Загрузка...' : 'Loading...'}</div>
     if (error)   return <div className={s.formError}>{error}</div>
@@ -302,24 +332,20 @@ function UserbotTab({ lang }: { lang: Lang }) {
     const statCards = [
         { label: ru ? 'Статус'        : 'Status',
             value: isUp ? 'UP' : 'DOWN',
-            color: isUp ? '#10b981' : '#ef4444',
-            isText: true },
+            color: isUp ? '#10b981' : '#ef4444', isText: true },
         { label: ru ? 'Аккаунтов'     : 'Accounts',
-            value: stats?.sessions    ?? 0,
-            color: undefined, isText: false },
+            value: stats?.sessions    ?? 0,  color: undefined, isText: false },
         { label: ru ? 'Чатов'         : 'Chats',
-            value: stats?.totalChats  ?? 0,
-            color: undefined, isText: false },
+            value: stats?.totalChats  ?? 0,  color: undefined, isText: false },
         { label: ru ? 'Пользователей' : 'Users',
-            value: stats?.totalUsers  ?? 0,
-            color: undefined, isText: false },
+            value: stats?.totalUsers  ?? 0,  color: undefined, isText: false },
         { label: ru ? 'Всего лидов'   : 'Total leads',
-            value: stats?.totalLeads  ?? 0,
-            color: undefined, isText: false },
+            value: stats?.totalLeads  ?? 0,  color: undefined, isText: false },
     ]
 
     return (
         <div className={s.subsTab}>
+            {/* ─── Заголовок ─── */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <h2 className={s.tabTitle} style={{ margin: 0 }}>
                     {ru ? 'Userbot сервис' : 'Userbot Service'}
@@ -329,6 +355,7 @@ function UserbotTab({ lang }: { lang: Lang }) {
                 </button>
             </div>
 
+            {/* ─── Статистика ─── */}
             <div className={s.statsGrid}>
                 {statCards.map(item => (
                     <div key={item.label} className={s.statCard}>
@@ -343,17 +370,14 @@ function UserbotTab({ lang }: { lang: Lang }) {
                 ))}
             </div>
 
+            {/* ─── Добавить аккаунт ─── */}
             <div className={s.subCard} style={{ marginTop: 20 }}>
                 <h3 className={s.subCardTitle} style={{ marginBottom: 12 }}>
                     {ru ? '➕ Добавить аккаунт юзербота' : '➕ Add userbot account'}
                 </h3>
 
                 {step === 'idle' && (
-                    <button
-                        className={s.grantBtn}
-                        onClick={() => setStep('phone')}
-                        style={{ padding: '8px 20px' }}
-                    >
+                    <button className={s.grantBtn} onClick={() => setStep('phone')} style={{ padding: '8px 20px' }}>
                         {ru ? 'Добавить аккаунт' : 'Add account'}
                     </button>
                 )}
@@ -361,13 +385,9 @@ function UserbotTab({ lang }: { lang: Lang }) {
                 {step === 'phone' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 420 }}>
                         <div style={{
-                            background:   'rgba(99,102,241,.08)',
-                            border:       '1px solid rgba(99,102,241,.2)',
-                            borderRadius: 8,
-                            padding:      '10px 14px',
-                            fontSize:     12,
-                            color:        'var(--c-ink-2)',
-                            lineHeight:   1.7,
+                            background: 'rgba(99,102,241,.08)', border: '1px solid rgba(99,102,241,.2)',
+                            borderRadius: 8, padding: '10px 14px', fontSize: 12,
+                            color: 'var(--c-ink-2)', lineHeight: 1.7,
                         }}>
                             <strong>{ru ? 'Где взять API credentials?' : 'Where to get API credentials?'}</strong><br />
                             {ru ? (
@@ -434,12 +454,8 @@ function UserbotTab({ lang }: { lang: Lang }) {
                 {step === 'code' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 420 }}>
                         <div style={{
-                            background:   'rgba(16,185,129,.08)',
-                            border:       '1px solid rgba(16,185,129,.2)',
-                            borderRadius: 8,
-                            padding:      '10px 14px',
-                            fontSize:     12,
-                            color:        'var(--c-ink-2)',
+                            background: 'rgba(16,185,129,.08)', border: '1px solid rgba(16,185,129,.2)',
+                            borderRadius: 8, padding: '10px 14px', fontSize: 12, color: 'var(--c-ink-2)',
                         }}>
                             {ru
                                 ? `📱 Код отправлен в Telegram на номер ${phone}. Введите его ниже.`
@@ -486,12 +502,8 @@ function UserbotTab({ lang }: { lang: Lang }) {
                 {step === 'done' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                         <div style={{
-                            background:   'rgba(16,185,129,.08)',
-                            border:       '1px solid rgba(16,185,129,.2)',
-                            borderRadius: 8,
-                            padding:      '10px 14px',
-                            fontSize:     13,
-                            color:        '#10b981',
+                            background: 'rgba(16,185,129,.08)', border: '1px solid rgba(16,185,129,.2)',
+                            borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#10b981',
                         }}>
                             {regSuccess}
                         </div>
@@ -506,11 +518,15 @@ function UserbotTab({ lang }: { lang: Lang }) {
                 )}
             </div>
 
+            {/* ─── Аккаунты в пуле + кнопка удаления ─── */}
             {(stats?.perSession?.length ?? 0) > 0 && (
                 <>
-                    <h3 className={s.subCardTitle}>
+                    <h3 className={s.subCardTitle} style={{ marginTop: 24 }}>
                         {ru ? 'Аккаунты в пуле' : 'Pool accounts'}
                     </h3>
+                    {deleteError && (
+                        <div className={s.formError} style={{ marginBottom: 8 }}>{deleteError}</div>
+                    )}
                     <div className={s.tableWrapper}>
                         <table className={s.usersTable}>
                             <thead><tr>
@@ -519,6 +535,7 @@ function UserbotTab({ lang }: { lang: Lang }) {
                                 <th>{ru ? 'Чатов' : 'Chats'}</th>
                                 <th>{ru ? 'Лидов' : 'Leads'}</th>
                                 <th>{ru ? 'Статус' : 'Status'}</th>
+                                <th>{ru ? 'Действие' : 'Action'}</th>
                             </tr></thead>
                             <tbody>
                             {stats!.perSession!.map(sess => (
@@ -533,8 +550,40 @@ function UserbotTab({ lang }: { lang: Lang }) {
                                             fontSize:   12,
                                             fontWeight: 600,
                                         }}>
-                                            {sess.online ? 'Online' : 'Offline'}
+                                            {sess.online
+                                                ? (ru ? 'в сети' : 'Online')
+                                                : (ru ? 'не в сети' : 'Offline')}
                                         </span>
+                                    </td>
+                                    <td>
+                                        <button
+                                            onClick={() => handleDeleteSession(sess.sessionId, sess.phone)}
+                                            disabled={deletingSession === sess.sessionId}
+                                            style={{
+                                                padding:      '4px 10px',
+                                                fontSize:     11,
+                                                fontWeight:   600,
+                                                borderRadius: 6,
+                                                border:       '1px solid rgba(239,68,68,.3)',
+                                                background:   'rgba(239,68,68,.06)',
+                                                color:        '#ef4444',
+                                                cursor:       deletingSession === sess.sessionId ? 'default' : 'pointer',
+                                                fontFamily:   'var(--font-body)',
+                                                transition:   'all .15s',
+                                                opacity:      deletingSession === sess.sessionId ? .5 : 1,
+                                            }}
+                                            onMouseEnter={e => {
+                                                if (deletingSession !== sess.sessionId)
+                                                    (e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,.15)'
+                                            }}
+                                            onMouseLeave={e => {
+                                                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,.06)'
+                                            }}
+                                        >
+                                            {deletingSession === sess.sessionId
+                                                ? '...'
+                                                : (ru ? 'Удалить' : 'Delete')}
+                                        </button>
                                     </td>
                                 </tr>
                             ))}
@@ -544,12 +593,47 @@ function UserbotTab({ lang }: { lang: Lang }) {
                 </>
             )}
 
+            {/* ─── Активные пользователи с фильтрацией ─── */}
             {users.length > 0 && (
                 <>
-                    <h3 className={s.subCardTitle}>
-                        {ru ? 'Активные пользователи' : 'Active users'}
-                        <span className={s.count} style={{ marginLeft: 8 }}>{users.length}</span>
-                    </h3>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 24, flexWrap: 'wrap' }}>
+                        <h3 className={s.subCardTitle} style={{ margin: 0 }}>
+                            {ru ? 'Активные пользователи' : 'Active users'}
+                            <span className={s.count} style={{ marginLeft: 8 }}>{filteredUsers.length}</span>
+                            {userSearch.trim() && filteredUsers.length !== users.length && (
+                                <span style={{ fontSize: 11, color: 'var(--c-ink-3)', fontWeight: 400, marginLeft: 4 }}>
+                                    {ru ? `из ${users.length}` : `of ${users.length}`}
+                                </span>
+                            )}
+                        </h3>
+
+                        {/* Поиск по email / ID */}
+                        <input
+                            placeholder={ru ? 'Поиск по email или ID...' : 'Search by email or ID...'}
+                            value={userSearch}
+                            onChange={e => setUserSearch(e.target.value)}
+                            style={{
+                                flex: 1, maxWidth: 260,
+                                padding: '6px 10px', fontSize: 12,
+                                borderRadius: 7, border: '1px solid var(--c-border)',
+                                background: 'var(--c-surface)', color: 'var(--c-ink)',
+                                fontFamily: 'var(--font-body)', outline: 'none',
+                            }}
+                        />
+                        {userSearch.trim() && (
+                            <button
+                                onClick={() => setUserSearch('')}
+                                style={{
+                                    fontSize: 11, padding: '4px 8px', borderRadius: 6,
+                                    border: '1px solid var(--c-border)', background: 'none',
+                                    color: 'var(--c-ink-3)', cursor: 'pointer', fontFamily: 'var(--font-body)',
+                                }}
+                            >
+                                {ru ? 'Сбросить' : 'Clear'}
+                            </button>
+                        )}
+                    </div>
+
                     <div className={s.tableWrapper}>
                         <table className={s.usersTable}>
                             <thead><tr>
@@ -561,7 +645,7 @@ function UserbotTab({ lang }: { lang: Lang }) {
                                 <th>{ru ? 'Детали' : 'Details'}</th>
                             </tr></thead>
                             <tbody>
-                            {users.map(u => (
+                            {filteredUsers.map(u => (
                                 <>
                                     <tr key={u.userId}>
                                         <td className={s.cellId}>{u.userId}</td>
@@ -605,12 +689,9 @@ function UserbotTab({ lang }: { lang: Lang }) {
                                                 }}>
                                                     <div>
                                                         <div style={{
-                                                            fontSize:      11,
-                                                            fontWeight:    700,
-                                                            textTransform: 'uppercase',
-                                                            letterSpacing: '.6px',
-                                                            color:         'var(--c-ink-3)',
-                                                            marginBottom:  8,
+                                                            fontSize: 11, fontWeight: 700,
+                                                            textTransform: 'uppercase', letterSpacing: '.6px',
+                                                            color: 'var(--c-ink-3)', marginBottom: 8,
                                                         }}>
                                                             {ru ? 'Чаты' : 'Chats'} ({u.chats.length})
                                                         </div>
@@ -625,10 +706,8 @@ function UserbotTab({ lang }: { lang: Lang }) {
                                                                         target="_blank"
                                                                         rel="noopener noreferrer"
                                                                         style={{
-                                                                            fontSize:       12,
-                                                                            color:          'var(--c-accent)',
-                                                                            textDecoration: 'none',
-                                                                            fontFamily:     'monospace',
+                                                                            fontSize: 12, color: 'var(--c-accent)',
+                                                                            textDecoration: 'none', fontFamily: 'monospace',
                                                                         }}
                                                                     >
                                                                         {c}
@@ -640,12 +719,9 @@ function UserbotTab({ lang }: { lang: Lang }) {
 
                                                     <div>
                                                         <div style={{
-                                                            fontSize:      11,
-                                                            fontWeight:    700,
-                                                            textTransform: 'uppercase',
-                                                            letterSpacing: '.6px',
-                                                            color:         'var(--c-ink-3)',
-                                                            marginBottom:  8,
+                                                            fontSize: 11, fontWeight: 700,
+                                                            textTransform: 'uppercase', letterSpacing: '.6px',
+                                                            color: 'var(--c-ink-3)', marginBottom: 8,
                                                         }}>
                                                             {ru ? 'Ключевые слова' : 'Keywords'} ({u.keywords.length})
                                                         </div>
@@ -655,12 +731,11 @@ function UserbotTab({ lang }: { lang: Lang }) {
                                                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                                                                 {u.keywords.map(kw => (
                                                                     <span key={kw} style={{
-                                                                        fontSize:     11,
-                                                                        background:   'var(--c-surface)',
-                                                                        border:       '1px solid var(--c-border)',
-                                                                        borderRadius: 6,
-                                                                        padding:      '3px 8px',
-                                                                        color:        'var(--c-ink-2)',
+                                                                        fontSize: 11,
+                                                                        background: 'var(--c-surface)',
+                                                                        border: '1px solid var(--c-border)',
+                                                                        borderRadius: 6, padding: '3px 8px',
+                                                                        color: 'var(--c-ink-2)',
                                                                     }}>
                                                                         {kw}
                                                                     </span>
@@ -674,6 +749,16 @@ function UserbotTab({ lang }: { lang: Lang }) {
                                     )}
                                 </>
                             ))}
+                            {filteredUsers.length === 0 && userSearch.trim() && (
+                                <tr>
+                                    <td colSpan={6} style={{
+                                        textAlign: 'center', padding: '20px 0',
+                                        color: 'var(--c-ink-3)', fontSize: 13,
+                                    }}>
+                                        {ru ? 'Ничего не найдено' : 'No results'}
+                                    </td>
+                                </tr>
+                            )}
                             </tbody>
                         </table>
                     </div>
@@ -681,7 +766,7 @@ function UserbotTab({ lang }: { lang: Lang }) {
             )}
 
             {!isUp && (
-                <div className={s.subCard} style={{ borderColor: 'rgba(239,68,68,.2)' }}>
+                <div className={s.subCard} style={{ borderColor: 'rgba(239,68,68,.2)', marginTop: 20 }}>
                     <p style={{ margin: 0, fontSize: 13, color: 'var(--c-ink-3)', lineHeight: 1.7 }}>
                         {ru
                             ? 'Go-сервис недоступен. Проверьте что userbot запущен.'

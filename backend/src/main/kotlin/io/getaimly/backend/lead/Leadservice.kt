@@ -82,7 +82,7 @@ class LeadService(
     private val log = LoggerFactory.getLogger(LeadService::class.java)
 
 
-    private val AI_PLANS = setOf("MINIMUM", "START", "BUSINESS")
+    private val AI_PLANS = setOf("START", "BUSINESS", "TRIAL")
 
     private val restTemplate: RestTemplate = RestTemplate(
         SimpleClientHttpRequestFactory().apply {
@@ -128,6 +128,12 @@ class LeadService(
         lead.status = runCatching { LeadStatus.valueOf(status.uppercase()) }
             .getOrElse { throw IllegalArgumentException("неверный статус: $status") }
         return leadRepo.save(lead).toDto()
+    }
+
+    @Transactional
+    fun markAllRead(user: User) {
+        leadRepo.markAllViewedByUserId(user.id)
+        log.info("markAllRead: userId=${user.id}")
     }
 
 
@@ -196,7 +202,6 @@ class LeadService(
             }
 
             val businessContext = user.businessContext
-            // Передаём флаг тумблера "реагировать на предложения услуг" в AI-валидацию
             val respondToServiceOffers = user.respondToServiceOffers
 
             aiService.validateAsync(
@@ -229,6 +234,7 @@ class LeadService(
                         runCatching {
                             bot.notifyNewLead(
                                 telegramChatId  = tgId,
+                                leadId          = saved.id,
                                 chatTitle       = req.chatTitle,
                                 text            = req.messageText.take(200),
                                 link            = req.messageLink,
@@ -247,6 +253,7 @@ class LeadService(
                 runCatching {
                     bot.notifyNewLead(
                         telegramChatId  = tgId,
+                        leadId          = saved.id,
                         chatTitle       = req.chatTitle,
                         text            = req.messageText.take(200),
                         link            = req.messageLink,
@@ -339,7 +346,7 @@ class LeadService(
 
     @Transactional
     fun addKeyword(user: User, keyword: String): KeywordDto {
-        val trimmed = keyword.normalizeKeyword()   // <-- ИЗМЕНЕНО
+        val trimmed = keyword.normalizeKeyword()
         if (trimmed.isBlank()) throw IllegalArgumentException("ключевое слово не может быть пустым")
         if (trimmed.length > 100) throw IllegalArgumentException("слишком длинное ключевое слово")
 

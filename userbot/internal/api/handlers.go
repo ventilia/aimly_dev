@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
+
 	"userbot/internal/bot"
 	"userbot/internal/model"
 
@@ -57,6 +58,18 @@ func (h *Handlers) Stats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonOK(w, resp)
+}
+
+// GetSessions — GET /admin/sessions
+// Возвращает список активных сессий с их статусами.
+func (h *Handlers) GetSessions(w http.ResponseWriter, r *http.Request) {
+	if !h.checkSecret(r) {
+		jsonError(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	sessions := h.pool.Stats()
+	jsonOK(w, sessions)
 }
 
 // RegisterSession — POST /admin/sessions/register
@@ -117,6 +130,42 @@ func (h *Handlers) ConfirmSession(w http.ResponseWriter, r *http.Request) {
 
 	h.log.Info("сессия подтверждена и добавлена в пул", zap.Int64("sessionID", dbID), zap.String("phone", phone))
 	jsonOK(w, map[string]any{"sessionId": dbID, "phone": phone})
+}
+
+// DeleteSession — POST /admin/sessions/delete
+// Жёсткое удаление: выходит из всех чатов сессии, убирает из пула, деактивирует в БД.
+func (h *Handlers) DeleteSession(w http.ResponseWriter, r *http.Request) {
+	if !h.checkSecret(r) {
+		jsonError(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req struct {
+		SessionID int64 `json:"sessionId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "невалидный JSON", http.StatusBadRequest)
+		return
+	}
+	if req.SessionID == 0 {
+		jsonError(w, "sessionId обязателен", http.StatusBadRequest)
+		return
+	}
+
+	// Даём достаточно времени чтобы выйти из всех чатов
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	h.log.Info("DeleteSession: запрос удаления", zap.Int64("sessionID", req.SessionID))
+
+	if err := h.pool.RemoveSession(ctx, req.SessionID); err != nil {
+		h.log.Error("DeleteSession: ошибка", zap.Int64("sessionID", req.SessionID), zap.Error(err))
+		jsonError(w, "ошибка удаления: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	h.log.Info("DeleteSession: ✅ успешно", zap.Int64("sessionID", req.SessionID))
+	jsonOK(w, map[string]any{"status": "ok", "sessionId": req.SessionID})
 }
 
 // LeaveChat — POST /admin/chats/leave
@@ -181,10 +230,7 @@ func (h *Handlers) SubscribeChat(w http.ResponseWriter, r *http.Request) {
 	chatTgID, title, err := session.JoinChat(ctx, req.ChatLink)
 	if err != nil {
 		h.log.Error("не удалось вступить в чат",
-			zap.Int64("userID", req.UserID),
-			zap.String("chatLink", req.ChatLink),
-			zap.Error(err),
-		)
+			zap.Int64("userID", req.UserID), zap.String("chatLink", req.ChatLink), zap.Error(err))
 		jsonError(w, "ошибка вступления: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -207,31 +253,13 @@ func (h *Handlers) SubscribeChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if chatTgID != 0 {
-		go session.ProcessChatHistory(
-			context.Background(),
-			req.UserID,
-			chatTgID,
-			req.ChatLink,
-			title,
-		)
-	} else {
-		h.log.Info("chatTgID=0 — история запустится после join из очереди",
-			zap.Int64("userID", req.UserID),
-			zap.String("chatLink", req.ChatLink),
-		)
+		go session.ProcessChatHistory(context.Background(), req.UserID, chatTgID, req.ChatLink, title)
 	}
 
 	h.log.Info("пользователь подписан на чат",
-		zap.Int64("userID", req.UserID),
-		zap.String("chatLink", req.ChatLink),
-		zap.Int64("chatTgID", chatTgID),
-	)
+		zap.Int64("userID", req.UserID), zap.String("chatLink", req.ChatLink), zap.Int64("chatTgID", chatTgID))
 
-	jsonOK(w, map[string]any{
-		"status":   "ok",
-		"chatTgID": chatTgID,
-		"title":    title,
-	})
+	jsonOK(w, map[string]any{"status": "ok", "chatTgID": chatTgID, "title": title})
 }
 
 func (h *Handlers) UnsubscribeChat(w http.ResponseWriter, r *http.Request) {
@@ -258,9 +286,7 @@ func (h *Handlers) UnsubscribeChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.log.Info("пользователь отписан от чата",
-		zap.Int64("userID", req.UserID),
-		zap.String("chatLink", req.ChatLink),
-	)
+		zap.Int64("userID", req.UserID), zap.String("chatLink", req.ChatLink))
 
 	jsonOK(w, map[string]any{"status": "ok"})
 }
@@ -286,9 +312,7 @@ func (h *Handlers) UpdateKeywords(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.handler.UpdateKeywordsWithVariants(ctx, req.UserID, req.Keywords, req.AllVariants); err != nil {
 		h.log.Error("UpdateKeywordsWithVariants завершился ошибкой",
-			zap.Int64("userID", req.UserID),
-			zap.Error(err),
-		)
+			zap.Int64("userID", req.UserID), zap.Error(err))
 		jsonError(w, "не удалось обновить ключевые слова: "+err.Error(), http.StatusInternalServerError)
 		return
 	}

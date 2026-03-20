@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { keywordsApi, businessContextApi, type Keyword } from '../api/leads.ts'
+import { authApi } from '../api/auth'
 import { useAuthContext } from '../context/AuthContext'
 import s from './Keywordspage.module.css'
+import { CHAT_SEARCH_QUERY_KEY } from './chatSearchShared'
 
 const MAX_KEYWORDS = 50
 
@@ -11,13 +13,11 @@ const SUGGESTIONS = [
     'ищу менеджера', 'нужен монтажёр',
 ]
 
-// Ключ для сохранения AI-подсказок в sessionStorage
 const AI_SUGGESTIONS_KEY = 'aimly_keywords_ai_suggestions'
 
 function saveAiSuggestions(suggestions: string[]) {
     try { sessionStorage.setItem(AI_SUGGESTIONS_KEY, JSON.stringify(suggestions)) } catch { /* ignore */ }
 }
-
 function loadAiSuggestions(): string[] {
     try {
         const raw = sessionStorage.getItem(AI_SUGGESTIONS_KEY)
@@ -25,13 +25,20 @@ function loadAiSuggestions(): string[] {
         return JSON.parse(raw) as string[]
     } catch { return [] }
 }
-
 function clearAiSuggestions() {
     try { sessionStorage.removeItem(AI_SUGGESTIONS_KEY) } catch { /* ignore */ }
 }
 
-// ─── Icons ────────────────────────────────────────────────────────────────────
+// ЗАДАЧА 4: читаем и очищаем сохранённый запрос из ChatsPage
+function popChatSearchQuery(): string | null {
+    try {
+        const val = sessionStorage.getItem(CHAT_SEARCH_QUERY_KEY)
+        if (val) sessionStorage.removeItem(CHAT_SEARCH_QUERY_KEY)
+        return val
+    } catch { return null }
+}
 
+// ─── Icons ────────────────────────────────────────────────────────────────────
 function SearchIcon() {
     return (
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
@@ -40,29 +47,24 @@ function SearchIcon() {
         </svg>
     )
 }
-
 function InfoIcon() {
     return (
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
              stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="10"/>
-            <line x1="12" y1="8" x2="12" y2="12"/>
-            <line x1="12" y1="16" x2="12.01" y2="16"/>
+            <line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
         </svg>
     )
 }
-
 function AlertIcon() {
     return (
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
              stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-            <line x1="12" y1="9" x2="12" y2="13"/>
-            <line x1="12" y1="17" x2="12.01" y2="17"/>
+            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
         </svg>
     )
 }
-
 function SparkleIcon() {
     return (
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
@@ -71,7 +73,6 @@ function SparkleIcon() {
         </svg>
     )
 }
-
 function CloseIcon() {
     return (
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
@@ -81,14 +82,11 @@ function CloseIcon() {
     )
 }
 
-// ─── API ──────────────────────────────────────────────────────────────────────
-
 const BASE: string = import.meta.env.VITE_API_URL || ''
 
 async function generateKeywordsFromContext(businessContext: string): Promise<string[]> {
     const res = await fetch(`${BASE}/api/v1/keywords/generate`, {
-        method: 'POST',
-        credentials: 'include',
+        method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ businessContext }),
     })
@@ -106,17 +104,13 @@ async function getServiceOffersApi(): Promise<boolean> {
     const data = await res.json() as { respondToServiceOffers: boolean }
     return data.respondToServiceOffers
 }
-
 async function setServiceOffersApi(enabled: boolean): Promise<void> {
     await fetch(`${BASE}/api/v1/settings/service-offers`, {
-        method: 'POST',
-        credentials: 'include',
+        method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled }),
     })
 }
-
-// ─── ServiceOffersToggle ──────────────────────────────────────────────────────
 
 function ServiceOffersToggle() {
     const [enabled, setEnabled] = useState(false)
@@ -132,28 +126,17 @@ function ServiceOffersToggle() {
         setSaving(true)
         const next = !enabled
         setEnabled(next)
-        try {
-            await setServiceOffersApi(next)
-        } catch {
-            setEnabled(!next)
-        } finally {
-            setSaving(false)
-        }
+        try { await setServiceOffersApi(next) }
+        catch { setEnabled(!next) }
+        finally { setSaving(false) }
     }
 
     if (!ready) return null
-
     return (
         <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 16,
-            background: 'var(--c-surface)',
-            border: '1.5px solid var(--c-border)',
-            borderRadius: 14,
-            padding: '14px 18px',
-            transition: 'border-color .15s',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
+            background: 'var(--c-surface)', border: '1.5px solid var(--c-border)',
+            borderRadius: 14, padding: '14px 18px', transition: 'border-color .15s',
         }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
                 <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--c-ink)' }}>
@@ -165,45 +148,24 @@ function ServiceOffersToggle() {
                         : 'AI игнорирует предложения услуг — стандартный режим для поиска клиентов'}
                 </span>
             </div>
-            <button
-                onClick={toggle}
-                disabled={saving}
-                aria-pressed={enabled}
-                style={{
-                    flexShrink: 0,
-                    width: 44,
-                    height: 24,
-                    borderRadius: 12,
-                    border: 'none',
-                    cursor: saving ? 'default' : 'pointer',
-                    position: 'relative',
-                    padding: 0,
-                    background: enabled ? 'var(--c-accent)' : 'var(--c-border)',
-                    transition: 'background .2s',
-                    opacity: saving ? 0.6 : 1,
-                }}
-            >
+            <button onClick={toggle} disabled={saving} aria-pressed={enabled} style={{
+                flexShrink: 0, width: 44, height: 24, borderRadius: 12, border: 'none',
+                cursor: saving ? 'default' : 'pointer', position: 'relative', padding: 0,
+                background: enabled ? 'var(--c-accent)' : 'var(--c-border)',
+                transition: 'background .2s', opacity: saving ? 0.6 : 1,
+            }}>
                 <span style={{
-                    display: 'block',
-                    width: 18,
-                    height: 18,
-                    borderRadius: '50%',
-                    background: '#fff',
-                    position: 'absolute',
-                    top: 3,
-                    left: enabled ? 23 : 3,
-                    transition: 'left .2s',
-                    boxShadow: '0 1px 4px rgba(0,0,0,.18)',
+                    display: 'block', width: 18, height: 18, borderRadius: '50%', background: '#fff',
+                    position: 'absolute', top: 3, left: enabled ? 23 : 3,
+                    transition: 'left .2s', boxShadow: '0 1px 4px rgba(0,0,0,.18)',
                 }} />
             </button>
         </div>
     )
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
-
 export default function KeywordsPage() {
-    const { user } = useAuthContext()
+    const { user, refreshUser } = useAuthContext()
     const [keywords, setKeywords]       = useState<Keyword[]>([])
     const [loading, setLoading]         = useState(true)
     const [input, setInput]             = useState('')
@@ -223,30 +185,51 @@ export default function KeywordsPage() {
     const [aiError, setAiError]           = useState('')
     const [addingAi, setAddingAi]         = useState(false)
 
+    const [chatSearchQueryBanner, setChatSearchQueryBanner] = useState<string | null>(null)
+
+    const [trialBotLoading, setTrialBotLoading] = useState(false)
+
     const plan   = user?.subscriptionPlan   ?? null
     const status = user?.subscriptionStatus ?? null
-    const hasAiFeatures = plan === 'MINIMUM' || plan === 'START' || status === 'TRIAL'
+    const hasAiFeatures = plan === 'START' || plan === 'BUSINESS' || status === 'TRIAL'
 
     const atLimit = keywords.length >= MAX_KEYWORDS
 
-    // ─── Восстановление AI-подсказок из sessionStorage ───────────────────────
+    const handleTrialBotOpen = async () => {
+        setTrialBotLoading(true)
+        try {
+            const res = await authApi.getTelegramLink()
+            const link = `https://t.me/${res.botUsername}?start=${res.linkToken}`
+            window.open(link, '_blank', 'noopener,noreferrer')
+            setTimeout(() => refreshUser(), 5000)
+        } catch {
+            window.open('https://t.me/aimlyAIbot', '_blank', 'noopener,noreferrer')
+        } finally {
+            setTrialBotLoading(false)
+        }
+    }
+
     useEffect(() => {
         const saved = loadAiSuggestions()
-        if (saved.length > 0) {
-            setAiSuggestions(saved)
-        }
+        if (saved.length > 0) setAiSuggestions(saved)
     }, [])
 
     useEffect(() => {
-        keywordsApi
-            .list()
+        if (!hasAiFeatures) return
+        const q = popChatSearchQuery()
+        if (q && q.trim().length > 3) {
+            setChatSearchQueryBanner(q)
+        }
+    }, [hasAiFeatures])
+
+    useEffect(() => {
+        keywordsApi.list()
             .then(setKeywords)
             .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Ошибка загрузки'))
             .finally(() => setLoading(false))
 
         if (hasAiFeatures) {
-            businessContextApi
-                .get()
+            businessContextApi.get()
                 .then(r => {
                     const v = r.businessContext ?? ''
                     setBizContext(v)
@@ -259,14 +242,36 @@ export default function KeywordsPage() {
         }
     }, [hasAiFeatures])
 
-    // Сохраняем AI-подсказки в sessionStorage при каждом изменении
     useEffect(() => {
-        if (aiSuggestions.length > 0) {
-            saveAiSuggestions(aiSuggestions)
-        } else {
-            clearAiSuggestions()
-        }
+        if (aiSuggestions.length > 0) saveAiSuggestions(aiSuggestions)
+        else clearAiSuggestions()
     }, [aiSuggestions])
+
+    const applyBannerQuery = () => {
+        if (!chatSearchQueryBanner) return
+        setBizContext(prev => {
+            if (!prev.trim()) return chatSearchQueryBanner
+            return prev
+        })
+        setChatSearchQueryBanner(null)
+    }
+
+    const generateFromBannerQuery = async () => {
+        if (!chatSearchQueryBanner) return
+        const query = chatSearchQueryBanner
+        setChatSearchQueryBanner(null)
+        setAiGenerating(true)
+        setAiError('')
+        setAiSuggestions([])
+        try {
+            const generated = await generateKeywordsFromContext(query)
+            setAiSuggestions(generated)
+        } catch (e: unknown) {
+            setAiError(e instanceof Error ? e.message : 'Не удалось сгенерировать ключевые слова')
+        } finally {
+            setAiGenerating(false)
+        }
+    }
 
     const add = async (kw?: string) => {
         const word = (kw ?? input).trim()
@@ -275,17 +280,14 @@ export default function KeywordsPage() {
             setError(`Достигнут лимит — максимум ${MAX_KEYWORDS} ключевых слов`)
             return
         }
-        setAdding(true)
-        setError('')
+        setAdding(true); setError('')
         try {
             const added = await keywordsApi.add(word)
             setKeywords(prev => prev.find(k => k.id === added.id) ? prev : [...prev, added])
             if (!kw) setInput('')
         } catch (e: unknown) {
             setError(e instanceof Error ? e.message : 'Не удалось добавить')
-        } finally {
-            setAdding(false)
-        }
+        } finally { setAdding(false) }
     }
 
     const remove = async (id: number) => {
@@ -295,25 +297,18 @@ export default function KeywordsPage() {
             setKeywords(prev => prev.filter(k => k.id !== id))
         } catch (e: unknown) {
             setError(e instanceof Error ? e.message : 'Ошибка удаления')
-        } finally {
-            setRemoving(null)
-        }
+        } finally { setRemoving(null) }
     }
 
     const saveBizContext = async () => {
-        setBizSaving(true)
-        setBizError('')
-        setBizSuccess(false)
-        setAiSuggestions([])
-        setAiError('')
+        setBizSaving(true); setBizError(''); setBizSuccess(false)
+        setAiSuggestions([]); setAiError('')
         try {
             const res = await businessContextApi.save(bizContext)
             const v = res.businessContext ?? ''
-            setBizContext(v)
-            setBizContextSaved(v)
+            setBizContext(v); setBizContextSaved(v)
             setBizSuccess(true)
             setTimeout(() => setBizSuccess(false), 2500)
-
             if (v.trim().length > 20) {
                 setAiGenerating(true)
                 try {
@@ -321,15 +316,11 @@ export default function KeywordsPage() {
                     setAiSuggestions(generated)
                 } catch (e: unknown) {
                     setAiError(e instanceof Error ? e.message : 'Не удалось сгенерировать ключевые слова')
-                } finally {
-                    setAiGenerating(false)
-                }
+                } finally { setAiGenerating(false) }
             }
         } catch (e: unknown) {
             setBizError(e instanceof Error ? e.message : 'Ошибка сохранения')
-        } finally {
-            setBizSaving(false)
-        }
+        } finally { setBizSaving(false) }
     }
 
     const generateKeywords = async () => {
@@ -337,17 +328,13 @@ export default function KeywordsPage() {
             setAiError('Сначала заполните и сохраните описание бизнеса')
             return
         }
-        setAiGenerating(true)
-        setAiError('')
-        setAiSuggestions([])
+        setAiGenerating(true); setAiError(''); setAiSuggestions([])
         try {
             const generated = await generateKeywordsFromContext(bizContextSaved)
             setAiSuggestions(generated)
         } catch (e: unknown) {
             setAiError(e instanceof Error ? e.message : 'Не удалось сгенерировать ключевые слова')
-        } finally {
-            setAiGenerating(false)
-        }
+        } finally { setAiGenerating(false) }
     }
 
     const addAiSuggestion = async (kw: string) => {
@@ -362,14 +349,12 @@ export default function KeywordsPage() {
             setKeywords(prev => prev.find(k => k.id === added.id) ? prev : [...prev, added])
         } catch (e: unknown) {
             setError(e instanceof Error ? e.message : 'Не удалось добавить')
-            // Возвращаем обратно если не добавилось
             setAiSuggestions(prev => [kw, ...prev])
         }
     }
 
-    const dismissAiSuggestion = (kw: string) => {
-        setAiSuggestions(prev => prev.filter(s => s !== kw))
-    }
+    const dismissAiSuggestion   = (kw: string) => setAiSuggestions(prev => prev.filter(s => s !== kw))
+    const dismissAllAiSuggestions = () => setAiSuggestions([])
 
     const addAllAiSuggestions = async () => {
         if (atLimit || addingAi) return
@@ -381,15 +366,9 @@ export default function KeywordsPage() {
                 const added = await keywordsApi.add(kw)
                 setKeywords(prev => prev.find(k => k.id === added.id) ? prev : [...prev, added])
                 setAiSuggestions(prev => prev.filter(s => s !== kw))
-            } catch {
-                // пропускаем дубли
-            }
+            } catch { /* пропускаем дубли */ }
         }
         setAddingAi(false)
-    }
-
-    const dismissAllAiSuggestions = () => {
-        setAiSuggestions([])
     }
 
     const unused = SUGGESTIONS.filter(s => !keywords.some(k => k.keyword.toLowerCase() === s.toLowerCase()))
@@ -409,16 +388,72 @@ export default function KeywordsPage() {
                 )}
             </div>
 
+            {/* ЗАДАЧА 4: баннер — предлагаем заполнить форму по запросу из чатов */}
+            {chatSearchQueryBanner && hasAiFeatures && (
+                <div style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap',
+                    background: 'var(--c-accent-soft)', border: '1.5px solid var(--c-accent)',
+                    borderRadius: 12, padding: '14px 16px',
+                }}>
+                    <span style={{ color: 'var(--c-accent)', flexShrink: 0, marginTop: 2 }}><SparkleIcon /></span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 600, color: 'var(--c-ink)' }}>
+                            Вы только что искали чаты по запросу:
+                        </p>
+                        <p style={{ margin: '0 0 10px', fontSize: 13, color: 'var(--c-accent)', fontWeight: 700 }}>
+                            «{chatSearchQueryBanner}»
+                        </p>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            <button
+                                onClick={generateFromBannerQuery}
+                                disabled={aiGenerating}
+                                style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                                    padding: '8px 16px', borderRadius: 8,
+                                    background: 'var(--c-accent)', color: '#fff',
+                                    border: 'none', fontSize: 12, fontWeight: 600,
+                                    cursor: aiGenerating ? 'default' : 'pointer',
+                                    fontFamily: 'var(--font-body)', opacity: aiGenerating ? 0.7 : 1,
+                                }}
+                            >
+                                <SparkleIcon />
+                                {aiGenerating ? 'Генерируем…' : 'Сгенерировать ключевые слова'}
+                            </button>
+                            <button
+                                onClick={applyBannerQuery}
+                                style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                                    padding: '8px 16px', borderRadius: 8,
+                                    background: 'transparent', color: 'var(--c-accent)',
+                                    border: '1.5px solid var(--c-accent)', fontSize: 12, fontWeight: 600,
+                                    cursor: 'pointer', fontFamily: 'var(--font-body)',
+                                }}
+                            >
+                                Использовать как описание бизнеса
+                            </button>
+                            <button
+                                onClick={() => setChatSearchQueryBanner(null)}
+                                style={{
+                                    display: 'inline-flex', alignItems: 'center',
+                                    padding: '8px 10px', borderRadius: 8,
+                                    background: 'transparent', color: 'var(--c-ink-3)',
+                                    border: '1.5px solid var(--c-border)', cursor: 'pointer',
+                                    fontFamily: 'var(--font-body)',
+                                }}
+                                title="Закрыть"
+                            >
+                                <CloseIcon />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* ─── AI-персонализация ─── */}
             {hasAiFeatures ? (
                 <div style={{
-                    background: 'var(--c-surface)',
-                    border: '1.5px solid var(--c-border)',
-                    borderRadius: 14,
-                    padding: '20px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 14,
+                    background: 'var(--c-surface)', border: '1.5px solid var(--c-border)',
+                    borderRadius: 14, padding: '20px', display: 'flex', flexDirection: 'column', gap: 14,
                 }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -439,19 +474,11 @@ export default function KeywordsPage() {
                             placeholder="Пример: я SMM-специалист, помогаю малому бизнесу с ведением Instagram и ВКонтакте, делаю контент-планы, таргетированную рекламу..."
                             rows={4}
                             style={{
-                                width: '100%',
-                                padding: '12px 14px',
-                                background: 'var(--c-bg)',
-                                border: '1.5px solid var(--c-border)',
-                                borderRadius: 10,
-                                color: 'var(--c-ink)',
-                                fontSize: 13,
-                                outline: 'none',
-                                resize: 'vertical',
-                                fontFamily: 'var(--font-body)',
-                                lineHeight: 1.55,
-                                boxSizing: 'border-box',
-                                transition: 'border-color .15s',
+                                width: '100%', padding: '12px 14px',
+                                background: 'var(--c-bg)', border: '1.5px solid var(--c-border)',
+                                borderRadius: 10, color: 'var(--c-ink)', fontSize: 13,
+                                outline: 'none', resize: 'vertical', fontFamily: 'var(--font-body)',
+                                lineHeight: 1.55, boxSizing: 'border-box', transition: 'border-color .15s',
                             }}
                             onFocus={e => (e.target.style.borderColor = 'var(--c-accent)')}
                             onBlur={e => (e.target.style.borderColor = 'var(--c-border)')}
@@ -466,15 +493,14 @@ export default function KeywordsPage() {
                                 style={{
                                     display: 'inline-flex', alignItems: 'center', gap: 6,
                                     padding: '9px 18px', borderRadius: 9,
-                                    background: 'var(--c-accent)', color: '#fff',
-                                    border: 'none',
+                                    background: 'var(--c-accent)', color: '#fff', border: 'none',
                                     fontSize: 13, fontWeight: 600,
                                     cursor: (bizSaving || bizContext === bizContextSaved) ? 'default' : 'pointer',
                                     fontFamily: 'var(--font-body)', transition: 'all .15s',
                                     opacity: (bizSaving || bizContext === bizContextSaved) ? 0.6 : 1,
                                 }}
                             >
-                                {bizSaving ? 'Сохраняем...' : bizSuccess ? 'Сохранено' : 'Сохранить'}
+                                {bizSaving ? 'Сохраняем...' : bizSuccess ? 'Сохранено ✓' : 'Сохранить'}
                             </button>
 
                             {bizContextSaved.trim().length > 20 && (
@@ -485,8 +511,7 @@ export default function KeywordsPage() {
                                         display: 'inline-flex', alignItems: 'center', gap: 6,
                                         padding: '9px 18px', borderRadius: 9,
                                         background: aiGenerating ? 'var(--c-surface)' : 'var(--c-green-soft)',
-                                        border: '1.5px solid var(--c-green)',
-                                        color: 'var(--c-green)',
+                                        border: '1.5px solid var(--c-green)', color: 'var(--c-green)',
                                         fontSize: 13, fontWeight: 600,
                                         cursor: aiGenerating ? 'default' : 'pointer',
                                         fontFamily: 'var(--font-body)', transition: 'all .15s',
@@ -498,66 +523,48 @@ export default function KeywordsPage() {
                                 </button>
                             )}
                         </div>
-
                         <span style={{ fontSize: 12, color: 'var(--c-ink-3)' }}>
-                            {bizContext.length} / 2000
+                            {bizContext.length}/2000
                         </span>
                     </div>
 
                     {bizError && (
-                        <div className={s.error}>
-                            <span style={{ display: 'flex', flexShrink: 0 }}><AlertIcon /></span>
-                            <span>{bizError}</span>
-                        </div>
-                    )}
-
-                    {aiGenerating && (
-                        <div style={{
-                            padding: '16px 18px',
-                            background: 'var(--c-accent-soft)',
-                            borderRadius: 10,
-                            border: '1.5px solid rgba(92,57,223,.15)',
-                            display: 'flex', alignItems: 'center', gap: 10,
-                            fontSize: 13, color: 'var(--c-accent)',
-                        }}>
-                            <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>✦</span>
-                            AI анализирует ваш бизнес и подбирает ключевые слова...
+                        <div style={{ fontSize: 12, color: '#dc2626', display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <AlertIcon />{bizError}
                         </div>
                     )}
 
                     {aiError && (
-                        <div className={s.error}>
-                            <span style={{ display: 'flex', flexShrink: 0 }}><AlertIcon /></span>
-                            <span>Ошибка генерации: {aiError}</span>
+                        <div style={{ fontSize: 12, color: '#dc2626', display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <AlertIcon />{aiError}
+                        </div>
+                    )}
+
+                    {aiGenerating && aiSuggestions.length === 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--c-ink-3)' }}>
+                            <span className={s.spinnerXs} /> Генерируем ключевые слова...
                         </div>
                     )}
 
                     {aiSuggestions.length > 0 && (
                         <div style={{
-                            padding: '16px 18px',
-                            background: 'var(--c-surface)',
-                            border: '1.5px solid var(--c-green)',
-                            borderRadius: 12,
                             display: 'flex', flexDirection: 'column', gap: 12,
+                            background: 'var(--c-bg)', borderRadius: 10, padding: '14px',
+                            border: '1px solid var(--c-border)',
                         }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-                                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--c-ink)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <span style={{ color: 'var(--c-green)' }}><SparkleIcon /></span>
-                                    AI сгенерировал {aiSuggestions.length} ключевых слов
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--c-ink)' }}>
+                                    AI предлагает {aiSuggestions.length} ключевых слов
                                 </span>
                                 <div style={{ display: 'flex', gap: 8 }}>
                                     <button
                                         onClick={addAllAiSuggestions}
                                         disabled={atLimit || addingAi}
-                                        title={atLimit ? `Лимит ${MAX_KEYWORDS} слов достигнут` : undefined}
                                         style={{
                                             padding: '6px 14px', borderRadius: 8,
-                                            background: (atLimit || addingAi) ? 'var(--c-border)' : 'var(--c-green)',
-                                            color: '#fff',
-                                            border: 'none', fontSize: 12, fontWeight: 600,
-                                            cursor: (atLimit || addingAi) ? 'default' : 'pointer',
-                                            fontFamily: 'var(--font-body)',
-                                            opacity: (atLimit || addingAi) ? 0.5 : 1,
+                                            background: 'var(--c-accent)', color: '#fff', border: 'none',
+                                            fontSize: 12, fontWeight: 600, cursor: atLimit ? 'default' : 'pointer',
+                                            fontFamily: 'var(--font-body)', opacity: atLimit ? 0.6 : 1,
                                         }}
                                     >
                                         {addingAi ? 'Добавляем...' : 'Добавить все'}
@@ -567,13 +574,9 @@ export default function KeywordsPage() {
                                         disabled={addingAi}
                                         style={{
                                             padding: '6px 14px', borderRadius: 8,
-                                            background: 'transparent',
-                                            color: 'var(--c-ink-3)',
-                                            border: '1.5px solid var(--c-border)',
-                                            fontSize: 12, fontWeight: 600,
-                                            cursor: 'pointer',
-                                            fontFamily: 'var(--font-body)',
-                                            transition: 'all .15s',
+                                            background: 'transparent', color: 'var(--c-ink-3)',
+                                            border: '1.5px solid var(--c-border)', fontSize: 12, fontWeight: 600,
+                                            cursor: 'pointer', fontFamily: 'var(--font-body)', transition: 'all .15s',
                                         }}
                                         onMouseEnter={e => {
                                             (e.currentTarget as HTMLButtonElement).style.borderColor = '#ef4444'
@@ -588,33 +591,23 @@ export default function KeywordsPage() {
                                     </button>
                                 </div>
                             </div>
-
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                                 {aiSuggestions.map(kw => (
-                                    <div
-                                        key={kw}
-                                        style={{
-                                            display: 'inline-flex', alignItems: 'center',
-                                            borderRadius: 20,
-                                            background: 'var(--c-green-soft)',
-                                            border: '1.5px solid var(--c-green)',
-                                            overflow: 'hidden',
-                                        }}
-                                    >
+                                    <div key={kw} style={{
+                                        display: 'inline-flex', alignItems: 'center', borderRadius: 20,
+                                        background: 'var(--c-green-soft)', border: '1.5px solid var(--c-green)',
+                                        overflow: 'hidden',
+                                    }}>
                                         <button
                                             onClick={() => addAiSuggestion(kw)}
                                             disabled={atLimit}
                                             title={atLimit ? `Лимит ${MAX_KEYWORDS} слов достигнут` : 'Добавить'}
                                             style={{
                                                 display: 'inline-flex', alignItems: 'center', gap: 5,
-                                                padding: '6px 10px 6px 12px',
-                                                background: 'transparent', border: 'none',
-                                                color: 'var(--c-green)',
-                                                fontSize: 12, fontWeight: 600,
-                                                cursor: atLimit ? 'default' : 'pointer',
-                                                fontFamily: 'var(--font-body)',
-                                                transition: 'all .15s',
-                                                opacity: atLimit ? 0.5 : 1,
+                                                padding: '6px 10px 6px 12px', background: 'transparent',
+                                                border: 'none', color: 'var(--c-green)', fontSize: 12, fontWeight: 600,
+                                                cursor: atLimit ? 'default' : 'pointer', fontFamily: 'var(--font-body)',
+                                                transition: 'all .15s', opacity: atLimit ? 0.5 : 1,
                                             }}
                                             onMouseEnter={e => {
                                                 if (!atLimit) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(16,185,129,.15)'
@@ -622,21 +615,15 @@ export default function KeywordsPage() {
                                             onMouseLeave={e => {
                                                 (e.currentTarget as HTMLButtonElement).style.background = 'transparent'
                                             }}
-                                        >
-                                            + {kw}
-                                        </button>
+                                        >+ {kw}</button>
                                         <button
                                             onClick={() => dismissAiSuggestion(kw)}
                                             title="Отклонить"
                                             style={{
                                                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                                width: 24, height: '100%',
-                                                padding: '0 6px 0 2px',
-                                                background: 'transparent', border: 'none',
-                                                color: 'var(--c-green)',
-                                                cursor: 'pointer',
-                                                transition: 'color .15s',
-                                                opacity: 0.6,
+                                                width: 24, height: '100%', padding: '0 6px 0 2px',
+                                                background: 'transparent', border: 'none', color: 'var(--c-green)',
+                                                cursor: 'pointer', transition: 'color .15s', opacity: 0.6,
                                             }}
                                             onMouseEnter={e => {
                                                 (e.currentTarget as HTMLButtonElement).style.opacity = '1'
@@ -646,15 +633,12 @@ export default function KeywordsPage() {
                                                 (e.currentTarget as HTMLButtonElement).style.opacity = '0.6'
                                                 ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--c-green)'
                                             }}
-                                        >
-                                            <CloseIcon />
-                                        </button>
+                                        ><CloseIcon /></button>
                                     </div>
                                 ))}
                             </div>
-
                             <p style={{ fontSize: 12, color: 'var(--c-ink-3)', margin: 0 }}>
-                                Нажмите на фразу чтобы добавить, × чтобы отклонить одну, или используйте кнопки выше
+                                Нажмите на фразу чтобы добавить, × чтобы отклонить, или используйте кнопки выше
                             </p>
                         </div>
                     )}
@@ -663,32 +647,41 @@ export default function KeywordsPage() {
                 </div>
             ) : (
                 <div style={{
-                    background: 'var(--c-bg)',
-                    border: '1.5px dashed var(--c-border)',
-                    borderRadius: 12,
-                    padding: '20px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 10,
+                    background: 'var(--c-bg)', border: '1.5px dashed var(--c-border)',
+                    borderRadius: 12, padding: '20px', display: 'flex', flexDirection: 'column', gap: 10,
                 }}>
                     <p style={{ fontSize: 13, color: 'var(--c-ink-2)', margin: 0, lineHeight: 1.5 }}>
-                        Персонализация AI и генерация ключевых слов доступны на тарифе <b>МИНИМУМ</b>.
-                        Опишите ваш бизнес один раз, и система будет автоматически подбирать релевантные лиды.
+                        {!user?.trialUsed
+                            ? <>Персонализация AI и генерация ключевых слов доступны на тарифе <b>START</b> — попробуйте trial период на 5 дней бесплатно.</>
+                            : <>Персонализация AI и генерация ключевых слов доступны на тарифе <b>START</b>. Опишите ваш бизнес один раз, и система будет автоматически подбирать релевантные лиды.</>
+                        }
                     </p>
-                    <a
-                        href="/checkout"
-                        style={{
+                    {!user?.trialUsed ? (
+                        <button
+                            onClick={handleTrialBotOpen}
+                            disabled={trialBotLoading}
+                            style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 6,
+                                padding: '9px 18px', borderRadius: 9, background: 'var(--c-accent)', color: '#fff',
+                                fontSize: 13, fontWeight: 600, border: 'none', width: 'fit-content',
+                                cursor: trialBotLoading ? 'default' : 'pointer', transition: 'opacity .15s',
+                                fontFamily: 'var(--font-body)', opacity: trialBotLoading ? 0.7 : 1,
+                            }}
+                            onMouseEnter={e => { if (!trialBotLoading) (e.currentTarget as HTMLButtonElement).style.opacity = '0.85' }}
+                            onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.opacity = trialBotLoading ? '0.7' : '1'}
+                        >
+                            {trialBotLoading ? 'Открываем...' : '🚀 Запустить бота бесплатно'}
+                        </button>
+                    ) : (
+                        <a href="/checkout" style={{
                             display: 'inline-flex', alignItems: 'center', gap: 6,
-                            padding: '9px 18px', borderRadius: 9,
-                            background: 'var(--c-accent)', color: '#fff',
-                            fontSize: 13, fontWeight: 600, textDecoration: 'none',
-                            width: 'fit-content', transition: 'opacity .15s',
+                            padding: '9px 18px', borderRadius: 9, background: 'var(--c-accent)', color: '#fff',
+                            fontSize: 13, fontWeight: 600, textDecoration: 'none', width: 'fit-content', transition: 'opacity .15s',
                         }}
-                        onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.opacity = '0.85'}
-                        onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.opacity = '1'}
-                    >
-                        Подключить тариф →
-                    </a>
+                           onMouseEnter={e => (e.currentTarget as HTMLAnchorElement).style.opacity = '0.85'}
+                           onMouseLeave={e => (e.currentTarget as HTMLAnchorElement).style.opacity = '1'}
+                        >Подключить тариф →</a>
+                    )}
                 </div>
             )}
 
@@ -707,16 +700,12 @@ export default function KeywordsPage() {
                             autoComplete="off"
                         />
                     </div>
-                    <button
-                        className={s.addBtn}
-                        onClick={() => add()}
-                        disabled={adding || !input.trim() || atLimit}
-                        title={atLimit ? `Максимум ${MAX_KEYWORDS} ключевых слов` : undefined}
-                    >
+                    <button className={s.addBtn} onClick={() => add()}
+                            disabled={adding || !input.trim() || atLimit}
+                            title={atLimit ? `Максимум ${MAX_KEYWORDS} ключевых слов` : undefined}>
                         {adding ? <span className={s.spinner} /> : <>+ Добавить</>}
                     </button>
                 </div>
-
                 {unused.length > 0 && !atLimit && (
                     <div className={s.suggestions}>
                         <span className={s.sugLabel}>Популярные:</span>
@@ -744,9 +733,7 @@ export default function KeywordsPage() {
             )}
 
             {loading ? (
-                <div className={s.skels}>
-                    {[...Array(4)].map((_, i) => <div key={i} className={s.skel} />)}
-                </div>
+                <div className={s.skels}>{[...Array(4)].map((_, i) => <div key={i} className={s.skel} />)}</div>
             ) : keywords.length === 0 ? (
                 <div className={s.empty}>
                     <div className={s.emptyIcon}><SearchIcon /></div>
@@ -764,12 +751,8 @@ export default function KeywordsPage() {
                             <div key={kw.id} className={s.chip}>
                                 <span className={s.chipDot} />
                                 <span className={s.chipText}>{kw.keyword}</span>
-                                <button
-                                    className={s.chipDel}
-                                    onClick={() => remove(kw.id)}
-                                    disabled={removing === kw.id}
-                                    title="Удалить"
-                                >
+                                <button className={s.chipDel} onClick={() => remove(kw.id)}
+                                        disabled={removing === kw.id} title="Удалить">
                                     {removing === kw.id ? <span className={s.spinnerXs} /> : (
                                         <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                                             <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>

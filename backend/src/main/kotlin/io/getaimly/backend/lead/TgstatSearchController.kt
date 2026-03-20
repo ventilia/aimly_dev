@@ -8,7 +8,11 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.*
 
 
-data class TgstatSearchRequest(val query: String = "")
+
+data class TgstatSearchRequest(
+    val query: String = "",
+    val peerType: String? = null,
+)
 
 
 data class TgstatChannelResult(
@@ -42,10 +46,10 @@ class TgstatSearchController(
 
         val plan      = user.subscriptionPlan
         val status    = user.subscriptionStatus
-        val hasAccess = plan in setOf("MINIMUM", "START") || status == "TRIAL"
+        val hasAccess = plan in setOf("START", "BUSINESS") || status == "TRIAL"
         if (!hasAccess) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(mapOf("error" to "Поиск чатов доступен на тарифе MINIMUM и выше"))
+                .body(mapOf("error" to "Поиск чатов доступен на тарифе START и выше"))
         }
 
         val inputText = req.query.trim().ifBlank { user.businessContext?.trim() ?: "" }
@@ -54,9 +58,16 @@ class TgstatSearchController(
                 .body(mapOf("error" to "Введите запрос или заполните AI-профиль в настройках"))
         }
 
+        // Нормализуем peerType
+        val peerType = when (req.peerType?.lowercase()?.trim()) {
+            "chat"    -> "chat"
+            "channel" -> "channel"
+            else      -> null
+        }
+
         return try {
-            log.info("поиск чатов: userId=${user.id} query='${inputText.take(80)}'")
-            val searchResult = chatSearchService.search(inputText)
+            log.info("поиск чатов: userId=${user.id} query='${inputText.take(80)}' peerType=${peerType ?: "all"}")
+            val searchResult = chatSearchService.search(inputText, peerType)
             ResponseEntity.ok(
                 TgstatSearchResponse(
                     results = searchResult.results.map { it.toPublicDto() },

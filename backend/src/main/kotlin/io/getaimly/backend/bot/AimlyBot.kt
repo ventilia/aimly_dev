@@ -49,7 +49,13 @@ class AimlyBot(
 
     private val sessions = ConcurrentHashMap<Long, UserSession>()
 
-    // ─── Обработчики ──────────────────────────────────────────────────────────
+
+    private val paymentHandler = BotPaymentHandler(
+        sender           = sender,
+        userRepository   = userRepository,
+        expiryRepository = expiryRepository,
+    )
+
 
     private val authHandler = BotAuthHandler(
         sender         = sender,
@@ -57,6 +63,7 @@ class AimlyBot(
         userRepository = userRepository,
         leadRepository = leadRepository,
         authService    = authService,
+        paymentHandler = paymentHandler,
     )
 
     private val leadsHandler = BotLeadsHandler(
@@ -96,7 +103,6 @@ class AimlyBot(
         leadService            = leadService,
     )
 
-    /** Обработчик AI-поиска чатов */
     private val chatSearchHandler = BotChatSearchHandler(
         sender                 = sender,
         sessions               = sessions,
@@ -107,7 +113,6 @@ class AimlyBot(
         chatSearchService      = chatSearchService,
     )
 
-    // ─── Lifecycle ────────────────────────────────────────────────────────────
 
     @PostConstruct
     fun init() = log.info("AimlyBot запущен: @$botUsername")
@@ -126,7 +131,11 @@ class AimlyBot(
         sender.sendText(chatId, text)
     }
 
-    // ─── Основной диспетчер ───────────────────────────────────────────────────
+ //перегрузка
+    fun sendText(chatId: Long, text: String, markup: InlineKeyboardMarkup?) {
+        sender.sendText(chatId, text, markup)
+    }
+
 
     override fun consume(update: Update) {
         try {
@@ -147,14 +156,34 @@ class AimlyBot(
         val startToken = if (text.startsWith("/start ")) text.removePrefix("/start ").trim() else null
 
         when {
-            text == "/start"   -> authHandler.handleStart(chatId, from, null)
-            startToken != null -> { sessions.remove(chatId); authHandler.handleStart(chatId, from, startToken) }
-            text == "/cancel"  -> handleCancel(chatId)
-            text == "/help"    -> sendHelp(chatId)
-            text == "/status"  -> sendStatus(chatId, from.id)
-            text == "/leads"   -> {
+            text == "/start"    -> authHandler.handleStart(chatId, from, null)
+            startToken != null  -> { sessions.remove(chatId); authHandler.handleStart(chatId, from, startToken) }
+            text == "/cancel"   -> handleCancel(chatId)
+            text == "/help"     -> sendHelp(chatId)
+            text == "/status"   -> sendStatus(chatId, from.id)
+            text == "/leads"    -> {
                 val user = userRepository.findByTelegramId(from.id).orElse(null)
                 if (user != null) leadsHandler.showLeadsMenu(chatId, from.id)
+                else authHandler.showWelcome(chatId, from.firstName)
+            }
+            text == "/pay"      -> {
+                val user = userRepository.findByTelegramId(from.id).orElse(null)
+                if (user != null) paymentHandler.sendPaymentMessage(chatId, from.id)
+                else authHandler.handleStart(chatId, from, "pay")
+            }
+            text == "/chats"    -> {
+                val user = userRepository.findByTelegramId(from.id).orElse(null)
+                if (user != null) sender.sendText(chatId, "Для управления чатами используйте /start → Чаты.")
+                else authHandler.showWelcome(chatId, from.firstName)
+            }
+            text == "/profile"  -> {
+                val user = userRepository.findByTelegramId(from.id).orElse(null)
+                if (user != null) sender.sendText(chatId, "Для управления профилем используйте /start → Профиль.")
+                else authHandler.showWelcome(chatId, from.firstName)
+            }
+            text == "/keywords" -> {
+                val user = userRepository.findByTelegramId(from.id).orElse(null)
+                if (user != null) sender.sendText(chatId, "Для управления ключевыми словами используйте /start → Ключевые слова.")
                 else authHandler.showWelcome(chatId, from.firstName)
             }
 
@@ -180,7 +209,7 @@ class AimlyBot(
             BotStep.WAITING_CHAT_LINK            -> chatsHandler.handleChatLinkInput(chatId, text, from)
             BotStep.WAITING_KEYWORD              -> keywordsHandler.handleKeywordInput(chatId, text, from)
             BotStep.WAITING_CONTEXT              -> profileHandler.handleContextInput(chatId, text)
-            BotStep.WAITING_AI_KEYWORD_CONFIRM   -> { /* В этом состоянии ждём callback, не текст */ }
+            BotStep.WAITING_AI_KEYWORD_CONFIRM   -> {  }
             BotStep.WAITING_CHAT_SEARCH_QUERY    -> chatSearchHandler.handleSearchQueryInput(chatId, text, from)
         }
     }
@@ -202,16 +231,22 @@ class AimlyBot(
         val from   = q.from
         val data   = q.data ?: return
 
-        // noop — кнопки без действия (пагинация, счётчики)
         if (data == "noop") return
 
         when {
-            // ─── Auth ─────────────────────────────────────────────────────────
-            data == "auth:login"  -> authHandler.startLoginFlow(chatId, msgId)
-            data == "auth:cancel" -> { sessions.remove(chatId); sender.editText(chatId, msgId, "Отменено. Нажмите /start чтобы начать.") }
-            data == "auth:retry"  -> authHandler.startLoginFlow(chatId, msgId)
+            data == "auth:login"     -> authHandler.startLoginFlow(chatId, msgId)
+            data == "auth:cancel"    -> { sessions.remove(chatId); sender.editText(chatId, msgId, "Отменено. Нажмите /start чтобы начать.") }
+            data == "auth:retry"     -> authHandler.startLoginFlow(chatId, msgId)
+            data == "auth:retry_pay" -> {
+                sessions[chatId] = UserSession(step = BotStep.WAITING_EMAIL, msgId = msgId, pendingAction = "pay")
+                sender.editText(
+                    chatId, msgId,
+                    "🔐 *Вход в аккаунт*\n\nВведите email от вашего аккаунта getaimly.io:",
+                    markup        = keyboard(row(btn("❌ Отмена", "auth:cancel"))),
+                    parseMarkdown = true,
+                )
+            }
 
-            // ─── Главное меню ─────────────────────────────────────────────────
             data == "menu:back"     -> authHandler.showMainMenuEdit(chatId, msgId, from)
             data == "menu:leads"    -> leadsHandler.showLeadsMenu(chatId, from.id, msgId)
             data == "menu:chats"    -> chatsHandler.showChats(chatId, msgId, from.id)
@@ -222,9 +257,10 @@ class AimlyBot(
                 sender.sendText(chatId, "Используйте /start для возврата в главное меню.")
             }
 
-            // ─── Лиды ────────────────────────────────────────────────────────
-            data == "leads:new"  -> leadsHandler.showLeadsList(chatId, msgId, from.id, 0, "NEW")
-            data == "leads:all"  -> leadsHandler.showLeadsList(chatId, msgId, from.id, 0, null)
+            data == "payment:plans" -> paymentHandler.showPlans(chatId, msgId, from.id)
+            data == "leads:new"      -> leadsHandler.showLeadsList(chatId, msgId, from.id, 0, "NEW")
+            data == "leads:all"      -> leadsHandler.showLeadsList(chatId, msgId, from.id, 0, null)
+            data == "leads:readall"  -> leadsHandler.markAllRead(chatId, msgId, from.id)
             data.startsWith("leads:page:") -> {
                 val parts = data.removePrefix("leads:page:").split(":")
                 val pg    = parts.getOrNull(0)?.toIntOrNull() ?: 0
@@ -235,20 +271,18 @@ class AimlyBot(
             data.startsWith("lead:viewed:")  -> { leadsHandler.changeLeadStatus(from.id, data.removePrefix("lead:viewed:").toLongOrNull() ?: 0, "VIEWED");  leadsHandler.showLeadsMenu(chatId, from.id, msgId) }
             data.startsWith("lead:replied:") -> { leadsHandler.changeLeadStatus(from.id, data.removePrefix("lead:replied:").toLongOrNull() ?: 0, "REPLIED"); leadsHandler.showLeadsMenu(chatId, from.id, msgId) }
             data.startsWith("lead:ignored:") -> { leadsHandler.changeLeadStatus(from.id, data.removePrefix("lead:ignored:").toLongOrNull() ?: 0, "IGNORED"); leadsHandler.showLeadsMenu(chatId, from.id, msgId) }
-
-            // ─── Чаты (ручное управление) ─────────────────────────────────────
             data == "chat:add"           -> chatsHandler.startAddChat(chatId, msgId)
             data == "chat:del:cancel"    -> chatsHandler.showChats(chatId, msgId, from.id)
             data.startsWith("chat:page:")        -> chatsHandler.showChats(chatId, msgId, from.id, data.removePrefix("chat:page:").toIntOrNull() ?: 0)
             data.startsWith("chat:del:confirm:") -> { chatsHandler.deleteChat(from.id, data.removePrefix("chat:del:confirm:").toLongOrNull() ?: 0); chatsHandler.showChats(chatId, msgId, from.id) }
             data.startsWith("chat:del:")         -> chatsHandler.showDeleteChatConfirm(chatId, msgId, from.id, data.removePrefix("chat:del:").toLongOrNull() ?: 0)
-
-            // ─── AI-поиск чатов ───────────────────────────────────────────────
-            data == "csearch:start"        -> chatSearchHandler.showSearchScreen(chatId, msgId, from.id)
-            data == "csearch:manual"       -> chatSearchHandler.startManualSearch(chatId, msgId)
-            data == "csearch:by_keywords"  -> chatSearchHandler.searchByKeywords(chatId, msgId, from.id)
-            data == "csearch:by_context"   -> chatSearchHandler.searchByContext(chatId, msgId, from.id)
-            data == "csearch:add_all"      -> chatSearchHandler.addAll(chatId, msgId, from.id)
+            data == "csearch:start"           -> chatSearchHandler.showSearchScreen(chatId, msgId, from.id)
+            data == "csearch:manual"          -> chatSearchHandler.startManualSearch(chatId, msgId, null)
+            data == "csearch:manual:chat"     -> chatSearchHandler.startManualSearch(chatId, msgId, "chat")
+            data == "csearch:manual:channel"  -> chatSearchHandler.startManualSearch(chatId, msgId, "channel")
+            data == "csearch:by_keywords"     -> chatSearchHandler.searchByKeywords(chatId, msgId, from.id)
+            data == "csearch:by_context"      -> chatSearchHandler.searchByContext(chatId, msgId, from.id)
+            data == "csearch:add_all"         -> chatSearchHandler.addAll(chatId, msgId, from.id)
 
             data.startsWith("csearch:page:") -> {
                 val pg = data.removePrefix("csearch:page:").toIntOrNull() ?: 0
@@ -267,13 +301,12 @@ class AimlyBot(
                 chatSearchHandler.addPage(chatId, msgId, from.id, pg)
             }
 
-            // ─── Ключевые слова ───────────────────────────────────────────────
+
             data == "kw:add"          -> keywordsHandler.startAddKeyword(chatId, msgId, from.id)
             data == "kw:del:cancel"   -> keywordsHandler.showKeywords(chatId, msgId, from.id)
             data.startsWith("kw:page:")          -> keywordsHandler.showKeywords(chatId, msgId, from.id, data.removePrefix("kw:page:").toIntOrNull() ?: 0)
             data.startsWith("kw:del:confirm:")   -> { keywordsHandler.deleteKeyword(from.id, data.removePrefix("kw:del:confirm:").toLongOrNull() ?: 0); keywordsHandler.showKeywords(chatId, msgId, from.id) }
             data.startsWith("kw:del:")           -> keywordsHandler.showDeleteKeywordConfirm(chatId, msgId, from.id, data.removePrefix("kw:del:").toLongOrNull() ?: 0)
-
             data == "kw:ai:generate"             -> keywordsHandler.startAiGeneration(chatId, msgId, from.id)
             data == "kw:ai:accept_all"           -> keywordsHandler.acceptAllAiSuggestions(chatId, msgId, from.id)
             data == "kw:ai:reject_all"           -> keywordsHandler.rejectAllAiSuggestions(chatId, msgId)
@@ -281,10 +314,7 @@ class AimlyBot(
             data.startsWith("kw:ai:accept:")      -> keywordsHandler.acceptAiSuggestion(chatId, msgId, from.id, data.removePrefix("kw:ai:accept:").toIntOrNull() ?: 0)
             data.startsWith("kw:ai:reject:")      -> keywordsHandler.rejectAiSuggestion(chatId, msgId, from.id, data.removePrefix("kw:ai:reject:").toIntOrNull() ?: 0)
             data.startsWith("kw:ai:page:")        -> keywordsHandler.setAiPage(chatId, msgId, from.id, data.removePrefix("kw:ai:page:").toIntOrNull() ?: 0)
-
             data == "kw:toggle_service_offers"   -> keywordsHandler.toggleServiceOffers(chatId, msgId, from.id)
-
-            // ─── Профиль ─────────────────────────────────────────────────────
             data == "profile:edit_context"      -> profileHandler.startEditContext(chatId, msgId, from.id)
             data == "profile:clear_context"     -> profileHandler.clearContext(chatId, msgId, from.id)
             data == "profile:unlink_tg"         -> profileHandler.showUnlinkConfirm(chatId, msgId)
@@ -294,10 +324,11 @@ class AimlyBot(
         }
     }
 
-    // ─── Уведомление о новом лиде ─────────────────────────────────────────────
+
 
     fun notifyNewLead(
         telegramChatId: Long,
+        leadId: Long,
         chatTitle: String,
         text: String,
         link: String,
@@ -308,14 +339,14 @@ class AimlyBot(
     ) {
         val preview    = text.take(300).let { if (text.length > 300) "$it…" else it }
         val authorLine = when {
-            authorUsername.isNotBlank() -> "\n👤 *Автор:* @${authorUsername.md()}"
-            authorName.isNotBlank()     -> "\n👤 *Автор:* ${authorName.md()}"
+            authorUsername.isNotBlank() -> "\n👤 Автор: @$authorUsername"
+            authorName.isNotBlank()     -> "\n👤 Автор: $authorName"
             else                        -> ""
         }
         val headline = if (isHistorical)
-            "🕐 *Старый лид \\(за последние 24 ч\\)*"
+            "🕐 Старый лид (за последние 24 ч)"
         else
-            "🎯 *Новый лид!*"
+            "🎯 Новый лид!"
 
         val rows = mutableListOf<InlineKeyboardRow>()
         if (link.isNotBlank()) {
@@ -324,7 +355,10 @@ class AimlyBot(
                 .url(buildTgDeepLink(link))
                 .build()))
         }
-        rows.add(row(btn("📋 Все лиды", "menu:leads")))
+        rows.add(row(
+            btn("📄 Подробнее", "lead:open:$leadId"),
+            btn("📋 Все лиды", "menu:leads"),
+        ))
 
         runCatching {
             telegramClient.execute(
@@ -332,19 +366,18 @@ class AimlyBot(
                     .chatId(telegramChatId.toString())
                     .text(
                         "$headline\n\n" +
-                                "💬 *Чат:* ${chatTitle.md()}\n" +
-                                "🔑 *Ключевое слово:* «${keyword.md()}»" +
+                                "💬 Чат: $chatTitle\n" +
+                                "🔑 Ключевое слово: «$keyword»" +
                                 authorLine + "\n\n" +
-                                preview.md()
+                                preview
                     )
-                    .parseMode("Markdown")
                     .replyMarkup(InlineKeyboardMarkup(rows))
                     .build()
             )
         }.onFailure { log.warn("notifyNewLead failed chatId=$telegramChatId: ${it.message}") }
     }
 
-    // ─── Статус аккаунта ──────────────────────────────────────────────────────
+
 
     fun sendStatus(chatId: Long, tgUserId: Long) {
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
@@ -362,35 +395,38 @@ class AimlyBot(
         }
         sender.sendText(
             chatId,
-            "📊 *Статус аккаунта*\n\n" +
-                    "📧 ${user.email.md()}\n" +
-                    "📋 Подписка: ${subLine.md()}\n\n" +
+            "📊 Статус аккаунта\n\n" +
+                    "📧 ${user.email}\n" +
+                    "📋 Подписка: $subLine\n\n" +
                     "💬 Чатов: $chats\n" +
                     "🔍 Ключевых слов: $keywords\n" +
                     "📬 Новых лидов: $newLeads",
-            parseMarkdown = true,
         )
     }
 
     private fun sendHelp(chatId: Long) =
-        sender.sendText(chatId, buildHelpText(), parseMarkdown = true)
+        sender.sendText(chatId, buildHelpText())
 
     private fun buildHelpText() =
-        "📖 *Помощь AIMLY*\n\n" +
-                "🤖 Бот повторяет весь функционал сайта \\(кроме администрирования\\)\\.\n" +
+        "📖 Помощь AIMLY\n\n" +
+                "🤖 Бот повторяет весь функционал сайта \n" +
                 "Для максимального удобства рекомендуем использовать веб-версию:\n" +
                 "🌐 ${BotAuthHandler.SITE_URL}\n\n" +
-                "*Команды:*\n" +
+                "Команды:\n" +
                 "/start — главное меню\n" +
                 "/leads — список лидов\n" +
+                "/chats — управление чатами\n" +
+                "/keywords — ключевые слова\n" +
+                "/profile — профиль\n" +
+                "/pay — оплатить подписку\n" +
                 "/status — статус аккаунта\n" +
                 "/cancel — отменить действие\n" +
                 "/help — эта справка\n\n" +
-                "*Как работает:*\n" +
-                "1\\. Добавьте Telegram\\-чаты \\(вручную или через AI\\-поиск\\)\n" +
-                "2\\. Укажите ключевые слова \\(«ищу дизайнера» и т\\.д\\.\\)\n" +
-                "3\\. При совпадении вы получите уведомление с лидом\n\n" +
-                "💬 Поддержка: @aimly\\_support"
+                "Как работает:\n" +
+                "1. Добавьте Telegram-чаты (вручную или через AI-поиск)\n" +
+                "2. Укажите ключевые слова («ищу дизайнера» и т.д.)\n" +
+                "3. При совпадении вы получите уведомление с лидом\n\n" +
+                "💬 Поддержка: @aimly_support"
 
     private fun buildTgDeepLink(link: String): String {
         val clean = link

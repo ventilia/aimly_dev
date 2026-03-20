@@ -32,6 +32,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 24px 28px 0;
+    gap: 8px;
 }
 
 .title {
@@ -40,6 +41,7 @@
     font-weight: 800;
     color: var(--c-ink);
     letter-spacing: -.4px;
+    flex: 1;
 }
 
 .closeBtn {
@@ -57,6 +59,24 @@
     flex-shrink: 0;
 }
 .closeBtn:hover { background: var(--c-bg); color: var(--c-ink); }
+
+/* Кнопка "Назад" в заголовке */
+.backBtn {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--c-ink-3);
+    transition: background .15s, color .15s;
+    flex-shrink: 0;
+    margin-right: 2px;
+}
+.backBtn:hover { background: var(--c-bg); color: var(--c-ink); }
 
 .body { padding: 20px 28px 28px; }
 
@@ -166,6 +186,36 @@
     font-size: 13.5px;
     color: #c0392b;
     line-height: 1.5;
+}
+
+
+/* Строка "Забыли пароль?" под полем пароля */
+.forgotRow {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 6px;
+}
+.forgotLink {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--c-ink-3);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: var(--font-body);
+    padding: 0;
+    line-height: 1.4;
+    transition: color .15s;
+    text-decoration: none;
+}
+.forgotLink:hover { color: var(--c-accent); }
+
+/* Подсказка на шаге запроса сброса */
+.forgotHintText {
+    font-size: 14px;
+    color: var(--c-ink-2);
+    line-height: 1.55;
+    margin: 0 0 4px;
 }
 
 

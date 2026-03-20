@@ -48,14 +48,11 @@ class AuthController(
 
     @PostMapping("/verify-email")
     fun verifyEmail(
-        // ИСПРАВЛЕНИЕ: user может быть null, если в куке протухший/несуществующий токен.
-        // Spring передаёт null вместо выброса исключения — обрабатываем явно.
         @AuthenticationPrincipal user: User?,
         @Valid @RequestBody request: VerifyEmailRequest,
         response: HttpServletResponse,
     ): ResponseEntity<AuthResponse> {
         if (user == null) {
-            // Очищаем невалидную куку, чтобы браузер не продолжал её слать
             clearAuthCookie(response)
             return ResponseEntity.status(401).build()
         }
@@ -67,7 +64,6 @@ class AuthController(
 
     @PostMapping("/resend-code")
     fun resendCode(
-        // ИСПРАВЛЕНИЕ: аналогично verifyEmail — user может быть null
         @AuthenticationPrincipal user: User?,
         response: HttpServletResponse,
     ): ResponseEntity<MessageResponse> {
@@ -147,10 +143,37 @@ class AuthController(
                 subscriptionPlan      = user.subscriptionPlan,
                 subscriptionExpiresAt = expiresAt,
                 createdAt             = user.createdAt?.toString(),
-                // Передаём businessContext — нужен фронту для AI-поиска чатов
                 businessContext       = user.businessContext,
+                trialUsed             = user.trialUsed,
             )
         )
+    }
+
+
+    /**
+     * Шаг 1 сброса пароля: отправить код на email (и в TG если привязан).
+     * Публичный эндпоинт — JWT не нужен.
+     */
+    @PostMapping("/forgot-password")
+    fun forgotPassword(
+        @Valid @RequestBody request: ForgotPasswordRequest,
+    ): ResponseEntity<MessageResponse> =
+        ResponseEntity.ok(authService.requestPasswordReset(request.email))
+
+
+    /**
+     * Шаг 2 сброса пароля: проверить код и установить новый пароль.
+     * После успешной смены — устанавливает куку и возвращает сессию (автологин).
+     * Публичный эндпоинт — JWT не нужен.
+     */
+    @PostMapping("/reset-password")
+    fun resetPassword(
+        @Valid @RequestBody request: ResetPasswordRequest,
+        response: HttpServletResponse,
+    ): ResponseEntity<AuthResponse> {
+        val auth = authService.resetPassword(request)
+        setAuthCookie(response, auth.token)
+        return ResponseEntity.ok(auth.copy(token = ""))
     }
 
 

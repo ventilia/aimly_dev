@@ -52,8 +52,7 @@ class UserSubscriptionService(
     @Transactional
     fun purchase(caller: User, req: PurchaseRequest): PurchaseResponse {
         val plan = req.plan.uppercase()
-
-        if (plan !in setOf("MINIMUM", "START")) {
+        if (plan !in setOf("START", "BUSINESS")) {
             throw BadRequestException("неизвестный тариф: ${req.plan}")
         }
 

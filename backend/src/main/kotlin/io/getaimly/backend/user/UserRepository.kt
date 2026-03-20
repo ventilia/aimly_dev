@@ -8,11 +8,11 @@ import java.util.Optional
 interface UserRepository : JpaRepository<User, Long> {
     fun findByEmail(email: String): Optional<User>
     fun findByTelegramId(telegramId: Long): Optional<User>
-    fun existsByEmail(email: String): Boolean
     fun findByGoogleId(googleId: String): Optional<User>
 
-    
+    fun findByTributeUserId(tributeUserId: String): Optional<User>
 
+    fun existsByEmail(email: String): Boolean
     fun existsByTelegramId(telegramId: Long): Boolean
 
     @Modifying

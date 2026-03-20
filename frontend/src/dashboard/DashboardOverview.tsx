@@ -11,6 +11,7 @@ const txt = {
         title:          'Обзор',
         welcome:        'Добро пожаловать в AIMLY',
         tgAlertTitle:   'Подключить агента для получения лидов',
+        tgAlertTitleTrial:   'Запустите бота и получите 5 дней бесплатно',
         tgAlertBtn:     'Подключить через бота',
         tgAlertBtnAlt:  'Скопировать ссылку',
         howTitle:       'Как подключить Telegram',
@@ -50,6 +51,7 @@ const txt = {
         title:          'Overview',
         welcome:        'Welcome to AIMLY',
         tgAlertTitle:   'Connect agent to receive leads',
+        tgAlertTitleTrial:   'Launch bot and get 5 days free trial',
         tgAlertBtn:     'Connect via bot',
         tgAlertBtnAlt:  'Copy link',
         howTitle:       'How to connect Telegram',
@@ -164,7 +166,6 @@ export default function DashboardOverview({ lang }: Props) {
     const steps     = [tgLinked, (chatsCount ?? 0) > 0, (keywordsCount ?? 0) > 0]
     const stepsLeft = steps.filter(v => !v).length
 
-    // Маршруты для каждого шага настройки
     const stepRoutes = ['/dashboard/profile', '/dashboard/chats', '/dashboard/keywords']
 
     const handleConnectBot = async () => {
@@ -253,7 +254,7 @@ export default function DashboardOverview({ lang }: Props) {
                             </div>
                         </div>
 
-                        <div style={{ fontSize: 14, color: 'var(--c-ink)', lineHeight: 1.6, background: 'var(--c-bg)', borderRadius: 10, padding: '12px 14px', border: '1px solid var(--c-border)', wordBreak: 'break-word', maxHeight: 160, overflow: 'hidden' }}>
+                        <div style={{ fontSize: 14, color: 'var(--c-ink)', lineHeight: 1.6, background: 'var(--c-bg)', borderRadius: 10, padding: '12px 14px', border: '1px solid var(--c-border)', wordBreak: 'break-word', maxHeight: 160, overflowY: 'auto', whiteSpace: 'pre-wrap', WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
                             {lastLead.messageText}
                         </div>
 
@@ -296,15 +297,13 @@ export default function DashboardOverview({ lang }: Props) {
                 )}
             </div>
 
-            {/* ─── Telegram — блок без подпоясывающего текста ─── */}
+            {/* ─── Telegram ─── */}
             {!tgLinked ? (
                 <div className={s.tgAlert}>
                     <div className={s.tgAlertLeft}>
-                        {/* Иконка предупреждения — без подписи под заголовком */}
                         <div className={s.tgAlertIcon}><IconWarning /></div>
-                        <div>
-                            <div className={s.tgAlertTitle}>{l.tgAlertTitle}</div>
-                            {/* Убран tgAlertSub — текст «Подключите Telegram-аккаунт...» */}
+                        <div className={s.tgAlertTitle}>
+                            {!user.trialUsed ? l.tgAlertTitleTrial : l.tgAlertTitle}
                         </div>
                     </div>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -356,7 +355,7 @@ export default function DashboardOverview({ lang }: Props) {
                 </div>
             )}
 
-            {/* ─── Шаги настройки — каждый кликабелен и ведёт в нужный раздел ─── */}
+            {/* ─── Шаги настройки ─── */}
             {stepsLeft > 0 && (
                 <div className={s.setupRow}>
                     <div className={s.setupCard}>
@@ -373,10 +372,7 @@ export default function DashboardOverview({ lang }: Props) {
                                     key={i}
                                     className={`${s.setupStep} ${steps[i] ? s.setupStepDone : ''}`}
                                     onClick={() => !steps[i] && navigate(stepRoutes[i])}
-                                    style={{
-                                        cursor: steps[i] ? 'default' : 'pointer',
-                                        transition: 'opacity .15s',
-                                    }}
+                                    style={{ cursor: steps[i] ? 'default' : 'pointer', transition: 'opacity .15s' }}
                                     onMouseEnter={e => { if (!steps[i]) (e.currentTarget as HTMLDivElement).style.opacity = '0.75' }}
                                     onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.opacity = '1' }}
                                 >

@@ -13,7 +13,6 @@ import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.RestTemplate
 
 
-
 data class ChatSearchResult(
     val title: String,
     val username: String?,
@@ -34,15 +33,12 @@ data class ChatSearchResponse(
 class ChatSearchService(
     private val aiService: AiService,
     @Value("\${tgstat.api-key:}") private val tgstatApiKey: String,
-    @Value("\${tgstat.country:ru}") private val tgstatCountry: String,
     @Value("\${groq.api-key:}") private val groqApiKey: String,
 ) {
     private val log = LoggerFactory.getLogger(ChatSearchService::class.java)
     private val restTemplate = RestTemplate()
 
     private val MIN_MEMBERS = 200
-
-
 
     private val DESIGN_SIGNALS = setOf(
         "дизайн", "design", "ui", "ux", "graphic", "график", "иллюстр",
@@ -70,56 +66,173 @@ class ChatSearchService(
     private fun isDesignRelated(input: String)   = DESIGN_SIGNALS.any { input.lowercase().contains(it) }
     private fun isCreativeRelated(input: String) = CREATIVE_SIGNALS.any { input.lowercase().contains(it) }
 
+    private val SECONDARY_COUNTRIES = listOf("ua", "by", "kz")
 
-    fun search(inputText: String): ChatSearchResponse {
-        val queries = aiService.generateTgstatQueries(inputText)
-        log.info("TGStat поиск: запросы=$queries")
+    fun search(inputText: String, peerType: String? = null): ChatSearchResponse {
+        val effectivePeerType = when (peerType?.lowercase()?.trim()) {
+            "channel" -> "channel"
+            "chat"    -> "chat"
+            else      -> "all"
+        }
 
         val seen    = mutableSetOf<String>()
         val results = mutableListOf<ChatSearchResult>()
 
+        val displayQueries: List<String>
 
-        for (query in queries) {
-            if (results.size >= 20) break
-            val found = searchTgstat(query, limit = 50, peerType = "chat")
-            for (r in found) {
-                val key = r.username?.lowercase() ?: continue
-                if (seen.add(key)) results.add(r)
+        if (effectivePeerType == "all") {
+            val chatQueries    = aiService.generateTgstatQueries(inputText, "chat")
+            val channelQueries = aiService.generateTgstatQueries(inputText, "channel")
+            displayQueries = (chatQueries + channelQueries).distinct()
+            log.info("TGStat поиск [all]: chatQ=$chatQueries channelQ=$channelQueries")
+
+
+            val chatSeen    = mutableSetOf<String>()
+            val channelSeen = mutableSetOf<String>()
+            val chatBuf     = mutableListOf<ChatSearchResult>()
+            val channelBuf  = mutableListOf<ChatSearchResult>()
+
+
+            for (query in chatQueries) {
+                if (chatBuf.size >= 10) break
+                val found = searchTgstat(query, limit = 50, peerType = "chat", country = "ru")
+                for (r in found) {
+                    val key = r.username?.lowercase() ?: continue
+                    if (chatSeen.add(key)) chatBuf.add(r)
+                }
+                log.info("TGStat [all/chat] '$query' (ru): ${found.size}, буфер групп: ${chatBuf.size}")
             }
-            log.info("TGStat '$query' (chat): нашли ${found.size}, итого уникальных: ${results.size}")
-        }
 
 
-        if (results.size < 5) {
-            log.info("TGStat: мало результатов (${results.size}), подключаем поиск по описанию")
-            for (query in queries.take(4)) {
-                if (results.size >= 15) break
-                val found = searchTgstat(query, limit = 50, peerType = "chat", searchByDescription = true)
+            for (query in channelQueries) {
+                if (channelBuf.size >= 10) break
+                val found = searchTgstat(query, limit = 50, peerType = "channel", country = "ru")
+                for (r in found) {
+                    val key = r.username?.lowercase() ?: continue
+                    if (channelSeen.add(key)) channelBuf.add(r)
+                }
+                log.info("TGStat [all/channel] '$query' (ru): ${found.size}, буфер каналов: ${channelBuf.size}")
+            }
+
+
+            if (chatBuf.size < 4 || channelBuf.size < 4) {
+                log.info("TGStat [all]: мало результатов (чаты=${chatBuf.size}, каналы=${channelBuf.size}), расширяем на другие страны")
+                for (country in SECONDARY_COUNTRIES) {
+                    if (chatBuf.size < 6) {
+                        for (query in chatQueries.take(3)) {
+                            searchTgstat(query, limit = 30, peerType = "chat", country = country)
+                                .forEach { r -> r.username?.lowercase()?.let { if (chatSeen.add(it)) chatBuf.add(r) } }
+                        }
+                    }
+                    if (channelBuf.size < 6) {
+                        for (query in channelQueries.take(3)) {
+                            searchTgstat(query, limit = 30, peerType = "channel", country = country)
+                                .forEach { r -> r.username?.lowercase()?.let { if (channelSeen.add(it)) channelBuf.add(r) } }
+                        }
+                    }
+                    if (chatBuf.size >= 6 && channelBuf.size >= 6) break
+                }
+                log.info("TGStat [all] после расширения: чаты=${chatBuf.size}, каналы=${channelBuf.size}")
+            }
+
+
+            if (chatBuf.size < 3) {
+                for (query in chatQueries.take(3)) {
+                    if (chatBuf.size >= 6) break
+                    searchTgstat(query, limit = 50, peerType = "chat", country = "ru", searchByDescription = true)
+                        .forEach { r -> r.username?.lowercase()?.let { if (chatSeen.add(it)) chatBuf.add(r) } }
+                }
+            }
+            if (channelBuf.size < 3) {
+                for (query in channelQueries.take(3)) {
+                    if (channelBuf.size >= 6) break
+                    searchTgstat(query, limit = 50, peerType = "channel", country = "ru", searchByDescription = true)
+                        .forEach { r -> r.username?.lowercase()?.let { if (channelSeen.add(it)) channelBuf.add(r) } }
+                }
+            }
+
+
+            val chatTake    = chatBuf.take(8)
+            val channelTake = channelBuf.take(8)
+            val maxLen      = maxOf(chatTake.size, channelTake.size)
+
+            for (i in 0 until maxLen) {
+                if (i < chatTake.size) {
+                    val key = chatTake[i].username?.lowercase() ?: continue
+                    if (seen.add(key)) results.add(chatTake[i])
+                }
+                if (i < channelTake.size) {
+                    val key = channelTake[i].username?.lowercase() ?: continue
+                    if (seen.add(key)) results.add(channelTake[i])
+                }
+            }
+
+            log.info("TGStat [all] после перемешивания: ${results.size} (групп=${chatTake.size}, каналов=${channelTake.size})")
+
+        } else {
+            // Оригинальная логика для chat/channel режима
+            val queries = aiService.generateTgstatQueries(inputText, effectivePeerType)
+            displayQueries = queries
+            log.info("TGStat поиск: запросы=$queries peerType=$effectivePeerType")
+
+            for (query in queries) {
+                if (results.size >= 20) break
+                val found = searchTgstat(query, limit = 50, peerType = effectivePeerType, country = "ru")
                 for (r in found) {
                     val key = r.username?.lowercase() ?: continue
                     if (seen.add(key)) results.add(r)
                 }
+                log.info("TGStat '$query' (ru): нашли ${found.size}, итого уникальных: ${results.size}")
             }
-            log.info("TGStat после прохода с описанием: ${results.size}")
+
+            if (results.size < 8) {
+                log.info("TGStat: мало результатов (${results.size}), расширяем на другие страны")
+                for (country in SECONDARY_COUNTRIES) {
+                    for (query in queries.take(4)) {
+                        if (results.size >= 15) break
+                        val found = searchTgstat(query, limit = 30, peerType = effectivePeerType, country = country)
+                        for (r in found) {
+                            val key = r.username?.lowercase() ?: continue
+                            if (seen.add(key)) results.add(r)
+                        }
+                    }
+                    if (results.size >= 15) break
+                }
+                log.info("TGStat после расширения на другие страны: ${results.size}")
+            }
+
+            if (results.size < 5) {
+                log.info("TGStat: всё ещё мало (${results.size}), подключаем поиск по описанию")
+                for (query in queries.take(4)) {
+                    if (results.size >= 15) break
+                    val found = searchTgstat(query, limit = 50, peerType = effectivePeerType, country = "ru", searchByDescription = true)
+                    for (r in found) {
+                        val key = r.username?.lowercase() ?: continue
+                        if (seen.add(key)) results.add(r)
+                    }
+                }
+                log.info("TGStat после прохода с описанием: ${results.size}")
+            }
         }
 
-
-        if (isDesignRelated(inputText) && results.none { it.link.contains("desgangchat") }) {
-            results.add(FIXED_DESIGN_CHAT); seen.add("desgangchat")
-        }
-        if (isCreativeRelated(inputText) && results.none { it.link.contains("mskeventjob") }) {
-            results.add(FIXED_EVENT_CHAT); seen.add("mskeventjob")
+        // Добавляем закреплённые чаты для профильных тематик
+        if (effectivePeerType != "channel") {
+            if (isDesignRelated(inputText) && results.none { it.link.contains("desgangchat") }) {
+                results.add(FIXED_DESIGN_CHAT); seen.add("desgangchat")
+            }
+            if (isCreativeRelated(inputText) && results.none { it.link.contains("mskeventjob") }) {
+                results.add(FIXED_EVENT_CHAT); seen.add("mskeventjob")
+            }
         }
 
         val candidates = results.take(15)
-        log.info("TGStat до AI-фильтра: ${candidates.size} чатов")
+        log.info("TGStat до AI-фильтра: ${candidates.size} (групп=${candidates.count { it.peerType == "chat" }}, каналов=${candidates.count { it.peerType == "channel" }})")
 
         val filtered = if (candidates.isNotEmpty()) validateChannels(candidates, inputText) else candidates
         log.info("TGStat после AI-фильтра: ${filtered.size} (удалено ${candidates.size - filtered.size})")
 
-        return ChatSearchResponse(results = filtered, queries = queries)
+        return ChatSearchResponse(results = filtered, queries = displayQueries)
     }
-
 
     fun validateChannels(channels: List<ChatSearchResult>, query: String): List<ChatSearchResult> {
         if (groqApiKey.isBlank() || channels.isEmpty()) return channels
@@ -137,19 +250,32 @@ class ChatSearchService(
         val list = channels.mapIndexed { idx, ch ->
             val members = if (ch.participantsCount > 0) " | ${ch.participantsCount} участников" else ""
             val desc    = if (!ch.description.isNullOrBlank()) " | ${ch.description.take(100)}" else ""
-            "${idx + 1}. «${ch.title}» (${ch.username})$members$desc"
+            val type    = if (ch.peerType == "channel") " | канал" else " | группа"
+            "${idx + 1}. «${ch.title}» (${ch.username})$type$members$desc"
         }.joinToString("\n")
 
         val prompt = """
-Помогаю найти Telegram-группы для поиска лидов (заказчиков, клиентов).
+Помогаю найти Telegram-группы/каналы для поиска ЛИДОВ — людей которые ищут исполнителей.
 Запрос пользователя: "$query"
 
 $list
 
 Для каждого: KEEP или REMOVE.
-REMOVE только если: эротика/18+, казино/ставки, крипто-скам, тема кардинально не совпадает.
-KEEP всё остальное — особенно профессиональные чаты, биржи заказов, сообщества фрилансеров.
-Лучше лишний чат, чем пропустить нужный.
+
+REMOVE если хотя бы одно:
+- тема кардинально не совпадает с запросом (например запрос "программирование", а чат про спорт/финансы/крипту/ставки)
+- эротика, 18+, казино, ставки, gambling
+- крипто-скам, NFT, инвестиционные пирамиды
+- чат явно на иностранном языке и не по теме запроса
+- общий "болталка" чат без профессиональной тематики
+- чат по рекламе/спаму (catalog of chats, order advertising)
+
+KEEP если:
+- чат по теме запроса или смежной теме
+- профессиональное сообщество, биржа заказов, фриланс-чат
+- обучение и обсуждение темы запроса
+
+Будь строгим — лучше убрать нерелевантный чат, чем оставить шум.
 
 JSON без пояснений: {"keep": [1,2,3], "remove": [4]}
 """.trimIndent()
@@ -174,7 +300,7 @@ JSON без пояснений: {"keep": [1,2,3], "remove": [4]}
             ) ?: return channels.indices.toSet()
             val raw   = resp.choices.firstOrNull()?.message?.content ?: return channels.indices.toSet()
             val clean = raw.replace(Regex("```json|```"), "").trim()
-            val keepJson = Regex("\"keep\"\\s*:\\s*\\[([^]]*)]").find(clean)?.groupValues?.get(1)
+            val keepJson = Regex("\"keep\"\\s*:\\s*\\[([^]]*)\\]").find(clean)?.groupValues?.get(1)
                 ?: return channels.indices.toSet()
             val keepIdx = Regex("\\d+").findAll(keepJson)
                 .mapNotNull { it.value.toIntOrNull() }
@@ -198,7 +324,8 @@ JSON без пояснений: {"keep": [1,2,3], "remove": [4]}
     private fun searchTgstat(
         query: String,
         limit: Int = 50,
-        peerType: String = "chat",
+        peerType: String = "all",
+        country: String = "ru",
         searchByDescription: Boolean = false,
     ): List<ChatSearchResult> {
         if (query.length < 2) {
@@ -210,13 +337,13 @@ JSON без пояснений: {"keep": [1,2,3], "remove": [4]}
             append("https://api.tgstat.ru/channels/search")
             append("?token=${java.net.URLEncoder.encode(tgstatApiKey, "UTF-8")}")
             append("&q=${java.net.URLEncoder.encode(query, "UTF-8")}")
-            append("&country=${java.net.URLEncoder.encode(tgstatCountry, "UTF-8")}")
-            append("&peer_type=$peerType")
+            append("&country=${java.net.URLEncoder.encode(country, "UTF-8")}")
+            if (peerType != "all") append("&peer_type=$peerType")
             if (searchByDescription) append("&search_by_description=1")
             append("&limit=$limit")
         }
 
-        log.info("TGStat запрос: q='$query' country=$tgstatCountry peer_type=$peerType limit=$limit desc=$searchByDescription")
+        log.info("TGStat запрос: q='$query' country=$country peer_type=$peerType limit=$limit desc=$searchByDescription")
 
         return try {
             val headers  = HttpHeaders().apply { accept = listOf(MediaType.APPLICATION_JSON) }
@@ -234,28 +361,19 @@ JSON без пояснений: {"keep": [1,2,3], "remove": [4]}
             log.info("TGStat '$query': ${items.size} сырых результатов")
 
             val mapped = items.mapNotNull { item ->
-
-
                 val rawUsername = item.username?.trim()?.takeIf { it.isNotBlank() }
-                    ?: run {
-                        log.debug("TGStat: пропускаем '${item.title}' — нет username")
-                        return@mapNotNull null
-                    }
+                    ?: run { log.debug("TGStat: пропускаем '${item.title}' — нет username"); return@mapNotNull null }
 
                 val usernameSlug  = rawUsername.trimStart('@')
                 val cleanUsername = "@$usernameSlug"
 
-
                 if (usernameSlug.startsWith("+") || usernameSlug.lowercase().contains("joinchat")) {
-                    log.debug("TGStat: пропускаем invite-username '${item.title}'")
-                    return@mapNotNull null
+                    log.debug("TGStat: пропускаем invite-username '${item.title}'"); return@mapNotNull null
                 }
                 val apiLink = item.link?.trim() ?: ""
                 if (apiLink.contains("joinchat", ignoreCase = true) || apiLink.contains("/+")) {
-                    log.debug("TGStat: пропускаем invite-link '${item.title}'")
-                    return@mapNotNull null
+                    log.debug("TGStat: пропускаем invite-link '${item.title}'"); return@mapNotNull null
                 }
-
 
                 val link = when {
                     apiLink.startsWith("https://") -> apiLink
@@ -267,10 +385,8 @@ JSON без пояснений: {"keep": [1,2,3], "remove": [4]}
                 if (link.contains("joinchat", ignoreCase = true) ||
                     Regex("/\\+[A-Za-z0-9_-]+").containsMatchIn(link)
                 ) {
-                    log.debug("TGStat: invite в итоговой ссылке — пропускаем '${item.title}'")
-                    return@mapNotNull null
+                    log.debug("TGStat: invite в итоговой ссылке — пропускаем '${item.title}'"); return@mapNotNull null
                 }
-
 
                 val members = item.participantsCount ?: 0
                 if (members in 1 until MIN_MEMBERS) {

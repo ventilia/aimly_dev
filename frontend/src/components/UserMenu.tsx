@@ -9,8 +9,8 @@ const txt = {
     ru: {
         dashboard:   'Личный кабинет',
         logout:      'Выйти',
-        linkTg:      'Привязать Telegram',
-        tgLinked:    'Telegram привязан ✓',
+        linkTg:      'Запустить бота',
+        tgLinked:    'Бот запущен',
         tgSection:   'Telegram',
         tgHint:      'Откройте ссылку и нажмите Start в боте',
         tgLoading:   'Генерируем ссылку...',
@@ -23,8 +23,8 @@ const txt = {
     en: {
         dashboard:   'Dashboard',
         logout:      'Sign out',
-        linkTg:      'Connect Telegram',
-        tgLinked:    'Telegram connected ✓',
+        linkTg:      'Launch bot',
+        tgLinked:    'Telegram connected',
         tgSection:   'Telegram',
         tgHint:      'Open the link and click Start in the bot',
         tgLoading:   'Generating link...',
@@ -121,7 +121,7 @@ export default function UserMenu({ lang }: Props) {
 
             {open && (
                 <div className={s.dropdown} role="menu">
-                    {/* инфо пользователя */}
+                    {}
                     <div className={s.userInfo}>
                         <div className={s.userEmail}>{user.email}</div>
                         <div className={s.userBadges}>
@@ -136,7 +136,7 @@ export default function UserMenu({ lang }: Props) {
                         </div>
                     </div>
 
-                    {/* кнопка кабинета */}
+                    {}
                     <div className={s.menu}>
                         <button className={s.menuItem} onClick={handleDashboard} role="menuitem">
                             <span className={s.menuIcon}>⬡</span>
@@ -146,14 +146,14 @@ export default function UserMenu({ lang }: Props) {
 
                     <div className={s.sep} />
 
-                    {/* блок telegram */}
+                    {}
                     {!user.telegramLinked && (
                         <div className={s.tgBlock}>
                             <span className={s.tgTitle}>{l.tgSection}</span>
 
                             {!tgLink && !tgLoading && (
                                 <button className={s.menuItem} onClick={handleLinkTg} role="menuitem">
-                                    <span className={s.menuIcon}>✈️</span>
+                                    <span className={s.menuIcon}>️</span>
                                     {l.linkTg}
                                 </button>
                             )}

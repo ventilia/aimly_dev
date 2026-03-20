@@ -53,7 +53,10 @@ const txt = {
         aiSaving:      'Сохраняем...',
         aiSaved:       '✓ Сохранено',
         aiError:       'Ошибка сохранения',
-        aiNeedPlan:    'Доступно на тарифе Minimum и выше',
+        aiNeedPlan:    'Доступно на тарифе START и выше',
+        aiNeedPlanTrial: 'Доступно на тарифе START — попробуйте 5 дней бесплатно',
+        trialBtn:      '🚀 Запустить бота бесплатно',
+        trialBtnLoading: 'Открываем...',
     },
     en: {
         title:         'Profile',
@@ -94,6 +97,9 @@ const txt = {
         aiSaved:       '✓ Saved',
         aiError:       'Save error',
         aiNeedPlan:    'Available on Minimum plan and above',
+        aiNeedPlanTrial: 'Available on START plan — try 5 days for free',
+        trialBtn:      '🚀 Launch bot for free',
+        trialBtnLoading: 'Opening...',
     },
 } as const
 
@@ -131,11 +137,14 @@ export default function ProfilePage({ lang }: Props) {
     const [bizError,        setBizError]        = useState('')
     const [bizLoading,      setBizLoading]      = useState(true)
 
+    // Trial bot
+    const [trialBotLoading, setTrialBotLoading] = useState(false)
+
     const plan   = user?.subscriptionPlan   ?? null
     const status = user?.subscriptionStatus ?? null
     const hasAiFeatures = (
-        plan === 'MINIMUM' ||
-        plan === 'START'   ||
+        plan === 'START' ||
+        plan === 'BUSINESS'   ||
         status === 'TRIAL'
     )
 
@@ -171,6 +180,21 @@ export default function ProfilePage({ lang }: Props) {
             setBizError(e instanceof Error ? e.message : l.aiError)
         } finally {
             setBizSaving(false)
+        }
+    }
+
+    // Открыть бота для trial
+    const handleTrialBotOpen = async () => {
+        setTrialBotLoading(true)
+        try {
+            const res = await authApi.getTelegramLink()
+            const link = `https://t.me/${res.botUsername}?start=${res.linkToken}`
+            window.open(link, '_blank', 'noopener,noreferrer')
+            setTimeout(() => refreshUser(), 5000)
+        } catch {
+            window.open('https://t.me/aimlyAIbot', '_blank', 'noopener,noreferrer')
+        } finally {
+            setTrialBotLoading(false)
         }
     }
 
@@ -370,26 +394,50 @@ export default function ProfilePage({ lang }: Props) {
                             display: 'flex',
                             alignItems: 'center',
                             gap: 8,
+                            flexWrap: 'wrap',
                         }}>
                             <SparkleIcon />
-                            {l.aiNeedPlan}
-                            <button
-                                onClick={() => navigate('/checkout')}
-                                style={{
-                                    marginLeft: 8,
-                                    padding: '4px 12px',
-                                    borderRadius: 7,
-                                    background: 'var(--c-accent)',
-                                    border: 'none',
-                                    color: '#fff',
-                                    fontSize: 12,
-                                    fontWeight: 600,
-                                    cursor: 'pointer',
-                                    fontFamily: 'var(--font-body)',
-                                }}
-                            >
-                                {l.choosePlan}
-                            </button>
+                            {!user.trialUsed ? l.aiNeedPlanTrial : l.aiNeedPlan}
+                            {!user.trialUsed ? (
+                                <button
+                                    onClick={handleTrialBotOpen}
+                                    disabled={trialBotLoading}
+                                    style={{
+                                        marginLeft: 8,
+                                        padding: '4px 12px',
+                                        borderRadius: 7,
+                                        background: 'var(--c-accent)',
+                                        border: 'none',
+                                        color: '#fff',
+                                        fontSize: 12,
+                                        fontWeight: 600,
+                                        cursor: trialBotLoading ? 'default' : 'pointer',
+                                        fontFamily: 'var(--font-body)',
+                                        opacity: trialBotLoading ? 0.7 : 1,
+                                        transition: 'opacity .15s',
+                                    }}
+                                >
+                                    {trialBotLoading ? l.trialBtnLoading : l.trialBtn}
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={() => navigate('/checkout')}
+                                    style={{
+                                        marginLeft: 8,
+                                        padding: '4px 12px',
+                                        borderRadius: 7,
+                                        background: 'var(--c-accent)',
+                                        border: 'none',
+                                        color: '#fff',
+                                        fontSize: 12,
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        fontFamily: 'var(--font-body)',
+                                    }}
+                                >
+                                    {l.choosePlan}
+                                </button>
+                            )}
                         </div>
                     ) : bizLoading ? (
                         <div style={{ height: 80, background: 'var(--c-surface)', borderRadius: 10, animation: 'pulse 1.5s ease-in-out infinite' }} />

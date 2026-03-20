@@ -24,6 +24,9 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+    url: ${SPRING_DATASOURCE_URL:${DB_URL:jdbc:postgresql://localhost:5432/aimly}}
+    user: ${SPRING_DATASOURCE_USERNAME:${DB_USERNAME:aimly}}
+    password: ${SPRING_DATASOURCE_PASSWORD:${DB_PASSWORD:aimly_dev_password}}
 
   autoconfigure:
     exclude: org.springframework.boot.autoconfigure.mail.MailSenderAutoConfiguration
@@ -69,13 +72,16 @@ server:
   port: 8080
 
 groq:
-  api-key: ${GROQ_API_KEY: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}
+  api-key: ${GROQ_API_KEY:}
 
 tgstat:
-  api-key: ${TGSTAT_API_KEY:028e2ad9731533d769b517c582e3cf6a}
+  api-key: ${TGSTAT_API_KEY:}
+  country: ${TGSTAT_COUNTRY:ru}
 
 tribute:
-  api-key: ${TRIBUTE_API_KEY:1ce4424b-515a-443e-8c45-ac3eb2d2}
+  api-key: ${TRIBUTE_API_KEY:}
+  signature-strict: ${TRIBUTE_SIGNATURE_STRICT:true}
+  max-event-age-minutes: ${TRIBUTE_MAX_EVENT_AGE_MINUTES:120}
 
 management:
   endpoints:

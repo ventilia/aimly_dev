@@ -14,6 +14,7 @@ import java.util.concurrent.Executors
 
 private const val SEARCH_PAGE_SIZE = 3
 
+
 class BotChatSearchHandler(
     private val sender: BotSender,
     private val sessions: ConcurrentHashMap<Long, UserSession>,
@@ -29,7 +30,7 @@ class BotChatSearchHandler(
         Thread(r, "bot-chat-search-worker").also { it.isDaemon = true }
     }
 
-    // ─── Экран выбора режима поиска ───────────────────────────────────────────
+
 
     fun showSearchScreen(chatId: Long, msgId: Int, tgUserId: Long) {
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
@@ -43,11 +44,12 @@ class BotChatSearchHandler(
             sender.editText(
                 chatId, msgId,
                 "🔒 AI-поиск чатов\n\n" +
-                    "Поиск подходящих Telegram-чатов доступен на тарифе МИНИМУМ и выше.\n\n" +
-                    "AI автоматически подберёт чаты, где ваша целевая аудитория активно общается.",
+                        "Поиск подходящих Telegram-чатов доступен на тарифе МИНИМУМ и выше.\n\n" +
+                        "AI автоматически подберёт чаты, где ваша целевая аудитория активно общается.",
                 keyboard(
-                    row(urlBtn("💳 Выбрать тариф", BotAuthHandler.SITE_URL + "/checkout")),
-                    row(btn("◀️ Назад к чатам", "menu:chats")),
+                    row(btn("💳 Оплатить подписку", "payment:plans")),
+                    row(btn("◀️ Назад к чатам",     "menu:chats")),
+                    row(btn("🏠 Главное меню",        "menu:back")),
                 ),
             )
             return
@@ -64,19 +66,27 @@ class BotChatSearchHandler(
         if (hasContext) {
             rows.add(row(btn("🎯 По AI-профилю бизнеса", "csearch:by_context")))
         }
-        rows.add(row(btn("✏️ Ввести запрос вручную", "csearch:manual")))
+        rows.add(row(
+            btn("💬 Группы",  "csearch:manual:chat"),
+            btn("📢 Каналы",  "csearch:manual:channel"),
+            btn("🔍 Всё",     "csearch:manual"),
+        ))
         rows.add(row(btn("◀️ Назад к чатам", "menu:chats")))
+        rows.add(row(btn("🏠 Главное меню",   "menu:back")))
 
         sender.editText(
             chatId, msgId,
             "🔍 AI-поиск чатов\n\n" +
-                "Найдём Telegram-чаты, где ваша аудитория общается и ищет услуги.\n\n" +
-                "Выберите источник запроса:",
+                    "Найдём Telegram-чаты, где ваша аудитория общается и ищет услуги.\n\n" +
+                    "Выберите что искать:\n" +
+                    "💬 Группы — чаты для общения (рекомендуем для поиска лидов)\n" +
+                    "📢 Каналы — для мониторинга объявлений\n" +
+                    "🔍 Всё — и группы, и каналы",
             InlineKeyboardMarkup(rows),
         )
     }
 
-    // ─── Поиск по ключевым словам ─────────────────────────────────────────────
+
 
     fun searchByKeywords(chatId: Long, msgId: Int, tgUserId: Long) {
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
@@ -89,17 +99,18 @@ class BotChatSearchHandler(
                 "⚠️ У вас нет ключевых слов.\n\nДобавьте их в «Ключевые слова», затем вернитесь сюда.",
                 keyboard(
                     row(btn("🔍 Ключевые слова", "menu:keywords")),
-                    row(btn("◀️ Назад", "csearch:start")),
+                    row(btn("◀️ Назад",          "csearch:start")),
+                    row(btn("🏠 Главное меню",    "menu:back")),
                 ),
             )
             return
         }
 
         val query = keywords.take(5).joinToString(", ") { it.keyword }
-        runSearch(chatId, msgId, tgUserId, query)
+        runSearch(chatId, msgId, tgUserId, query, peerType = "chat")
     }
 
-    // ─── Поиск по AI-профилю бизнеса ─────────────────────────────────────────
+
 
     fun searchByContext(chatId: Long, msgId: Int, tgUserId: Long) {
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
@@ -112,28 +123,43 @@ class BotChatSearchHandler(
                 "⚠️ AI-профиль бизнеса не заполнен.\n\nОпишите свой бизнес в «Профиль > AI-персонализация».",
                 keyboard(
                     row(btn("👤 Перейти в профиль", "menu:profile")),
-                    row(btn("◀️ Назад", "csearch:start")),
+                    row(btn("◀️ Назад",             "csearch:start")),
+                    row(btn("🏠 Главное меню",       "menu:back")),
                 ),
             )
             return
         }
 
-        runSearch(chatId, msgId, tgUserId, context)
+        runSearch(chatId, msgId, tgUserId, context, peerType = "chat")
     }
 
-    // ─── Ручной ввод запроса ─────────────────────────────────────────────────
 
-    fun startManualSearch(chatId: Long, msgId: Int) {
-        sessions[chatId] = UserSession(step = BotStep.WAITING_CHAT_SEARCH_QUERY, msgId = msgId)
+
+    fun startManualSearch(chatId: Long, msgId: Int, peerType: String? = null) {
+        sessions[chatId] = UserSession(
+            step = BotStep.WAITING_CHAT_SEARCH_QUERY,
+            msgId = msgId,
+            chatSearchPeerType = peerType,
+        )
+
+        val typeLabel = when (peerType) {
+            "chat"    -> "💬 группы"
+            "channel" -> "📢 каналы"
+            else      -> "всё (группы и каналы)"
+        }
+
         sender.editText(
             chatId, msgId,
             "🔍 Поиск чатов\n\n" +
-                "Опишите тематику чатов, которые вам нужны.\n\n" +
-                "Примеры:\n" +
-                "• фриланс дизайн\n" +
-                "• поиск разработчика React\n" +
-                "• SMM специалист Москва",
-            keyboard(row(btn("❌ Отмена", "csearch:start"))),
+                    "Тип: $typeLabel\n\n" +
+                    "Опишите тематику чатов, которые вам нужны.\n\n" +
+                    "Примеры:\n" +
+                    "• фриланс дизайн\n" +
+                    "• поиск разработчика React\n" +
+                    "• SMM специалист Москва",
+            keyboard(
+                row(btn("❌ Отмена", "csearch:start")),
+            ),
         )
     }
 
@@ -148,42 +174,47 @@ class BotChatSearchHandler(
         val query = text.trim()
         if (query.isBlank()) {
             sender.sendText(chatId, "⚠️ Запрос не может быть пустым. Отправьте текст:")
-            sessions[chatId] = UserSession(step = BotStep.WAITING_CHAT_SEARCH_QUERY, msgId = msgId)
+            sessions[chatId] = UserSession(
+                step = BotStep.WAITING_CHAT_SEARCH_QUERY,
+                msgId = msgId,
+                chatSearchPeerType = session.chatSearchPeerType,
+            )
             return
         }
         if (query.length > 300) {
             sender.sendText(chatId, "⚠️ Запрос слишком длинный (макс. 300 символов).")
-            sessions[chatId] = UserSession(step = BotStep.WAITING_CHAT_SEARCH_QUERY, msgId = msgId)
+            sessions[chatId] = UserSession(
+                step = BotStep.WAITING_CHAT_SEARCH_QUERY,
+                msgId = msgId,
+                chatSearchPeerType = session.chatSearchPeerType,
+            )
             return
         }
 
-        runSearch(chatId, msgId, from.id, query)
+        runSearch(chatId, msgId, from.id, query, peerType = session.chatSearchPeerType)
     }
 
-    // ─── Основная логика поиска ───────────────────────────────────────────────
 
-    /**
-     * Запускает поиск в фоновом потоке.
-     *
-     * КРИТИЧЕСКИ ВАЖНО: используем обычный try/catch, а НЕ runCatching-цепочку.
-     * Kotlin runCatching { }.onSuccess { } — исключения из onSuccess{} НЕ
-     * перехватываются onFailure{} и тихо проглатываются thread pool executor'ом.
-     * Это была причина, по которой результаты никогда не приходили в бот.
-     */
-    private fun runSearch(chatId: Long, loadingMsgId: Int, tgUserId: Long, query: String) {
-        // Обновляем сообщение: показываем индикатор загрузки
+    private fun runSearch(chatId: Long, loadingMsgId: Int, tgUserId: Long, query: String, peerType: String? = null) {
+
+        val typeLabel = when (peerType) {
+            "chat"    -> "💬 группы"
+            "channel" -> "📢 каналы"
+            else      -> "всё"
+        }
+
         sender.editText(
             chatId, loadingMsgId,
-            "⏳ AI ищет чаты...\n\n" +
-                "Анализирую запрос, подбираю подходящие Telegram-чаты.\n" +
-                "Обычно это занимает 5-20 секунд.",
+            "⏳ AI ищет чаты ($typeLabel)...\n\n" +
+                    "Анализирую запрос, подбираю подходящие Telegram-чаты.\n" +
+                    "Обычно это занимает 5-20 секунд.",
         )
 
         worker.submit {
             try {
-                log.info("BotChatSearch: поиск chatId=$chatId query='${query.take(60)}'")
+                log.info("BotChatSearch: поиск chatId=$chatId query='${query.take(60)}' peerType=${peerType ?: "all"}")
 
-                val resp = chatSearchService.search(query)
+                val resp = chatSearchService.search(query, peerType)
 
                 log.info("BotChatSearch: найдено ${resp.results.size} чатов chatId=$chatId")
 
@@ -191,20 +222,18 @@ class BotChatSearchHandler(
                     sender.editText(
                         chatId, loadingMsgId,
                         "😕 Чаты не найдены\n\n" +
-                            "По запросу «${query.take(60)}» подходящих чатов не найдено.\n\n" +
-                            "Попробуйте уточнить или изменить запрос.",
+                                "По запросу «${query.take(60)}» (${typeLabel}) подходящих чатов не найдено.\n\n" +
+                                "Попробуйте другой запрос или измените тип поиска.",
                         keyboard(
                             row(btn("🔄 Новый поиск", "csearch:manual")),
                             row(btn("◀️ Назад к чатам", "menu:chats")),
+                            row(btn("🏠 Главное меню",   "menu:back")),
                         ),
                     )
                     return@submit
                 }
 
-                // ── Отправляем результаты НОВЫМ сообщением (sendTextAndGetId) ───
-                // Это гарантирует доставку: editText на старое "⏳..." сообщение
-                // может провалиться если оно было удалено или слишком старое.
-                // sendText никогда не падает по этим причинам.
+
                 val resultsText   = buildResultsText(resp.results, query, 0, emptySet(), emptySet())
                 val resultsMarkup = buildResultsMarkup(resp.results, 0, emptySet(), emptySet())
 
@@ -222,25 +251,26 @@ class BotChatSearchHandler(
 
                 log.info("BotChatSearch: результаты отправлены chatId=$chatId resultsMsgId=$resultsMsgId")
 
-                // Сохраняем сессию с ID сообщения результатов для последующих editText
+
                 sessions[chatId] = UserSession(
                     step                = BotStep.WAITING_CHAT_SEARCH_QUERY,
-                    msgId               = resultsMsgId,   // ← ID сообщения с результатами
+                    msgId               = resultsMsgId,
                     chatSearchResults   = resp.results,
                     chatSearchQuery     = query,
                     chatSearchPage      = 0,
                     chatSearchAdded     = mutableSetOf(),
                     chatSearchDismissed = mutableSetOf(),
+                    chatSearchPeerType  = peerType,
                 )
 
-                // Убираем loading-сообщение (заменяем тихим текстом)
+
                 sender.editText(chatId, loadingMsgId, "✅ Результаты найдены, смотрите ниже.")
 
             } catch (e: Exception) {
-                // Ловим всё — включая исключения из buildResultsText / sendTextAndGetId
+
                 log.error(
                     "BotChatSearch: критическая ошибка chatId=$chatId " +
-                    "query='${query.take(60)}': ${e.javaClass.simpleName}: ${e.message}",
+                            "query='${query.take(60)}': ${e.javaClass.simpleName}: ${e.message}",
                     e,
                 )
                 sender.editText(
@@ -248,14 +278,15 @@ class BotChatSearchHandler(
                     "❌ Ошибка поиска\n\n${e.message?.take(200) ?: "Попробуйте позже."}",
                     keyboard(
                         row(btn("🔄 Попробовать снова", "csearch:manual")),
-                        row(btn("◀️ Назад", "menu:chats")),
+                        row(btn("◀️ Назад",             "menu:chats")),
+                        row(btn("🏠 Главное меню",       "menu:back")),
                     ),
                 )
             }
         }
     }
 
-    // ─── Отображение результатов (вызывается из callback-ов навигации) ────────
+
 
     fun showResults(chatId: Long, msgId: Int, tgUserId: Long, page: Int) {
         val session = sessions[chatId]
@@ -263,7 +294,10 @@ class BotChatSearchHandler(
             sender.editText(
                 chatId, msgId,
                 "Результаты поиска устарели. Выполните новый поиск.",
-                keyboard(row(btn("🔍 Поиск", "csearch:start"))),
+                keyboard(
+                    row(btn("🔍 Поиск", "csearch:start")),
+                    row(btn("🏠 Главное меню", "menu:back")),
+                ),
             )
             return
         }
@@ -277,7 +311,7 @@ class BotChatSearchHandler(
             session.chatSearchAdded, session.chatSearchDismissed,
         )
 
-        // Обновляем страницу в сессии
+
         val visible    = session.chatSearchResults.indices.filter { it !in session.chatSearchDismissed }
         val totalPages = ((visible.size + SEARCH_PAGE_SIZE - 1) / SEARCH_PAGE_SIZE).coerceAtLeast(1)
         session.chatSearchPage = page.coerceIn(0, totalPages - 1)
@@ -285,14 +319,7 @@ class BotChatSearchHandler(
         sender.editText(chatId, msgId, text, markup)
     }
 
-    // ─── Построение текста результатов ───────────────────────────────────────
 
-    /**
-     * Строит текст страницы результатов.
-     * Используем PLAIN TEXT — никакого parseMarkdown.
-     * Markdown v1 Telegram ненадёжен для динамического контента
-     * с произвольными символами в названиях каналов и описаниях.
-     */
     private fun buildResultsText(
         results: List<io.getaimly.backend.lead.ChatSearchResult>,
         query: String,
@@ -328,10 +355,14 @@ class BotChatSearchHandler(
         pageItems.forEachIndexed { localIdx, idx ->
             val r = results[idx]
 
+            val typeIcon = when (r.peerType) {
+                "channel" -> "📢"
+                else      -> "💬"
+            }
+
             val status = when {
-                idx in added       -> "✅ Добавлен"
-                r.peerType == "chat" -> "💬 Группа"
-                else               -> "📢 Канал"
+                idx in added -> "✅ Добавлен"
+                else         -> "$typeIcon ${if (r.peerType == "channel") "Канал" else "Группа"}"
             }
 
             val members = when {
@@ -365,7 +396,7 @@ class BotChatSearchHandler(
         return sb.toString()
     }
 
-    // ─── Построение клавиатуры результатов ───────────────────────────────────
+
 
     private fun buildResultsMarkup(
         results: List<io.getaimly.backend.lead.ChatSearchResult>,
@@ -381,7 +412,7 @@ class BotChatSearchHandler(
 
         val rows = mutableListOf<InlineKeyboardRow>()
 
-        // Кнопки каждого результата
+
         pageItems.forEach { idx ->
             val r         = results[idx]
             val isAdded   = idx in added
@@ -397,7 +428,7 @@ class BotChatSearchHandler(
             }
         }
 
-        // Навигация
+
         if (totalPages > 1) {
             val navBtns = mutableListOf<InlineKeyboardButton>()
             if (safePage > 0)              navBtns.add(btn("◀️", "csearch:page:${safePage - 1}"))
@@ -406,7 +437,7 @@ class BotChatSearchHandler(
             rows.add(InlineKeyboardRow(navBtns))
         }
 
-        // Массовые действия
+
         val notAdded = pageItems.filter { it !in added }
         if (notAdded.size > 1) {
             rows.add(row(btn("✅ Добавить все на странице", "csearch:add_page:$safePage")))
@@ -419,11 +450,12 @@ class BotChatSearchHandler(
             btn("🔄 Новый поиск", "csearch:manual"),
             btn("◀️ К чатам",     "menu:chats"),
         ))
+        rows.add(row(btn("🏠 Главное меню", "menu:back")))
 
         return InlineKeyboardMarkup(rows)
     }
 
-    // ─── Добавить один чат ───────────────────────────────────────────────────
+
 
     fun addFromSearch(chatId: Long, msgId: Int, tgUserId: Long, idx: Int) {
         val user    = userRepository.findByTelegramId(tgUserId).orElse(null)
@@ -462,7 +494,7 @@ class BotChatSearchHandler(
             }
     }
 
-    // ─── Добавить все на странице ─────────────────────────────────────────────
+
 
     fun addPage(chatId: Long, msgId: Int, tgUserId: Long, page: Int) {
         val user    = userRepository.findByTelegramId(tgUserId).orElse(null)
@@ -485,7 +517,7 @@ class BotChatSearchHandler(
         showResults(chatId, msgId, tgUserId, page)
     }
 
-    // ─── Добавить все найденные ───────────────────────────────────────────────
+
 
     fun addAll(chatId: Long, msgId: Int, tgUserId: Long) {
         val user    = userRepository.findByTelegramId(tgUserId).orElse(null)
@@ -520,7 +552,10 @@ class BotChatSearchHandler(
                     if (errors > 0) append("Ошибок: $errors\n")
                     append("\nUserbot начнёт мониторинг в ближайшие минуты.")
                 }
-                sender.editText(chatId, msgId, text, keyboard(row(btn("◀️ К чатам", "menu:chats"))))
+                sender.editText(chatId, msgId, text, keyboard(
+                    row(btn("◀️ К чатам", "menu:chats")),
+                    row(btn("🏠 Главное меню", "menu:back")),
+                ))
             } catch (e: Exception) {
                 log.error("BotChatSearch: addAll critical err chatId=$chatId: ${e.message}", e)
                 sender.sendText(chatId, "❌ Ошибка при добавлении: ${e.message?.take(100)}")
@@ -528,7 +563,7 @@ class BotChatSearchHandler(
         }
     }
 
-    // ─── Скрыть результат ─────────────────────────────────────────────────────
+
 
     fun dismissResult(chatId: Long, msgId: Int, tgUserId: Long, idx: Int) {
         val session = sessions[chatId] ?: return

@@ -134,6 +134,47 @@ func (h *MessageHandler) UpdateKeywords(ctx context.Context, userID int64, keywo
 	return h.UpdateKeywordsWithVariants(ctx, userID, keywords, keywords)
 }
 
+// ReloadKeywordsFromDB перечитывает ВСЕ активные ключевые слова из БД
+// и заменяет текущий in-memory кэш.
+//
+// Вызывается из pool.recoverAfterNewSession после добавления нового userbot'а,
+// чтобы новая сессия сразу знала ключевые слова всех пользователей.
+// Без этого при пересоздании userbot'а map keywords пустой —
+// совпадения не находятся до следующей ручной синхронизации.
+func (h *MessageHandler) ReloadKeywordsFromDB(ctx context.Context) error {
+	kw, err := h.database.GetAllActiveKeywords(ctx)
+	if err != nil {
+		return fmt.Errorf("GetAllActiveKeywords: %w", err)
+	}
+
+	normalized := make(map[int64][]string, len(kw))
+	for userID, keywords := range kw {
+		norm := make([]string, 0, len(keywords))
+		for _, k := range keywords {
+			k = strings.TrimSpace(strings.ToLower(k))
+			if k != "" {
+				norm = append(norm, k)
+			}
+		}
+		normalized[userID] = norm
+	}
+
+	totalKw := 0
+	for _, v := range normalized {
+		totalKw += len(v)
+	}
+
+	h.mu.Lock()
+	h.keywords = normalized
+	h.mu.Unlock()
+
+	h.log.Info("ключевые слова перезагружены из БД (ReloadKeywordsFromDB)",
+		zap.Int("пользователей", len(normalized)),
+		zap.Int("ключевых_слов", totalKw),
+	)
+	return nil
+}
+
 func (h *MessageHandler) findMatchExact(userID int64, text string) string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -318,7 +359,6 @@ func buildMessageLink(chatLink string, chatTgID int64, messageID int64) string {
 	if chatTgID != 0 {
 		id := chatTgID
 		if id < 0 {
-			// Убираем префикс -100 для приватных супергрупп
 			id = -id
 			if id > 1000000000000 {
 				id = id - 1000000000000

@@ -19,7 +19,8 @@ class User(
     @Column(name = "first_name")
     var firstName: String? = null,
 
-    // telegram
+
+
     @Column(name = "telegram_id", unique = true)
     var telegramId: Long? = null,
 
@@ -29,9 +30,16 @@ class User(
     @Column(name = "telegram_linked_at")
     var telegramLinkedAt: LocalDateTime? = null,
 
-    // google oauth
+
+
     @Column(name = "google_id", unique = true)
     var googleId: String? = null,
+
+
+
+    @Column(name = "tribute_user_id", unique = true, nullable = true)
+    var tributeUserId: String? = null,
+
 
     @Column(name = "email_verified", nullable = false)
     var emailVerified: Boolean = false,
@@ -49,6 +57,10 @@ class User(
 
     @Column(name = "subscription_plan")
     var subscriptionPlan: String? = null,
+
+    @Column(name = "trial_used", nullable = false)
+    var trialUsed: Boolean = false,
+
 
     @Column(name = "leads_count", nullable = false)
     var leadsCount: Int = 0,

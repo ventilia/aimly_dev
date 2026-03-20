@@ -69,7 +69,7 @@ class SubscriptionController(private val service: SubscriptionService) {
         return ResponseEntity.ok(service.revoke(userId))
     }
 
-    // Эндпоинт POST /balance удалён — баланс убран из системы
+
 
     @Scheduled(cron = "0 0 9 * * *")
     fun checkExpiringSubscriptions() {

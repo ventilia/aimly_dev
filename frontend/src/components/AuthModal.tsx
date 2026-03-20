@@ -37,6 +37,14 @@ function CloseIcon() {
     )
 }
 
+function BackIcon() {
+    return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 18 9 12 15 6" />
+        </svg>
+    )
+}
 
 function GoogleIcon() {
     return (
@@ -49,98 +57,133 @@ function GoogleIcon() {
     )
 }
 
-/**
- * Запускает Google OAuth 2.0 implicit flow (redirect-based).
- * Открывает полноэкранную страницу входа Google вместо One Tap popup.
- *
- * ⚠️ Важно: в Google Cloud Console нужно добавить URI редиректа:
- *   https://[ваш-домен]/oauth/callback
- *   и для локальной разработки: http://localhost:5173/oauth/callback
- */
+
 function buildGoogleOAuthUrl(): string {
-    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string
-    const origin = window.location.origin
+    const clientId   = import.meta.env.VITE_GOOGLE_CLIENT_ID as string
+    const origin     = window.location.origin
     const redirectUri = `${origin}/oauth/callback`
-
-    // nonce для безопасности — случайная строка
-    const nonce = Math.random().toString(36).substring(2) +
-        Math.random().toString(36).substring(2)
-
-    const params = new URLSearchParams({
+    const nonce      = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2)
+    const params     = new URLSearchParams({
         client_id:     clientId,
         redirect_uri:  redirectUri,
         response_type: 'id_token',
         scope:         'openid email profile',
-        nonce:         nonce,
+        nonce,
     })
-
     return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
 }
 
+
 const txt = {
     ru: {
-        login:              'Войти',
-        register:           'Регистрация',
-        email:              'Email',
-        password:           'Пароль',
-        confirmPassword:    'Повторите пароль',
-        firstName:          'Имя (необязательно)',
-        loginBtn:           'Войти',
-        registerBtn:        'Создать аккаунт',
-        loading:            'Загрузка…',
-        codeTitle:          'Код из письма',
-        codeHint:           'Отправили 6-значный код на',
-        verifyBtn:          'Подтвердить',
-        resend:             'Отправить снова',
-        resendIn:           'Повторно через',
-        sec:                'сек',
-        successTitle:       'Добро пожаловать!',
-        successText:        'Email подтверждён. Переходим в личный кабинет…',
-        successBtn:         'Перейти в кабинет',
-        close:              'Закрыть',
-        passwordHint:       'Минимум 8 символов: строчные + заглавные + цифра',
-        showPass:           'Показать пароль',
-        hidePass:           'Скрыть пароль',
-        passwordsNoMatch:   'Пароли не совпадают',
-        orDivider:          'или',
-        googleBtn:          'Войти через Google',
-        unverifiedHint:     'Мы отправили новый код на ваш email. Подтвердите почту.',
+        login:            'Войти',
+        register:         'Регистрация',
+        email:            'Email',
+        password:         'Пароль',
+        confirmPassword:  'Повторите пароль',
+        firstName:        'Имя (необязательно)',
+        loginBtn:         'Войти',
+        registerBtn:      'Создать аккаунт',
+        loading:          'Загрузка…',
+        codeTitle:        'Код из письма',
+        codeHint:         'Отправили 6-значный код на',
+        spamNote:         'Не пришло? Проверьте папку «Спам» или «Рассылки»',
+        verifyBtn:        'Подтвердить',
+        resend:           'Отправить снова',
+        resendIn:         'Повторно через',
+        sec:              'сек',
+        successTitle:     'Добро пожаловать!',
+        successText:      'Email подтверждён. Переходим…',
+        successBtn:       'Продолжить',
+        close:            'Закрыть',
+        back:             'Назад',
+        passwordHint:     'Минимум 8 символов: строчные + заглавные + цифра',
+        showPass:         'Показать пароль',
+        hidePass:         'Скрыть пароль',
+        passwordsNoMatch: 'Пароли не совпадают',
+        orDivider:        'или',
+        googleBtn:        'Войти через Google',
+        unverifiedHint:   'Мы отправили новый код на ваш email. Подтвердите почту.',
+        forgotPassword:   'Забыли пароль?',
+        // Шаг 1: запрос сброса
+        forgotTitle:      'Восстановление пароля',
+        forgotHint:       'Введите email от вашего аккаунта, и мы отправим код для сброса пароля.',
+        forgotBtn:        'Отправить код',
+        forgotSuccess:    'Код отправлен. Проверьте почту',
+        forgotTgHint:     'Также отправили код в Telegram, если он привязан к аккаунту.',
+        // Шаг 2: ввод кода сброса
+        resetCodeTitle:   'Введите код',
+        resetCodeHint:    'Отправили код сброса пароля на',
+        resetCodeNote:    'Также проверьте Telegram, если он привязан к аккаунту.',
+        // Шаг 3: новый пароль
+        newPasswordTitle: 'Новый пароль',
+        newPassword:      'Новый пароль',
+        confirmNewPass:   'Подтвердите новый пароль',
+        setPasswordBtn:   'Сохранить пароль',
+        // Успех
+        resetSuccessTitle: 'Пароль изменён!',
+        resetSuccessText:  'Вы вошли в аккаунт. Переходим…',
     },
     en: {
-        login:              'Sign in',
-        register:           'Sign up',
-        email:              'Email',
-        password:           'Password',
-        confirmPassword:    'Confirm password',
-        firstName:          'First name (optional)',
-        loginBtn:           'Sign in',
-        registerBtn:        'Create account',
-        loading:            'Loading…',
-        codeTitle:          'Email verification',
-        codeHint:           'We sent a 6-digit code to',
-        verifyBtn:          'Verify',
-        resend:             'Send again',
-        resendIn:           'Resend in',
-        sec:                's',
-        successTitle:       'Welcome!',
-        successText:        'Email confirmed. Redirecting to your dashboard…',
-        successBtn:         'Go to dashboard',
-        close:              'Close',
-        passwordHint:       'Min 8 chars: lowercase + uppercase + digit',
-        showPass:           'Show password',
-        hidePass:           'Hide password',
-        passwordsNoMatch:   'Passwords do not match',
-        orDivider:          'or',
-        googleBtn:          'Continue with Google',
-        unverifiedHint:     'We sent a new code to your email. Please verify.',
+        login:            'Sign in',
+        register:         'Sign up',
+        email:            'Email',
+        password:         'Password',
+        confirmPassword:  'Confirm password',
+        firstName:        'First name (optional)',
+        loginBtn:         'Sign in',
+        registerBtn:      'Create account',
+        loading:          'Loading…',
+        codeTitle:        'Email verification',
+        codeHint:         'We sent a 6-digit code to',
+        spamNote:         'Not received? Check your Spam or Promotions folder',
+        verifyBtn:        'Verify',
+        resend:           'Send again',
+        resendIn:         'Resend in',
+        sec:              's',
+        successTitle:     'Welcome!',
+        successText:      'Email confirmed. Continuing…',
+        successBtn:       'Continue',
+        close:            'Close',
+        back:             'Back',
+        passwordHint:     'Min 8 chars: lowercase + uppercase + digit',
+        showPass:         'Show password',
+        hidePass:         'Hide password',
+        passwordsNoMatch: 'Passwords do not match',
+        orDivider:        'or',
+        googleBtn:        'Continue with Google',
+        unverifiedHint:   'We sent a new code to your email. Please verify.',
+        forgotPassword:   'Forgot password?',
+        // Step 1: request reset
+        forgotTitle:      'Reset password',
+        forgotHint:       'Enter your account email and we\'ll send you a reset code.',
+        forgotBtn:        'Send code',
+        forgotSuccess:    'Code sent. Check your email',
+        forgotTgHint:     'Also sent to Telegram if it\'s linked to your account.',
+        // Step 2: enter reset code
+        resetCodeTitle:   'Enter the code',
+        resetCodeHint:    'We sent a reset code to',
+        resetCodeNote:    'Also check Telegram if it\'s linked to your account.',
+        // Step 3: new password
+        newPasswordTitle: 'New password',
+        newPassword:      'New password',
+        confirmNewPass:   'Confirm new password',
+        setPasswordBtn:   'Save password',
+        // Success
+        resetSuccessTitle: 'Password changed!',
+        resetSuccessText:  'You are now signed in. Continuing…',
     },
 } as const
 
-type Step    = 'form' | 'code' | 'success'
+
+type Step    = 'form' | 'code' | 'success' | 'forgot' | 'reset-code' | 'new-password' | 'reset-success'
 type TabMode = 'login' | 'register'
+
 interface Props {
     lang:        Lang
     onClose:     () => void
+
+    onSuccess?:  () => void
     initialTab?: TabMode
 }
 
@@ -157,7 +200,13 @@ interface PFProps {
     hideLabel:    string
 }
 
-function PasswordField({ label, value, onChange, onEnter, hasError, errorText, hint, autoComplete, showLabel, hideLabel }: PFProps) {
+
+
+function PasswordField({
+                           label, value, onChange, onEnter,
+                           hasError, errorText, hint,
+                           autoComplete, showLabel, hideLabel,
+                       }: PFProps) {
     const [show, setShow] = useState(false)
     return (
         <div className={s.field}>
@@ -189,7 +238,13 @@ function PasswordField({ label, value, onChange, onEnter, hasError, errorText, h
 }
 
 
-export default function AuthModal({ lang, onClose, initialTab = 'login' }: Props) {
+
+export default function AuthModal({
+                                      lang,
+                                      onClose,
+                                      onSuccess,
+                                      initialTab = 'login',
+                                  }: Props) {
     const l = txt[lang]
     const { saveSession } = useAuthContext()
     const navigate = useNavigate()
@@ -197,25 +252,41 @@ export default function AuthModal({ lang, onClose, initialTab = 'login' }: Props
     const [tab,  setTab]  = useState<TabMode>(initialTab)
     const [step, setStep] = useState<Step>('form')
 
+    // --- Поля формы входа/регистрации ---
     const [email,           setEmail]           = useState('')
     const [password,        setPassword]        = useState('')
     const [confirmPassword, setConfirmPassword] = useState('')
     const [firstName,       setFirstName]       = useState('')
     const [emailUsed,       setEmailUsed]       = useState('')
 
+    // --- Поля верификации email ---
     const [code,        setCode]        = useState('')
     const [resendTimer, setResendTimer] = useState(0)
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-    const [loading,   setLoading]   = useState(false)
-    const [error,     setError]     = useState<string | null>(null)
-    const [codeError, setCodeError] = useState<string | null>(null)
+    // --- Поля сброса пароля ---
+    const [forgotEmail,      setForgotEmail]      = useState('')
+    const [resetCode,        setResetCode]        = useState('')
+    const [newPassword,      setNewPassword]      = useState('')
+    const [confirmNewPass,   setConfirmNewPass]   = useState('')
+    const [resetResendTimer, setResetResendTimer] = useState(0)
+    const resetTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-    const codeInputRef = useRef<HTMLInputElement>(null)
+    // --- Состояние загрузки/ошибок ---
+    const [loading,        setLoading]        = useState(false)
+    const [error,          setError]          = useState<string | null>(null)
+    const [codeError,      setCodeError]      = useState<string | null>(null)
+    const [forgotError,    setForgotError]    = useState<string | null>(null)
+    const [resetCodeError, setResetCodeError] = useState<string | null>(null)
+    const [newPassError,   setNewPassError]   = useState<string | null>(null)
 
-    useEffect(() => {
-        setTab(initialTab)
-    }, [initialTab])
+    const codeInputRef      = useRef<HTMLInputElement>(null)
+    const resetCodeInputRef = useRef<HTMLInputElement>(null)
+    const forgotEmailRef    = useRef<HTMLInputElement>(null)
+
+
+
+    useEffect(() => { setTab(initialTab) }, [initialTab])
 
     useEffect(() => {
         const fn = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -228,21 +299,39 @@ export default function AuthModal({ lang, onClose, initialTab = 'login' }: Props
         return () => { document.body.style.overflow = '' }
     }, [])
 
-    useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current) }, [])
+    useEffect(() => () => {
+        if (timerRef.current) clearInterval(timerRef.current)
+        if (resetTimerRef.current) clearInterval(resetTimerRef.current)
+    }, [])
 
     useEffect(() => {
         if (step === 'code') setTimeout(() => codeInputRef.current?.focus(), 120)
+        if (step === 'reset-code') setTimeout(() => resetCodeInputRef.current?.focus(), 120)
+        if (step === 'forgot') setTimeout(() => forgotEmailRef.current?.focus(), 120)
     }, [step])
 
     useEffect(() => {
         if (step === 'success') {
             const timer = setTimeout(() => {
-                onClose()
-                navigate('/dashboard')
-            }, 2000)
+                if (onSuccess) {
+                    onSuccess()
+                } else {
+                    onClose()
+                    navigate('/dashboard')
+                }
+            }, 1500)
             return () => clearTimeout(timer)
         }
-    }, [step, navigate, onClose])
+        if (step === 'reset-success') {
+            const timer = setTimeout(() => {
+                onClose()
+                navigate('/dashboard')
+            }, 1500)
+            return () => clearTimeout(timer)
+        }
+    }, [step, navigate, onClose, onSuccess])
+
+
 
     const startResendTimer = (seconds = 60) => {
         setResendTimer(seconds)
@@ -255,17 +344,26 @@ export default function AuthModal({ lang, onClose, initialTab = 'login' }: Props
         }, 1000)
     }
 
+    const startResetResendTimer = (seconds = 60) => {
+        setResetResendTimer(seconds)
+        if (resetTimerRef.current) clearInterval(resetTimerRef.current)
+        resetTimerRef.current = setInterval(() => {
+            setResetResendTimer(prev => {
+                if (prev <= 1) { clearInterval(resetTimerRef.current!); return 0 }
+                return prev - 1
+            })
+        }, 1000)
+    }
+
     const switchTab = (next: TabMode) => {
-        setTab(next)
-        setError(null)
-        setPassword('')
-        setConfirmPassword('')
+        setTab(next); setError(null); setPassword(''); setConfirmPassword('')
     }
 
     const goToDashboard = () => {
-        onClose()
-        navigate('/dashboard')
+        if (onSuccess) { onSuccess() } else { onClose(); navigate('/dashboard') }
     }
+
+
 
     const handleLogin = async () => {
         setError(null)
@@ -273,23 +371,13 @@ export default function AuthModal({ lang, onClose, initialTab = 'login' }: Props
         setLoading(true)
         try {
             const res = await authApi.login(email.trim(), password)
-
             if (res.pendingVerification) {
-                setEmailUsed(res.email)
-                setStep('code')
-                startResendTimer(60)
-                return
+                setEmailUsed(res.email); setStep('code'); startResendTimer(60); return
             }
-
-            if (res.auth) {
-                saveSession(res.auth)
-                goToDashboard()
-            }
+            if (res.auth) { saveSession(res.auth); goToDashboard() }
         } catch (e: unknown) {
             setError(e instanceof Error ? e.message : 'Ошибка входа')
-        } finally {
-            setLoading(false)
-        }
+        } finally { setLoading(false) }
     }
 
     const handleRegister = async () => {
@@ -297,12 +385,8 @@ export default function AuthModal({ lang, onClose, initialTab = 'login' }: Props
         if (!email.trim() || !password || !confirmPassword) {
             setError('Заполните все обязательные поля'); return
         }
-        if (password !== confirmPassword) {
-            setError(l.passwordsNoMatch); return
-        }
-        if (password.length < 8) {
-            setError(l.passwordHint); return
-        }
+        if (password !== confirmPassword) { setError(l.passwordsNoMatch); return }
+        if (password.length < 8) { setError(l.passwordHint); return }
         setLoading(true)
         try {
             const res = await authApi.register({
@@ -312,17 +396,13 @@ export default function AuthModal({ lang, onClose, initialTab = 'login' }: Props
                 firstName:      firstName.trim() || undefined,
             })
             if (res.token !== null || res.userId !== null) {
-                setEmailUsed(email.trim())
-                setStep('code')
-                startResendTimer(60)
+                setEmailUsed(email.trim()); setStep('code'); startResendTimer(60)
             } else {
                 setError(res.message)
             }
         } catch (e: unknown) {
             setError(e instanceof Error ? e.message : 'Ошибка регистрации')
-        } finally {
-            setLoading(false)
-        }
+        } finally { setLoading(false) }
     }
 
     const handleVerify = async () => {
@@ -335,36 +415,109 @@ export default function AuthModal({ lang, onClose, initialTab = 'login' }: Props
             setStep('success')
         } catch (e: unknown) {
             setCodeError(e instanceof Error ? e.message : 'Неверный код')
-        } finally {
-            setLoading(false)
-        }
+        } finally { setLoading(false) }
     }
 
     const handleResend = async () => {
         if (resendTimer > 0) return
-        setCodeError(null)
-        setLoading(true)
+        setCodeError(null); setLoading(true)
         try {
-            await authApi.resendCode()
-            setCode('')
-            startResendTimer(60)
+            await authApi.resendCode(); setCode(''); startResendTimer(60)
         } catch (e: unknown) {
             setCodeError(e instanceof Error ? e.message : 'Не удалось отправить код')
-        } finally {
-            setLoading(false)
-        }
+        } finally { setLoading(false) }
     }
 
-    /**
-     * Google OAuth redirect flow.
-     * Вместо GSI One Tap (маленький popup) делаем полный редирект
-     * на страницу входа Google — надёжно, работает во всех браузерах.
-     */
     const handleGoogle = () => {
-        // Сохраняем текущий путь для возврата после авторизации
+        if (onSuccess) sessionStorage.setItem('oauth_after_checkout', '1')
         sessionStorage.setItem('oauth_return_to', '/dashboard')
-        const url = buildGoogleOAuthUrl()
-        window.location.href = url
+        window.location.href = buildGoogleOAuthUrl()
+    }
+
+
+    // ─── Обработчики сброса пароля ─────────────────────────────────────────────
+
+    const handleForgotPassword = async () => {
+        setForgotError(null)
+        const trimmedEmail = forgotEmail.trim()
+        if (!trimmedEmail) { setForgotError('Введите email'); return }
+        if (!trimmedEmail.includes('@') || !trimmedEmail.includes('.')) {
+            setForgotError('Некорректный email'); return
+        }
+        setLoading(true)
+        try {
+            await authApi.forgotPassword(trimmedEmail)
+            setEmailUsed(trimmedEmail)
+            setStep('reset-code')
+            startResetResendTimer(60)
+        } catch (e: unknown) {
+            setForgotError(e instanceof Error ? e.message : 'Ошибка. Попробуйте позже')
+        } finally { setLoading(false) }
+    }
+
+    const handleVerifyResetCode = async () => {
+        setResetCodeError(null)
+        if (resetCode.length !== 6) { setResetCodeError('Введите 6-значный код'); return }
+        // Просто переходим к следующему шагу — код проверим при смене пароля
+        setStep('new-password')
+    }
+
+    const handleResendResetCode = async () => {
+        if (resetResendTimer > 0) return
+        setResetCodeError(null); setLoading(true)
+        try {
+            await authApi.forgotPassword(emailUsed)
+            setResetCode('')
+            startResetResendTimer(60)
+        } catch (e: unknown) {
+            setResetCodeError(e instanceof Error ? e.message : 'Не удалось отправить код')
+        } finally { setLoading(false) }
+    }
+
+    const handleSetNewPassword = async () => {
+        setNewPassError(null)
+        if (!newPassword) { setNewPassError('Введите новый пароль'); return }
+        if (newPassword.length < 8) { setNewPassError(l.passwordHint); return }
+        if (newPassword !== confirmNewPass) { setNewPassError(l.passwordsNoMatch); return }
+        setLoading(true)
+        try {
+            const res = await authApi.resetPassword({
+                code:            resetCode,
+                newPassword,
+                confirmPassword: confirmNewPass,
+            })
+            saveSession(res)
+            setStep('reset-success')
+        } catch (e: unknown) {
+            // Если код неверный — возвращаем пользователя к вводу кода
+            const msg = e instanceof Error ? e.message : 'Ошибка. Попробуйте ещё раз'
+            if (msg.toLowerCase().includes('код') || msg.toLowerCase().includes('code')) {
+                setStep('reset-code')
+                setResetCodeError(msg)
+            } else {
+                setNewPassError(msg)
+            }
+        } finally { setLoading(false) }
+    }
+
+
+
+    // ─── Рендер шагов ─────────────────────────────────────────────────────────────
+
+    if (step === 'reset-success') {
+        return (
+            <div className={s.overlay}>
+                <div className={s.modal} role="dialog" aria-modal="true">
+                    <div className={s.body}>
+                        <div className={s.successStep}>
+                            <div className={s.successIcon}>✓</div>
+                            <h2 className={s.successTitle}>{l.resetSuccessTitle}</h2>
+                            <p className={s.successText}>{l.resetSuccessText}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )
     }
 
     if (step === 'success') {
@@ -386,19 +539,32 @@ export default function AuthModal({ lang, onClose, initialTab = 'login' }: Props
         )
     }
 
+
     if (step === 'code') {
         return (
             <div className={s.overlay} onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
                 <div className={s.modal} role="dialog" aria-modal="true">
                     <div className={s.header}>
                         <span className={s.title}>{l.codeTitle}</span>
-                        <button className={s.closeBtn} onClick={onClose} aria-label={l.close}><CloseIcon /></button>
+                        <button className={s.closeBtn} onClick={onClose} aria-label={l.close}>
+                            <CloseIcon />
+                        </button>
                     </div>
                     <div className={s.body}>
                         <div className={s.codeStep}>
                             <p className={s.codeHint}>
                                 {l.codeHint}{' '}
                                 <span className={s.codeHintEmail}>{emailUsed}</span>
+                            </p>
+
+                            <p style={{
+                                fontSize:   12,
+                                color:      'var(--c-ink-3)',
+                                textAlign:  'center',
+                                margin:     '-4px 0 0',
+                                lineHeight: 1.5,
+                            }}>
+                                {l.spamNote}
                             </p>
 
                             <div className={s.codeInputWrap}>
@@ -447,6 +613,209 @@ export default function AuthModal({ lang, onClose, initialTab = 'login' }: Props
     }
 
 
+    // ─── Шаг 1: запрос кода сброса ────────────────────────────────────────────────
+
+    if (step === 'forgot') {
+        return (
+            <div className={s.overlay} onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+                <div className={s.modal} role="dialog" aria-modal="true">
+                    <div className={s.header}>
+                        <button
+                            className={s.backBtn}
+                            onClick={() => { setStep('form'); setForgotError(null) }}
+                            aria-label={l.back}
+                        >
+                            <BackIcon />
+                        </button>
+                        <span className={s.title}>{l.forgotTitle}</span>
+                        <button className={s.closeBtn} onClick={onClose} aria-label={l.close}>
+                            <CloseIcon />
+                        </button>
+                    </div>
+                    <div className={s.body}>
+                        <div className={s.form}>
+                            <p className={s.forgotHintText}>{l.forgotHint}</p>
+
+                            <div className={s.field}>
+                                <label className={s.label}>{l.email}</label>
+                                <input
+                                    ref={forgotEmailRef}
+                                    className={s.input}
+                                    type="email"
+                                    placeholder="ivan@example.com"
+                                    value={forgotEmail}
+                                    onChange={e => { setForgotEmail(e.target.value); setForgotError(null) }}
+                                    onKeyDown={e => { if (e.key === 'Enter') handleForgotPassword() }}
+                                    autoComplete="email"
+                                />
+                            </div>
+
+                            {forgotError && <div className={s.errorBox}>{forgotError}</div>}
+
+                            <button
+                                className={`btn-primary ${s.submitBtn}`}
+                                onClick={handleForgotPassword}
+                                disabled={loading}
+                            >
+                                {loading ? l.loading : l.forgotBtn}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
+
+    // ─── Шаг 2: ввод кода сброса ─────────────────────────────────────────────────
+
+    if (step === 'reset-code') {
+        return (
+            <div className={s.overlay} onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+                <div className={s.modal} role="dialog" aria-modal="true">
+                    <div className={s.header}>
+                        <button
+                            className={s.backBtn}
+                            onClick={() => { setStep('forgot'); setResetCodeError(null) }}
+                            aria-label={l.back}
+                        >
+                            <BackIcon />
+                        </button>
+                        <span className={s.title}>{l.resetCodeTitle}</span>
+                        <button className={s.closeBtn} onClick={onClose} aria-label={l.close}>
+                            <CloseIcon />
+                        </button>
+                    </div>
+                    <div className={s.body}>
+                        <div className={s.codeStep}>
+                            <p className={s.codeHint}>
+                                {l.resetCodeHint}{' '}
+                                <span className={s.codeHintEmail}>{emailUsed}</span>
+                            </p>
+
+                            <p style={{
+                                fontSize:   12,
+                                color:      'var(--c-ink-3)',
+                                textAlign:  'center',
+                                margin:     '-4px 0 0',
+                                lineHeight: 1.5,
+                            }}>
+                                {l.resetCodeNote}
+                            </p>
+
+                            <div className={s.codeInputWrap}>
+                                <input
+                                    ref={resetCodeInputRef}
+                                    className={`${s.codeInput} ${resetCodeError ? s.codeInputError : ''}`}
+                                    type="text"
+                                    inputMode="numeric"
+                                    pattern="\d{6}"
+                                    maxLength={6}
+                                    placeholder="——————"
+                                    value={resetCode}
+                                    onChange={e => {
+                                        setResetCode(e.target.value.replace(/\D/g, '').slice(0, 6))
+                                        setResetCodeError(null)
+                                    }}
+                                    onKeyDown={e => { if (e.key === 'Enter') handleVerifyResetCode() }}
+                                    autoComplete="one-time-code"
+                                />
+                            </div>
+
+                            {resetCodeError && <p className={s.errorBox}>{resetCodeError}</p>}
+
+                            <button
+                                className={`btn-primary ${s.submitBtn}`}
+                                onClick={handleVerifyResetCode}
+                                disabled={loading || resetCode.length !== 6}
+                            >
+                                {loading ? l.loading : l.verifyBtn}
+                            </button>
+
+                            <div className={s.resendRow}>
+                                {resetResendTimer > 0 ? (
+                                    <span className={s.timer}>{l.resendIn} {resetResendTimer} {l.sec}</span>
+                                ) : (
+                                    <button className={s.resendBtn} onClick={handleResendResetCode} disabled={loading}>
+                                        {l.resend}
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
+
+    // ─── Шаг 3: новый пароль ─────────────────────────────────────────────────────
+
+    if (step === 'new-password') {
+        const newPassMismatch = !!confirmNewPass && confirmNewPass !== newPassword
+        return (
+            <div className={s.overlay} onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+                <div className={s.modal} role="dialog" aria-modal="true">
+                    <div className={s.header}>
+                        <button
+                            className={s.backBtn}
+                            onClick={() => { setStep('reset-code'); setNewPassError(null) }}
+                            aria-label={l.back}
+                        >
+                            <BackIcon />
+                        </button>
+                        <span className={s.title}>{l.newPasswordTitle}</span>
+                        <button className={s.closeBtn} onClick={onClose} aria-label={l.close}>
+                            <CloseIcon />
+                        </button>
+                    </div>
+                    <div className={s.body}>
+                        <div className={s.form}>
+                            <PasswordField
+                                label={l.newPassword}
+                                value={newPassword}
+                                onChange={v => { setNewPassword(v); setNewPassError(null) }}
+                                onEnter={!newPassMismatch ? handleSetNewPassword : undefined}
+                                autoComplete="new-password"
+                                hint={l.passwordHint}
+                                showLabel={l.showPass}
+                                hideLabel={l.hidePass}
+                            />
+
+                            <PasswordField
+                                label={l.confirmNewPass}
+                                value={confirmNewPass}
+                                onChange={v => { setConfirmNewPass(v); setNewPassError(null) }}
+                                onEnter={handleSetNewPassword}
+                                autoComplete="new-password"
+                                hasError={newPassMismatch}
+                                errorText={l.passwordsNoMatch}
+                                showLabel={l.showPass}
+                                hideLabel={l.hidePass}
+                            />
+
+                            {newPassError && !newPassMismatch && (
+                                <div className={s.errorBox}>{newPassError}</div>
+                            )}
+
+                            <button
+                                className={`btn-primary ${s.submitBtn}`}
+                                onClick={handleSetNewPassword}
+                                disabled={loading || newPassMismatch}
+                            >
+                                {loading ? l.loading : l.setPasswordBtn}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
+
+
+    // ─── Основная форма (login / register) ────────────────────────────────────────
+
     const confirmMismatch = !!confirmPassword && confirmPassword !== password
 
     return (
@@ -454,11 +823,12 @@ export default function AuthModal({ lang, onClose, initialTab = 'login' }: Props
             <div className={s.modal} role="dialog" aria-modal="true">
                 <div className={s.header}>
                     <span className={s.title}>{tab === 'login' ? l.login : l.register}</span>
-                    <button className={s.closeBtn} onClick={onClose} aria-label={l.close}><CloseIcon /></button>
+                    <button className={s.closeBtn} onClick={onClose} aria-label={l.close}>
+                        <CloseIcon />
+                    </button>
                 </div>
 
                 <div className={s.body}>
-                    {/* Google кнопка — полный редирект на экран Google */}
                     <button className={s.googleBtn} onClick={handleGoogle} disabled={loading} type="button">
                         <GoogleIcon />
                         {l.googleBtn}
@@ -515,16 +885,35 @@ export default function AuthModal({ lang, onClose, initialTab = 'login' }: Props
                             />
                         </div>
 
-                        <PasswordField
-                            label={l.password}
-                            value={password}
-                            onChange={v => { setPassword(v); setError(null) }}
-                            onEnter={tab === 'login' ? handleLogin : undefined}
-                            autoComplete={tab === 'login' ? 'current-password' : 'new-password'}
-                            hint={tab === 'register' ? l.passwordHint : undefined}
-                            showLabel={l.showPass}
-                            hideLabel={l.hidePass}
-                        />
+                        <div>
+                            <PasswordField
+                                label={l.password}
+                                value={password}
+                                onChange={v => { setPassword(v); setError(null) }}
+                                onEnter={tab === 'login' ? handleLogin : undefined}
+                                autoComplete={tab === 'login' ? 'current-password' : 'new-password'}
+                                hint={tab === 'register' ? l.passwordHint : undefined}
+                                showLabel={l.showPass}
+                                hideLabel={l.hidePass}
+                            />
+
+                            {/* Ссылка "Забыли пароль?" — только на табе входа */}
+                            {tab === 'login' && (
+                                <div className={s.forgotRow}>
+                                    <button
+                                        type="button"
+                                        className={s.forgotLink}
+                                        onClick={() => {
+                                            setForgotEmail(email.trim())
+                                            setForgotError(null)
+                                            setStep('forgot')
+                                        }}
+                                    >
+                                        {l.forgotPassword}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
 
                         {tab === 'register' && (
                             <PasswordField

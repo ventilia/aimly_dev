@@ -49,6 +49,8 @@ class SecurityConfig(
                         "/api/v1/auth/oauth2/**",
                         "/api/v1/auth/verify-email",
                         "/api/v1/auth/resend-code",
+                        "/api/v1/auth/forgot-password",
+                        "/api/v1/auth/reset-password",
                         "/internal/**",
                         "/actuator/health",
                         "/error",

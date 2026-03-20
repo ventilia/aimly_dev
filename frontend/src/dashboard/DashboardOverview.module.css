@@ -22,8 +22,6 @@
 }
 
 
-
-
 .statsRow {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -62,8 +60,6 @@
     color: var(--c-ink-3);
     font-weight: 500;
 }
-
-
 
 
 .tgAlert {
@@ -157,8 +153,6 @@
     font-weight: 600;
     color: var(--c-green);
 }
-
-
 
 
 .instrCard {
@@ -294,8 +288,6 @@
 .openBtn:hover { opacity: .85; }
 
 
-
-
 .setupRow {
     display: grid;
     grid-template-columns: 1fr auto;
@@ -424,8 +416,6 @@
     line-height: 1.4;
 }
 
-
-/* ─── адаптив ───────────────────────────────────────────── */
 
 @media (max-width: 900px) {
     .statsRow {

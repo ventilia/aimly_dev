@@ -47,9 +47,13 @@ func (s *Server) setupRoutes() {
 		r.Post("/keywords/update", s.handlers.UpdateKeywords)
 		r.Get("/stats", s.handlers.Stats)
 
+		// Admin: сессии
 		r.Post("/admin/sessions/register", s.handlers.RegisterSession)
 		r.Post("/admin/sessions/confirm", s.handlers.ConfirmSession)
+		r.Post("/admin/sessions/delete", s.handlers.DeleteSession) // ← новый роут
+		r.Get("/admin/sessions", s.handlers.GetSessions)           // ← новый роут
 
+		// Admin: чаты
 		r.Post("/admin/chats/leave", s.handlers.LeaveChat)
 	})
 
@@ -58,46 +62,35 @@ func (s *Server) setupRoutes() {
 
 func (s *Server) Run(ctx context.Context) error {
 	srv := &http.Server{
-		Addr:    ":" + s.port,
-		Handler: s.router,
-
-		ReadTimeout: 15 * time.Second,
-
+		Addr:         ":" + s.port,
+		Handler:      s.router,
+		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 5 * time.Minute,
 		IdleTimeout:  60 * time.Second,
 	}
 
 	errCh := make(chan error, 1)
 	go func() {
-		s.log.Info("HTTP сервер запущен",
-			zap.String("port", s.port),
-			zap.String("writeTimeout", "5m"),
-		)
+		s.log.Info("HTTP сервер запущен", zap.String("port", s.port))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			errCh <- err
 		}
 	}()
 
 	select {
-	case <-ctx.Done():
-		s.log.Info("завершаем HTTP сервер...")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		return srv.Shutdown(shutdownCtx)
 	case err := <-errCh:
 		return err
+	case <-ctx.Done():
+		shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return srv.Shutdown(shutCtx)
 	}
 }
 
 func (s *Server) requireInternalSecret(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		secret := r.Header.Get("X-Internal-Secret")
-		if secret != s.secret {
-			s.log.Warn("неверный X-Internal-Secret",
-				zap.String("ip", r.RemoteAddr),
-				zap.String("path", r.URL.Path),
-			)
-			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		if s.secret != "" && r.Header.Get("X-Internal-Secret") != s.secret {
+			jsonError(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -106,23 +99,12 @@ func (s *Server) requireInternalSecret(next http.Handler) http.Handler {
 
 func (s *Server) zapLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 		start := time.Now()
-
-		next.ServeHTTP(ww, r)
-
-		duration := time.Since(start)
-		level := zap.DebugLevel
-		if duration > 5*time.Second {
-			level = zap.WarnLevel
-		}
-
-		s.log.Log(level, "HTTP запрос",
+		next.ServeHTTP(w, r)
+		s.log.Debug("HTTP",
 			zap.String("method", r.Method),
 			zap.String("path", r.URL.Path),
-			zap.Int("status", ww.Status()),
-			zap.Duration("duration", duration),
-			zap.String("requestId", middleware.GetReqID(r.Context())),
+			zap.Duration("dur", time.Since(start)),
 		)
 	})
 }

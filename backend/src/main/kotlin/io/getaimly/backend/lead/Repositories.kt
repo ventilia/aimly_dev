@@ -39,6 +39,10 @@ interface LeadRepository : JpaRepository<Lead, Long> {
         authorUsername: String,
         foundAt: LocalDateTime,
     ): Boolean
+
+    @Modifying
+    @Query("UPDATE Lead l SET l.status = io.getaimly.backend.lead.LeadStatus.VIEWED WHERE l.user.id = :userId AND l.status = io.getaimly.backend.lead.LeadStatus.NEW")
+    fun markAllViewedByUserId(@Param("userId") userId: Long)
 }
 
 @Repository

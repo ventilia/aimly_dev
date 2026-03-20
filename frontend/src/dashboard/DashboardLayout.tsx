@@ -10,8 +10,8 @@ const txt = {
         nav: {
             overview: 'Главная',
             leads:    'Лиды',
-            keywords: 'Ключевые слова',
             chats:    'Чаты',
+            keywords: 'Ключевые слова',
             profile:  'Профиль',
         },
         logout:     'Выход',
@@ -23,8 +23,8 @@ const txt = {
         nav: {
             overview: 'Home',
             leads:    'Leads',
-            keywords: 'Keywords',
             chats:    'Chats',
+            keywords: 'Keywords',
             profile:  'Profile',
         },
         logout:     'Sign out',
@@ -37,16 +37,17 @@ const txt = {
 interface NavLabels {
     overview: string
     leads: string
-    keywords: string
     chats: string
+    keywords: string
     profile: string
 }
 
+// ЗАДАЧА 3: чаты идут перед ключевыми словами
 const NAV_ITEMS = (l: NavLabels) => [
     { to: '/dashboard',          label: l.overview, exact: true  },
     { to: '/dashboard/leads',    label: l.leads,    exact: false },
-    { to: '/dashboard/keywords', label: l.keywords, exact: false },
     { to: '/dashboard/chats',    label: l.chats,    exact: false },
+    { to: '/dashboard/keywords', label: l.keywords, exact: false },
     { to: '/dashboard/profile',  label: l.profile,  exact: false },
 ]
 
@@ -98,6 +99,7 @@ export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) 
 
     const hasSubscription = user?.subscriptionStatus === 'ACTIVE' || user?.subscriptionStatus === 'TRIAL'
 
+
     const refreshNewCount = () => {
         leadsApi.list({ status: 'NEW', size: 1 })
             .then(p => setNewLeadsCount(p.totalElements))
@@ -143,7 +145,7 @@ export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) 
                 <div className={s.noSubTopBanner}>
                     <span className={s.noSubTopIcon}><IconAlertCircle /></span>
                     <span className={s.noSubTopText}>{l.noSub}</span>
-                    <button className={s.noSubTopBtn} onClick={() => navigate('/dashboard/profile')}>
+                    <button className={s.noSubTopBtn} onClick={() => navigate('/checkout')}>
                         {l.noSubBtn}
                     </button>
                 </div>
@@ -225,7 +227,6 @@ export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) 
                         <div className={s.sidebarAvatar}>{initials}</div>
                         <div className={s.sidebarUserInfo}>
                             <div className={s.sidebarUserName}>{displayName}</div>
-                            <div className={s.sidebarUserEmail}>{user?.email}</div>
                         </div>
                     </div>
                 </aside>

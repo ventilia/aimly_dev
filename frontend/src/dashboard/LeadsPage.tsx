@@ -3,7 +3,6 @@ import { leadsApi, type Lead, type LeadPage } from '../api/leads'
 import { LEADS_COUNT_CHANGED } from './DashboardLayout'
 import s from './Leadspage.module.css'
 
-// ─── Цвета статусов ───────────────────────────────────────────────────────────
 const STATUS_COLOR: Record<string, { bg: string; text: string }> = {
     NEW:     { bg: 'rgba(239,68,68,.12)',    text: '#dc2626' },
     VIEWED:  { bg: 'rgba(245,158,11,.12)',   text: '#d97706' },
@@ -26,14 +25,12 @@ const FILTERS = [
     { value: 'IGNORED', label: 'Архив'    },
 ]
 
-// ─── Вспомогательная функция диспатча события ─────────────────────────────────
 function dispatchLeadsCountChanged(newCount: number) {
     window.dispatchEvent(
         new CustomEvent(LEADS_COUNT_CHANGED, { detail: { newCount } })
     )
 }
 
-// ─── Icons ────────────────────────────────────────────────────────────────────
 const IconUser = () => (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
@@ -101,15 +98,15 @@ const IconChevron = ({ open }: { open: boolean }) => (
     </svg>
 )
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
 export default function LeadsPage() {
-    const [data,     setData]     = useState<LeadPage | null>(null)
-    const [loading,  setLoading]  = useState(true)
-    const [filter,   setFilter]   = useState('')
-    const [page,     setPage]     = useState(0)
-    const [error,    setError]    = useState('')
-    const [updating, setUpdating] = useState<Set<number>>(new Set())
-    const [expanded, setExpanded] = useState<Set<number>>(new Set())
+    const [data,       setData]       = useState<LeadPage | null>(null)
+    const [loading,    setLoading]    = useState(true)
+    const [filter,     setFilter]     = useState('')
+    const [page,       setPage]       = useState(0)
+    const [error,      setError]      = useState('')
+    const [updating,   setUpdating]   = useState<Set<number>>(new Set())
+    const [expanded,   setExpanded]   = useState<Set<number>>(new Set())
+    const [markingAll, setMarkingAll] = useState(false)
 
     const load = useCallback(async () => {
         setLoading(true)
@@ -118,7 +115,6 @@ export default function LeadsPage() {
             const statusParam = filter || undefined
             const result = await leadsApi.list({ status: statusParam, page, size: 20 })
             setData(result)
-            // Синхронизируем счётчик в навигации при каждой загрузке
             dispatchLeadsCountChanged(result.newCount)
         } catch (e: unknown) {
             setError(e instanceof Error ? e.message : 'Ошибка загрузки')
@@ -137,24 +133,21 @@ export default function LeadsPage() {
     const toggleExpand = (id: number) => {
         setExpanded(prev => {
             const next = new Set(prev)
-            next.has(id) ? next.delete(id) : next.add(id)
+            if (next.has(id)) {
+                next.delete(id)
+            } else {
+                next.add(id)
+            }
             return next
         })
     }
 
-    /**
-     * Применяет обновлённый лид к локальному состоянию и немедленно
-     * диспатчит событие обновления счётчика в навигации.
-     */
     const applyStatusUpdate = (updated: Lead, previousStatus: string) => {
         setData(prev => {
             if (!prev) return prev
 
             const content = prev.content.map(l => l.id === updated.id ? updated : l)
 
-            // Пересчёт newCount:
-            // - если был NEW и стал не NEW — уменьшаем
-            // - если был не NEW и стал NEW — увеличиваем
             let newCount = prev.newCount
             if (previousStatus === 'NEW' && updated.status !== 'NEW') {
                 newCount = Math.max(0, newCount - 1)
@@ -162,7 +155,6 @@ export default function LeadsPage() {
                 newCount = newCount + 1
             }
 
-            // Немедленно обновляем счётчик в навигации
             dispatchLeadsCountChanged(newCount)
 
             return { ...prev, content, newCount }
@@ -183,7 +175,26 @@ export default function LeadsPage() {
         }
     }
 
-    // При открытии ссылки — автоматически помечаем как прочитанный
+    const handleMarkAllRead = async () => {
+        if (markingAll) return
+        setMarkingAll(true)
+        try {
+            await leadsApi.markAllRead()
+            setData(prev => {
+                if (!prev) return prev
+                const content = prev.content.map(l =>
+                    l.status === 'NEW' ? { ...l, status: 'VIEWED' as const } : l
+                )
+                dispatchLeadsCountChanged(0)
+                return { ...prev, content, newCount: 0 }
+            })
+        } catch {
+            // silent
+        } finally {
+            setMarkingAll(false)
+        }
+    }
+
     const handleOpen = (lead: Lead) => {
         if (lead.status === 'NEW') {
             void setStatus(lead, 'VIEWED')
@@ -215,7 +226,7 @@ export default function LeadsPage() {
     return (
         <div className={s.page}>
             <div className={s.header}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <h1 className={s.title}>Лиды</h1>
                     {(data?.newCount ?? 0) > 0 && (
                         <span style={{
@@ -230,6 +241,41 @@ export default function LeadsPage() {
                         }}>
                             {data!.newCount} новых
                         </span>
+                    )}
+                    {(data?.newCount ?? 0) > 0 && (
+                        <button
+                            onClick={handleMarkAllRead}
+                            disabled={markingAll}
+                            style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 5,
+                                padding: '4px 12px',
+                                borderRadius: 100,
+                                border: '1.5px solid var(--c-border)',
+                                background: 'none',
+                                color: 'var(--c-ink-2)',
+                                fontSize: 12,
+                                fontWeight: 600,
+                                cursor: markingAll ? 'default' : 'pointer',
+                                fontFamily: 'var(--font-body)',
+                                transition: 'all .15s',
+                                opacity: markingAll ? 0.5 : 1,
+                            }}
+                            onMouseEnter={e => {
+                                if (!markingAll) {
+                                    (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--c-accent)'
+                                    ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--c-accent)'
+                                }
+                            }}
+                            onMouseLeave={e => {
+                                (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--c-border)'
+                                ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--c-ink-2)'
+                            }}
+                        >
+                            <IconCheck />
+                            {markingAll ? '...' : 'Прочитать всё'}
+                        </button>
                     )}
                 </div>
                 <div className={s.tabs}>
@@ -282,7 +328,6 @@ export default function LeadsPage() {
                                         ...(isArchived ? { opacity: 0.65 } : {}),
                                     }}
                                 >
-                                    {/* ─── Шапка: чат + дата + статус ─── */}
                                     <div className={s.leadHead}>
                                         <div className={s.leadMeta}>
                                             <div style={{
@@ -315,7 +360,6 @@ export default function LeadsPage() {
                                             )}
                                         </div>
 
-                                        {/* Статус — кликабельный для быстрого переключения прочитан/не прочитан */}
                                         <button
                                             onClick={() => {
                                                 if (isNew)    void setStatus(lead, 'VIEWED')
@@ -348,14 +392,12 @@ export default function LeadsPage() {
                                         </button>
                                     </div>
 
-                                    {/* ─── Текст сообщения ─── */}
                                     <div className={s.leadTextBlock}>
                                         <div className={s.leadTextInner}>
                                             <div className={s.leadText}>{lead.messageText}</div>
                                         </div>
                                     </div>
 
-                                    {/* ─── Детали (контекст + AI) ─── */}
                                     {(contextMsgs.length > 0 || (lead.aiValid !== null && lead.aiValid !== undefined)) && (
                                         <button
                                             onClick={() => toggleExpand(lead.id)}
@@ -424,6 +466,7 @@ export default function LeadsPage() {
                                                                 background: 'var(--c-surface)',
                                                                 borderRadius: '0 6px 6px 0',
                                                                 wordBreak: 'break-word',
+                                                                whiteSpace: 'pre-wrap',
                                                             }}>
                                                                 {msg}
                                                             </div>
@@ -434,7 +477,6 @@ export default function LeadsPage() {
                                         </div>
                                     )}
 
-                                    {/* ─── Футер: автор + действия ─── */}
                                     <div className={s.leadFooter}>
                                         <div className={s.leadAuthor}>
                                             <span style={{ color: 'var(--c-ink-3)', flexShrink: 0 }}><IconUser /></span>
@@ -451,18 +493,13 @@ export default function LeadsPage() {
                                                     style={{
                                                         background: lead.aiValid ? 'rgba(16,185,129,.12)' : 'rgba(239,68,68,.12)',
                                                         color: lead.aiValid ? '#10b981' : '#ef4444',
-                                                        display: 'flex', alignItems: 'center', gap: 4,
-                                                        cursor: 'pointer',
                                                     }}
-                                                    onClick={() => toggleExpand(lead.id)}
-                                                    title="Нажмите чтобы увидеть причину"
                                                 >
                                                     <IconAI valid={lead.aiValid} />
                                                     AI
                                                 </div>
                                             )}
 
-                                            {/* Кнопка "Ответил" — для NEW и VIEWED */}
                                             {(isNew || isViewed) && (
                                                 <button
                                                     onClick={() => void setStatus(lead, 'REPLIED')}
@@ -491,7 +528,6 @@ export default function LeadsPage() {
                                                 </button>
                                             )}
 
-                                            {/* Кнопка "Вернуть" — для REPLIED (откат на VIEWED) */}
                                             {isReplied && (
                                                 <button
                                                     onClick={() => void setStatus(lead, 'VIEWED')}
@@ -520,7 +556,6 @@ export default function LeadsPage() {
                                                 </button>
                                             )}
 
-                                            {/* Кнопка "В архив" — для всех кроме IGNORED */}
                                             {!isArchived && (
                                                 <button
                                                     onClick={() => void setStatus(lead, 'IGNORED')}
@@ -549,7 +584,6 @@ export default function LeadsPage() {
                                                 </button>
                                             )}
 
-                                            {/* Кнопка "Восстановить" — только для IGNORED */}
                                             {isArchived && (
                                                 <button
                                                     onClick={() => void setStatus(lead, 'NEW')}

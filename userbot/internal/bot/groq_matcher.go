@@ -50,6 +50,32 @@ type groqMatchResponse struct {
 
 const groqModel = "llama-3.1-8b-instant"
 
+// cleanGroqJSON убирает markdown-обёртки которые модель иногда добавляет
+// несмотря на инструкцию "только JSON".
+func cleanGroqJSON(raw string) string {
+	s := strings.TrimSpace(raw)
+	// Убираем ```json ... ``` и просто ``` ... ```
+	for _, prefix := range []string{"```json", "```"} {
+		if strings.HasPrefix(s, prefix) {
+			s = strings.TrimPrefix(s, prefix)
+			s = strings.TrimSuffix(s, "```")
+			s = strings.TrimSpace(s)
+		}
+	}
+	// Иногда модель пишет пояснение ПЕРЕД JSON — ищем первую фигурную скобку
+	if idx := strings.Index(s, "{"); idx > 0 {
+		s = s[idx:]
+	}
+	// И обрезаем всё после последней закрывающей скобки
+	if idx := strings.LastIndex(s, "}"); idx >= 0 && idx < len(s)-1 {
+		s = s[:idx+1]
+	}
+	return strings.TrimSpace(s)
+}
+
+// SemanticMatch — проверяет, есть ли в тексте семантическое совпадение с одним из ключевых слов.
+// ЗАДАЧА 2: улучшен промпт — явно объясняем разницу между прямым ключевым словом-маркером спроса
+// и предложением услуг, чтобы избежать ложных срабатываний.
 func (g *GroqMatcher) SemanticMatch(ctx context.Context, text string, keywords []string) string {
 	if g.apiKey == "" || len(keywords) == 0 {
 		return ""
@@ -59,18 +85,32 @@ func (g *GroqMatcher) SemanticMatch(ctx context.Context, text string, keywords [
 
 	prompt := fmt.Sprintf(`Ты — система семантического поиска ключевых слов.
 
-Список ключевых слов (каждое отражает запрос на поиск услуги или исполнителя):
+Список ключевых слов (каждое отражает ЗАПРОС на поиск услуги или исполнителя — то есть человек что-то ищет):
 - %s
 
 Сообщение для анализа:
 "%s"
 
-Задача: определи, содержит ли сообщение смысл хотя бы одного ключевого слова с учётом:
-- морфологии русского языка (ищу/ищем/ищут/нужен/нужна/нужны/требуется/хочу найти/посоветуйте)
-- синонимов и близких по смыслу фраз
-- опечаток и сокращений
+Задача: определи, содержит ли сообщение смысл хотя бы одного ключевого слова — то есть автор сообщения ИЩЕТ услугу или специалиста.
 
-Важно: если совпадений нет — верни пустую строку. Не придумывай совпадений.
+Учитывай:
+- Морфологию русского языка: ищу/ищем/ищут/нужен/нужна/нужны/требуется/хочу найти/посоветуйте
+- Синонимы и близкие по смыслу фразы
+- Опечатки и сокращения
+
+ВАЖНО — НЕ считай совпадением, если:
+- Автор ПРЕДЛАГАЕТ услугу ("ищу заказы", "ищу клиентов", "ищу проекты" — автор специалист)
+- Автор рекламирует себя ("я дизайнер", "выполню работу", "занимаюсь разработкой")
+- Это реклама/спам/объявление без персонального запроса
+- Ключевое слово упомянуто в тексте, но не как запрос, а как тема обсуждения
+
+РАЗЛИЧАЙ:
+- "ищу разработчика" → СОВПАДЕНИЕ (клиент ищет исполнителя)
+- "ищу заказы на разработку" → НЕТ совпадения (специалист ищет клиентов)
+- "нужен дизайнер" → СОВПАДЕНИЕ
+- "я дизайнер, ищу проекты" → НЕТ совпадения
+
+Если совпадений нет — верни пустую строку. Не придумывай совпадений.
 
 Ответь строго JSON без пояснений и markdown:
 {"matched": "точное ключевое слово из списка выше, или пустая строка если нет совпадений"}`,
@@ -82,7 +122,7 @@ func (g *GroqMatcher) SemanticMatch(ctx context.Context, text string, keywords [
 			{Role: "system", Content: "Отвечай только JSON. Никаких пояснений, никаких markdown-блоков."},
 			{Role: "user", Content: prompt},
 		},
-		MaxTokens:   80,
+		MaxTokens:   100,
 		Temperature: 0.0,
 	})
 	if err != nil {
@@ -121,19 +161,16 @@ func (g *GroqMatcher) SemanticMatch(ctx context.Context, text string, keywords [
 		return ""
 	}
 
-	content := strings.TrimSpace(result.Choices[0].Message.Content)
-
-	content = strings.TrimPrefix(content, "```json")
-	content = strings.TrimPrefix(content, "```")
-	content = strings.TrimSuffix(content, "```")
-	content = strings.TrimSpace(content)
+	raw := result.Choices[0].Message.Content
+	content := cleanGroqJSON(raw)
 
 	var parsed struct {
 		Matched string `json:"matched"`
 	}
 	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
 		g.log.Warn("groq matcher: parse result error",
-			zap.String("raw", content),
+			zap.String("raw", raw),
+			zap.String("cleaned", content),
 			zap.Error(err),
 		)
 		return ""
@@ -164,7 +201,6 @@ func (g *GroqMatcher) FilterRelevantContext(ctx context.Context, targetMessage s
 		return nil
 	}
 
-	// Если нет API-ключа — просто берём последние 3 сообщения без фильтрации
 	if g.apiKey == "" {
 		if len(rawBuffer) > 3 {
 			return rawBuffer[len(rawBuffer)-3:]
@@ -172,7 +208,6 @@ func (g *GroqMatcher) FilterRelevantContext(ctx context.Context, targetMessage s
 		return rawBuffer
 	}
 
-	// Формируем список для проверки
 	numbered := make([]string, 0, len(rawBuffer))
 	for i, msg := range rawBuffer {
 		numbered = append(numbered, fmt.Sprintf("%d. \"%s\"", i+1, msg))
@@ -247,18 +282,16 @@ func (g *GroqMatcher) FilterRelevantContext(ctx context.Context, targetMessage s
 		return nil
 	}
 
-	content := strings.TrimSpace(result.Choices[0].Message.Content)
-	content = strings.TrimPrefix(content, "```json")
-	content = strings.TrimPrefix(content, "```")
-	content = strings.TrimSuffix(content, "```")
-	content = strings.TrimSpace(content)
+	raw := result.Choices[0].Message.Content
+	content := cleanGroqJSON(raw)
 
 	var parsed struct {
 		Relevant []int `json:"relevant"`
 	}
 	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
 		g.log.Warn("groq context filter: parse error",
-			zap.String("raw", content),
+			zap.String("raw", raw),
+			zap.String("cleaned", content),
 			zap.Error(err),
 		)
 		return rawBuffer[:min(3, len(rawBuffer))]

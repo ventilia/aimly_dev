@@ -29,9 +29,7 @@ class JwtAuthFilter(
         "/api/v1/auth/me",
     )
 
-    // На этих эндпоинтах контроллер сам управляет кукой (выдаёт новую или очищает).
-    // Фильтр НЕ должен трогать куку здесь — иначе два Set-Cookie в одном ответе
-    // приводят к тому, что браузер игнорирует новую куку от контроллера.
+
     private val publicAuthEndpoints = setOf(
         "/api/v1/auth/register",
         "/api/v1/auth/login",
@@ -88,9 +86,7 @@ class JwtAuthFilter(
             SecurityContextHolder.getContext().authentication = auth
             log.debug("пользователь $userId аутентифицирован через куку, emailVerified=${user.emailVerified}")
         }, {
-            // userId из токена не найден в БД.
-            // На публичных auth-эндпоинтах НЕ очищаем куку — контроллер сам выдаст новую.
-            // На защищённых — очищаем, чтобы браузер не слал протухший токен снова.
+
             if (!isPublicAuthEndpoint(request.requestURI)) {
                 log.warn("токен содержит несуществующий userId=$userId — очищаем куку")
                 clearAuthCookie(response)
@@ -105,10 +101,7 @@ class JwtAuthFilter(
     private fun isPublicAuthEndpoint(uri: String): Boolean =
         publicAuthEndpoints.any { uri.startsWith(it) }
 
-    /**
-     * Сбрасывает аутентификационную куку на клиенте.
-     * Вызывается только для защищённых эндпоинтов.
-     */
+
     private fun clearAuthCookie(response: HttpServletResponse) {
         val cookieHeader = buildString {
             append("$COOKIE_NAME=")

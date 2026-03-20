@@ -3,13 +3,31 @@ import type { Lang } from '../i18n/translations'
 import { adminSubsApi, type SubscriptionInfo } from '../api/leads'
 import s from '../pages/AdminPanel.module.css'
 
-
-const PLANS    = ['MINIMUM', 'START', 'TRIAL']
+const PLANS    = ['START', 'BUSINESS', 'TRIAL']
 const STATUSES = ['ACTIVE', 'TRIAL', 'INACTIVE']
 
 interface Props { lang: Lang }
-
 interface Msg { text: string; ok: boolean }
+
+type SortKey = 'userId' | 'email' | 'status' | 'plan' | 'expiresAt'
+type SortDir = 'asc' | 'desc'
+
+function sortSubs(subs: SubscriptionInfo[], key: SortKey, dir: SortDir): SubscriptionInfo[] {
+    return [...subs].sort((a, b) => {
+        let av: string | number = ''
+        let bv: string | number = ''
+        switch (key) {
+            case 'userId':    av = a.userId;           bv = b.userId;           break
+            case 'email':     av = a.email ?? '';       bv = b.email ?? '';      break
+            case 'status':    av = a.status ?? '';      bv = b.status ?? '';     break
+            case 'plan':      av = a.plan ?? '';        bv = b.plan ?? '';       break
+            case 'expiresAt': av = a.expiresAt ?? '';   bv = b.expiresAt ?? '';  break
+        }
+        if (av < bv) return dir === 'asc' ? -1 : 1
+        if (av > bv) return dir === 'asc' ? 1 : -1
+        return 0
+    })
+}
 
 export default function SubscriptionsTab({ lang }: Props) {
     const ru = lang === 'ru'
@@ -18,29 +36,32 @@ export default function SubscriptionsTab({ lang }: Props) {
     const [loadError, setLoadError] = useState('')
     const [working,   setWorking]   = useState<number | null>(null)
 
+    // ─── Форма выдачи ─────────────────────────────────────────────────────────
+    const [grantUserId,  setGrantUserId]  = useState('')
+    const [grantPlan,    setGrantPlan]    = useState('START')
+    const [grantStatus,  setGrantStatus]  = useState('ACTIVE')
+    const [grantDays,    setGrantDays]    = useState('30')
+    const [grantLoading, setGrantLoading] = useState(false)
+    const [grantMsg,     setGrantMsg]     = useState<Msg | null>(null)
 
-    const [grantUserId,    setGrantUserId]    = useState('')
-    const [grantPlan,      setGrantPlan]      = useState('MINIMUM')
-    const [grantStatus,    setGrantStatus]    = useState('ACTIVE')
-    const [grantDays,      setGrantDays]      = useState('30')
-    const [grantLoading,   setGrantLoading]   = useState(false)
-    const [grantMsg,       setGrantMsg]       = useState<Msg | null>(null)
+    // ─── Инлайн-редактирование ────────────────────────────────────────────────
+    const [editPlanId,      setEditPlanId]      = useState<number | null>(null)
+    const [editPlanValue,   setEditPlanValue]   = useState('START')
+    const [editStatusValue, setEditStatusValue] = useState('ACTIVE')
+    const [editExpiryId,    setEditExpiryId]    = useState<number | null>(null)
+    const [editExpiryDays,  setEditExpiryDays]  = useState('30')
 
-
-    const [editPlanId,     setEditPlanId]     = useState<number | null>(null)
-    const [editPlanValue,  setEditPlanValue]  = useState('MINIMUM')
-    const [editStatusValue,setEditStatusValue]= useState('ACTIVE')
-
-
-    const [editExpiryId,   setEditExpiryId]  = useState<number | null>(null)
-    const [editExpiryDays, setEditExpiryDays]= useState('30')
+    // ─── Фильтры ──────────────────────────────────────────────────────────────
+    const [search,      setSearch]      = useState('')
+    const [filterPlan,  setFilterPlan]  = useState('all')
+    const [filterStatus,setFilterStatus]= useState('all')
+    const [sortKey,     setSortKey]     = useState<SortKey>('userId')
+    const [sortDir,     setSortDir]     = useState<SortDir>('asc')
 
     const load = useCallback(async () => {
-        setLoading(true)
-        setLoadError('')
+        setLoading(true); setLoadError('')
         try {
-            const data = await adminSubsApi.list()
-            setSubs(data)
+            setSubs(await adminSubsApi.list())
         } catch (e: unknown) {
             setLoadError(e instanceof Error ? e.message : 'Ошибка загрузки')
         } finally {
@@ -50,85 +71,78 @@ export default function SubscriptionsTab({ lang }: Props) {
 
     useEffect(() => { load() }, [load])
 
+    const handleSort = (key: SortKey) => {
+        if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+        else { setSortKey(key); setSortDir('asc') }
+    }
 
+    const arrow = (key: SortKey) =>
+        sortKey === key
+            ? <span className={s.sortArrow}>{sortDir === 'asc' ? ' ↑' : ' ↓'}</span>
+            : <span className={s.sortArrowInactive}> ↕</span>
+
+    const Th = ({ col, label }: { col: SortKey; label: string }) => (
+        <th className={s.thSortable} onClick={() => handleSort(col)}>{label}{arrow(col)}</th>
+    )
+
+    // ─── Фильтрация + сортировка ──────────────────────────────────────────────
+    const filtered = sortSubs(
+        subs.filter(sub => {
+            const q = search.trim().toLowerCase()
+            const matchSearch = !q
+                || (sub.email ?? '').toLowerCase().includes(q)
+                || String(sub.userId).includes(q)
+                || (sub.firstName ?? '').toLowerCase().includes(q)
+            const matchPlan   = filterPlan   === 'all' || sub.plan   === filterPlan
+            const matchStatus = filterStatus === 'all' || sub.status === filterStatus
+            return matchSearch && matchPlan && matchStatus
+        }),
+        sortKey, sortDir,
+    )
+
+    // ─── Действия ─────────────────────────────────────────────────────────────
     const handleGrant = async () => {
         const userId = Number(grantUserId)
         const days   = Number(grantDays)
-        if (!userId || userId <= 0) {
-            setGrantMsg({ text: ru ? 'Введите корректный ID' : 'Enter valid ID', ok: false })
-            return
-        }
-        if (!days || days <= 0) {
-            setGrantMsg({ text: ru ? 'Введите корректное кол-во дней' : 'Enter valid days', ok: false })
-            return
-        }
-        setGrantLoading(true)
-        setGrantMsg(null)
+        if (!userId || userId <= 0) { setGrantMsg({ text: ru ? 'Введите корректный ID' : 'Enter valid ID', ok: false }); return }
+        if (!days   || days   <= 0) { setGrantMsg({ text: ru ? 'Введите кол-во дней'   : 'Enter valid days', ok: false }); return }
+        setGrantLoading(true); setGrantMsg(null)
         try {
             await adminSubsApi.grant(userId, grantPlan, days)
-
-            if (grantStatus === 'INACTIVE') {
-                await adminSubsApi.revoke(userId)
-            }
-            setGrantUserId('')
-            setGrantDays('30')
+            if (grantStatus === 'INACTIVE') await adminSubsApi.revoke(userId)
+            setGrantUserId(''); setGrantDays('30')
             setGrantMsg({ text: ru ? 'Подписка выдана' : 'Subscription granted', ok: true })
             await load()
         } catch (e: unknown) {
             setGrantMsg({ text: e instanceof Error ? e.message : 'Ошибка', ok: false })
-        } finally {
-            setGrantLoading(false)
-        }
+        } finally { setGrantLoading(false) }
     }
-
 
     const handleRevoke = async (userId: number) => {
         if (!confirm(ru ? 'Отозвать подписку?' : 'Revoke subscription?')) return
         setWorking(userId)
-        try {
-            await adminSubsApi.revoke(userId)
-            await load()
-        } catch (e: unknown) {
-            alert(e instanceof Error ? e.message : 'Ошибка')
-        } finally {
-            setWorking(null)
-        }
+        try { await adminSubsApi.revoke(userId); await load() }
+        catch (e: unknown) { alert(e instanceof Error ? e.message : 'Ошибка') }
+        finally { setWorking(null) }
     }
-
 
     const handleEditPlan = async (userId: number) => {
-        const plan   = editPlanValue || 'MINIMUM'
-        const status = editStatusValue
         setWorking(userId)
         try {
-            await adminSubsApi.changePlan(userId, plan)
-
-            if (status === 'INACTIVE') {
-                await adminSubsApi.revoke(userId)
-            }
-            setEditPlanId(null)
-            await load()
-        } catch (e: unknown) {
-            alert(e instanceof Error ? e.message : 'Ошибка изменения тарифа')
-        } finally {
-            setWorking(null)
-        }
+            await adminSubsApi.changePlan(userId, editPlanValue || 'MINIMUM')
+            if (editStatusValue === 'INACTIVE') await adminSubsApi.revoke(userId)
+            setEditPlanId(null); await load()
+        } catch (e: unknown) { alert(e instanceof Error ? e.message : 'Ошибка') }
+        finally { setWorking(null) }
     }
-
 
     const handleEditExpiry = async (userId: number) => {
         const plan = subs.find(sub => sub.userId === userId)?.plan ?? 'MINIMUM'
         const days = Number(editExpiryDays) || 30
         setWorking(userId)
-        try {
-            await adminSubsApi.setExpiry(userId, plan, days)
-            setEditExpiryId(null)
-            await load()
-        } catch (e: unknown) {
-            setLoadError(e instanceof Error ? e.message : 'Ошибка изменения срока')
-        } finally {
-            setWorking(null)
-        }
+        try { await adminSubsApi.setExpiry(userId, plan, days); setEditExpiryId(null); await load() }
+        catch (e: unknown) { setLoadError(e instanceof Error ? e.message : 'Ошибка') }
+        finally { setWorking(null) }
     }
 
     const statusColor = (st: string | null) => {
@@ -137,63 +151,82 @@ export default function SubscriptionsTab({ lang }: Props) {
         return '#6b7280'
     }
 
+    const inputStyle: React.CSSProperties = {
+        height: 32, padding: '0 10px', fontSize: 12,
+        border: '1px solid var(--c-border)', borderRadius: 6,
+        background: 'var(--c-bg)', color: 'var(--c-ink)',
+        fontFamily: 'inherit', outline: 'none',
+    }
+
     return (
         <div className={s.subsTab}>
-            <h2 className={s.tabTitle}>{ru ? 'Управление подписками' : 'Subscription Management'}</h2>
+            <h2 className={s.tabTitle}>
+                {ru ? 'Управление подписками' : 'Subscription Management'}
+                {!loading && (
+                    <span className={s.count}>{filtered.length}
+                        {filtered.length !== subs.length && ` / ${subs.length}`}
+                    </span>
+                )}
+            </h2>
 
-            {}
+            {/* ─── Выдать подписку ─── */}
             <div className={s.subCard}>
                 <h3 className={s.subCardTitle}>{ru ? 'Выдать / продлить подписку' : 'Grant / Extend Subscription'}</h3>
                 <div className={s.formRow}>
                     <input
-                        className={s.formInput}
-                        type="number"
+                        className={s.formInput} type="number"
                         placeholder={ru ? 'ID пользователя' : 'User ID'}
-                        value={grantUserId}
-                        onChange={e => setGrantUserId(e.target.value)}
+                        value={grantUserId} onChange={e => setGrantUserId(e.target.value)}
                         style={{ width: 120 }}
                     />
-                    <select
-                        className={s.formSelect}
-                        value={grantPlan}
-                        onChange={e => setGrantPlan(e.target.value)}
-                        style={{ width: 120 }}
-                    >
+                    <select className={s.formSelect} value={grantPlan} onChange={e => setGrantPlan(e.target.value)} style={{ width: 120 }}>
                         {PLANS.map(p => <option key={p} value={p}>{p}</option>)}
                     </select>
-                    <select
-                        className={s.formSelect}
-                        value={grantStatus}
-                        onChange={e => setGrantStatus(e.target.value)}
-                        style={{ width: 110 }}
-                        title={ru ? 'Статус подписки' : 'Subscription status'}
-                    >
+                    <select className={s.formSelect} value={grantStatus} onChange={e => setGrantStatus(e.target.value)} style={{ width: 110 }}>
                         {STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
                     </select>
                     <input
-                        className={s.formInput}
-                        type="number"
+                        className={s.formInput} type="number"
                         placeholder={ru ? 'Дней' : 'Days'}
-                        value={grantDays}
-                        onChange={e => setGrantDays(e.target.value)}
+                        value={grantDays} onChange={e => setGrantDays(e.target.value)}
                         style={{ width: 80 }}
                     />
-                    <button
-                        className={s.grantBtn}
-                        onClick={handleGrant}
-                        disabled={grantLoading}
-                    >
+                    <button className={s.grantBtn} onClick={handleGrant} disabled={grantLoading}>
                         {grantLoading ? '...' : ru ? 'Выдать' : 'Grant'}
                     </button>
                 </div>
-                {grantMsg && (
-                    <div className={grantMsg.ok ? s.formSuccess : s.formError}>
-                        {grantMsg.text}
-                    </div>
-                )}
+                {grantMsg && <div className={grantMsg.ok ? s.formSuccess : s.formError}>{grantMsg.text}</div>}
             </div>
 
             {loadError && <div className={s.formError}>{loadError}</div>}
+
+            {/* ─── Фильтры ─── */}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <input
+                    style={{ ...inputStyle, flex: 1, minWidth: 160, maxWidth: 240 }}
+                    placeholder={ru ? 'Поиск по email, ID, имени...' : 'Search by email, ID, name...'}
+                    value={search} onChange={e => setSearch(e.target.value)}
+                />
+                <select style={inputStyle} value={filterPlan} onChange={e => setFilterPlan(e.target.value)}>
+                    <option value="all">{ru ? 'Все тарифы' : 'All plans'}</option>
+                    {PLANS.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+                <select style={inputStyle} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+                    <option value="all">{ru ? 'Все статусы' : 'All statuses'}</option>
+                    {STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
+                </select>
+                {(search || filterPlan !== 'all' || filterStatus !== 'all') && (
+                    <button
+                        onClick={() => { setSearch(''); setFilterPlan('all'); setFilterStatus('all') }}
+                        style={{
+                            ...inputStyle, cursor: 'pointer', color: 'var(--c-ink-3)',
+                            padding: '0 10px', whiteSpace: 'nowrap',
+                        }}
+                    >
+                        {ru ? '✕ Сбросить' : '✕ Clear'}
+                    </button>
+                )}
+            </div>
 
             {loading ? (
                 <div className={s.loading}>...</div>
@@ -203,21 +236,25 @@ export default function SubscriptionsTab({ lang }: Props) {
                     <h2>{ru ? 'Нет активных подписок' : 'No active subscriptions'}</h2>
                     <p>{ru ? 'Выдайте первую подписку выше' : 'Grant the first subscription above'}</p>
                 </div>
+            ) : filtered.length === 0 ? (
+                <div className={s.placeholder} style={{ minHeight: 120 }}>
+                    <h2 style={{ fontSize: 16 }}>{ru ? 'Ничего не найдено' : 'No results'}</h2>
+                </div>
             ) : (
                 <div className={s.tableWrapper}>
                     <table className={s.usersTable}>
                         <thead>
                         <tr>
-                            <th>ID</th>
-                            <th>{ru ? 'Пользователь' : 'User'}</th>
-                            <th>{ru ? 'Статус' : 'Status'}</th>
-                            <th>{ru ? 'Тариф' : 'Plan'}</th>
-                            <th>{ru ? 'Истекает' : 'Expires'}</th>
+                            <Th col="userId"    label="ID" />
+                            <Th col="email"     label={ru ? 'Пользователь' : 'User'} />
+                            <Th col="status"    label={ru ? 'Статус' : 'Status'} />
+                            <Th col="plan"      label={ru ? 'Тариф' : 'Plan'} />
+                            <Th col="expiresAt" label={ru ? 'Истекает' : 'Expires'} />
                             <th>{ru ? 'Действия' : 'Actions'}</th>
                         </tr>
                         </thead>
                         <tbody>
-                        {subs.map(sub => (
+                        {filtered.map(sub => (
                             <tr key={sub.userId}>
                                 <td className={s.cellId}>{sub.userId}</td>
                                 <td>
@@ -234,104 +271,75 @@ export default function SubscriptionsTab({ lang }: Props) {
                                     </span>
                                 </td>
 
-                                {}
+                                {/* Редактирование тарифа */}
                                 <td>
                                     {editPlanId === sub.userId ? (
                                         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                                            <select
-                                                className={s.formSelect}
-                                                value={editPlanValue}
-                                                onChange={e => setEditPlanValue(e.target.value)}
-                                                style={{ width: 100, fontSize: 12, padding: '4px 6px' }}
-                                            >
-                                                {['MINIMUM', 'START'].map(p => (
-                                                    <option key={p} value={p}>{p}</option>
-                                                ))}
+                                            <select className={s.formSelect} value={editPlanValue}
+                                                    onChange={e => setEditPlanValue(e.target.value)}
+                                                    style={{ width: 100, fontSize: 12, padding: '4px 6px' }}>
+                                                {['START', 'BUSINESS'].map(p => <option key={p} value={p}>{p}</option>)}
                                             </select>
-                                            <select
-                                                className={s.formSelect}
-                                                value={editStatusValue}
-                                                onChange={e => setEditStatusValue(e.target.value)}
-                                                style={{ width: 100, fontSize: 12, padding: '4px 6px' }}
-                                            >
-                                                {STATUSES.map(st => (
-                                                    <option key={st} value={st}>{st}</option>
-                                                ))}
+                                            <select className={s.formSelect} value={editStatusValue}
+                                                    onChange={e => setEditStatusValue(e.target.value)}
+                                                    style={{ width: 100, fontSize: 12, padding: '4px 6px' }}>
+                                                {STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
                                             </select>
-                                            <button
-                                                className={s.actionBtn}
-                                                onClick={() => handleEditPlan(sub.userId)}
-                                                disabled={working === sub.userId}
-                                                style={{ padding: '4px 8px', fontSize: 11 }}
-                                            >
+                                            <button className={s.actionBtn}
+                                                    onClick={() => handleEditPlan(sub.userId)}
+                                                    disabled={working === sub.userId}
+                                                    style={{ padding: '4px 8px', fontSize: 11 }}>
                                                 {working === sub.userId ? '…' : '✔'}
                                             </button>
-                                            <button
-                                                className={s.actionBtn}
-                                                onClick={() => setEditPlanId(null)}
-                                                style={{ padding: '4px 8px', fontSize: 11, background: 'var(--c-surface)' }}
-                                            >
+                                            <button className={s.actionBtn}
+                                                    onClick={() => setEditPlanId(null)}
+                                                    style={{ padding: '4px 8px', fontSize: 11, background: 'var(--c-surface)' }}>
                                                 ✕
                                             </button>
                                         </div>
                                     ) : (
-                                        <div
-                                            style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
-                                            onClick={() => {
-                                                setEditPlanId(sub.userId)
-                                                setEditPlanValue(sub.plan || 'MINIMUM')
-                                                setEditStatusValue(sub.status || 'ACTIVE')
-                                            }}
-                                        >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
+                                             onClick={() => {
+                                                 setEditPlanId(sub.userId)
+                                                 setEditPlanValue(sub.plan || 'START')
+                                                 setEditStatusValue(sub.status || 'ACTIVE')
+                                             }}>
                                             <span className={s.planPill}>{sub.plan || '—'}</span>
                                             <span style={{ fontSize: 10, color: 'var(--c-ink-3)' }}>✎</span>
                                         </div>
                                     )}
                                 </td>
 
-                                {}
+                                {/* Редактирование срока */}
                                 <td>
                                     {editExpiryId === sub.userId ? (
                                         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                            <input
-                                                className={s.formInput}
-                                                type="number"
-                                                value={editExpiryDays}
-                                                onChange={e => setEditExpiryDays(e.target.value)}
-                                                style={{ width: 70, fontSize: 12, padding: '4px 6px' }}
-                                            />
+                                            <input className={s.formInput} type="number"
+                                                   value={editExpiryDays} onChange={e => setEditExpiryDays(e.target.value)}
+                                                   style={{ width: 70, fontSize: 12, padding: '4px 6px' }} />
                                             <span style={{ fontSize: 11, color: 'var(--c-ink-3)' }}>
                                                 {ru ? 'дней' : 'days'}
                                             </span>
-                                            <button
-                                                className={s.actionBtn}
-                                                onClick={() => handleEditExpiry(sub.userId)}
-                                                disabled={working === sub.userId}
-                                                style={{ padding: '4px 8px', fontSize: 11 }}
-                                            >
+                                            <button className={s.actionBtn}
+                                                    onClick={() => handleEditExpiry(sub.userId)}
+                                                    disabled={working === sub.userId}
+                                                    style={{ padding: '4px 8px', fontSize: 11 }}>
                                                 {working === sub.userId ? '…' : '✔'}
                                             </button>
-                                            <button
-                                                className={s.actionBtn}
-                                                onClick={() => setEditExpiryId(null)}
-                                                style={{ padding: '4px 8px', fontSize: 11, background: 'var(--c-surface)' }}
-                                            >
+                                            <button className={s.actionBtn}
+                                                    onClick={() => setEditExpiryId(null)}
+                                                    style={{ padding: '4px 8px', fontSize: 11, background: 'var(--c-surface)' }}>
                                                 ✕
                                             </button>
                                         </div>
                                     ) : (
-                                        <div
-                                            style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
-                                            onClick={() => {
-                                                setEditExpiryId(sub.userId)
-                                                setEditExpiryDays('30')
-                                            }}
-                                        >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
+                                             onClick={() => { setEditExpiryId(sub.userId); setEditExpiryDays('30') }}>
                                             <span style={{ fontSize: 12 }}>
                                                 {sub.expiresAt
-                                                    ? new Date(sub.expiresAt).toLocaleDateString(ru ? 'ru-RU' : 'en-US', {
-                                                        day: 'numeric', month: 'short', year: 'numeric',
-                                                    })
+                                                    ? new Date(sub.expiresAt).toLocaleDateString(
+                                                        ru ? 'ru-RU' : 'en-US',
+                                                        { day: 'numeric', month: 'short', year: 'numeric' })
                                                     : '—'}
                                             </span>
                                             <span style={{ fontSize: 10, color: 'var(--c-ink-3)' }}>✎</span>
@@ -345,9 +353,9 @@ export default function SubscriptionsTab({ lang }: Props) {
                                         onClick={() => handleRevoke(sub.userId)}
                                         disabled={working === sub.userId}
                                         style={{
-                                            background: 'rgba(239,68,68,.12)',
                                             color: '#ef4444',
-                                            border: '1px solid rgba(239,68,68,.25)',
+                                            borderColor: 'rgba(239,68,68,.3)',
+                                            background: 'rgba(239,68,68,.06)',
                                         }}
                                     >
                                         {working === sub.userId ? '…' : ru ? 'Отозвать' : 'Revoke'}
@@ -359,12 +367,6 @@ export default function SubscriptionsTab({ lang }: Props) {
                     </table>
                 </div>
             )}
-
-            <p style={{ fontSize: 12, color: 'var(--c-ink-3)', marginTop: 8 }}>
-                {ru
-                    ? '💡 Нажмите на тариф или дату чтобы изменить. INACTIVE = отзыв подписки.'
-                    : '💡 Click plan or date to edit. INACTIVE = revoke subscription.'}
-            </p>
         </div>
     )
 }

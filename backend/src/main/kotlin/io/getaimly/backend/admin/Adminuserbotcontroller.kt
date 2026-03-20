@@ -40,18 +40,18 @@ data class RegisterSessionRequest(
     val apiHash: String,
 )
 
-// Ответ Go-сервиса на /admin/sessions/register — возвращает tempId,
-// который фронтенд должен сохранить и передать в confirm
 data class RegisterSessionResponse(
     val tempId: String,
 )
 
-// Go-сервис ожидает именно поле "tempId" (не "sessionId")
-// см. ConfirmSession handler: req.TempID string `json:"tempId"`
 data class ConfirmSessionRequest(
     val tempId: String,
     val code: String,
     val password: String? = null,
+)
+
+data class DeleteSessionRequest(
+    val sessionId: Long,
 )
 
 @RestController
@@ -71,7 +71,7 @@ class AdminUserbotController(
     private val longRestTemplate: RestTemplate = RestTemplate(
         SimpleClientHttpRequestFactory().apply {
             setConnectTimeout(5_000)
-            setReadTimeout(3 * 60 * 1000) // 3 минуты
+            setReadTimeout(3 * 60 * 1000)
         }
     )
 
@@ -88,7 +88,6 @@ class AdminUserbotController(
     fun getStats(@AuthenticationPrincipal user: User): ResponseEntity<Any> {
         requireAdmin(user)
         return try {
-            // /stats защищён X-Internal-Secret — нужен заголовок, иначе Go вернёт 403
             val entity = HttpEntity<Void>(internalHeaders())
             val response = restTemplate.exchange(
                 "$userbotUrl/stats",
@@ -97,11 +96,8 @@ class AdminUserbotController(
                 Map::class.java,
             )
             val stats = response.body ?: throw RuntimeException("пустой ответ")
-
-            // Go не возвращает поле status — добавляем сами, раз сервис ответил
             val result = stats.toMutableMap()
             result["status"] = "UP"
-
             ResponseEntity.ok(result)
         } catch (e: Exception) {
             log.warn("Go-сервис недоступен: ${e.message}")
@@ -117,31 +113,39 @@ class AdminUserbotController(
         }
     }
 
+
     @GetMapping("/users")
-    fun getUsersInfo(@AuthenticationPrincipal user: User): ResponseEntity<List<UserSubscriptionInfoDto>> {
+    fun getUsersInfo(
+        @AuthenticationPrincipal user: User,
+        @RequestParam(required = false) search: String?,
+    ): ResponseEntity<List<UserSubscriptionInfoDto>> {
         requireAdmin(user)
 
-        val users = userRepository.findAll()
-        val result = users.mapNotNull { u ->
-            val chats = subscriptionRepository.findByUserIdAndIsActiveTrue(u.id)
+        val allUsers = userRepository.findAll()
+        val result = allUsers.mapNotNull { u ->
+            val chats    = subscriptionRepository.findByUserIdAndIsActiveTrue(u.id)
             val keywords = keywordRepository.findByUserIdAndIsActiveTrue(u.id)
             if (chats.isEmpty() && keywords.isEmpty()) return@mapNotNull null
 
             UserSubscriptionInfoDto(
-                userId = u.id,
-                email = u.email,
-                chats = chats.map { it.chatTitle.ifBlank { it.chatLink } },
-                keywords = keywords.map { it.keyword },
+                userId     = u.id,
+                email      = u.email,
+                chats      = chats.map { it.chatTitle.ifBlank { it.chatLink } },
+                keywords   = keywords.map { it.keyword },
                 leadsCount = leadRepository.countByUserId(u.id),
             )
         }
 
-        return ResponseEntity.ok(result)
+        val filtered = if (!search.isNullOrBlank()) {
+            val q = search.trim().lowercase()
+            result.filter { it.email.lowercase().contains(q) || it.userId.toString().contains(q) }
+        } else {
+            result
+        }
+
+        return ResponseEntity.ok(filtered)
     }
 
-    // Шаг 1: отправляем номер телефона, получаем tempId
-    // Go возвращает: { "tempId": "uuid-строка" }
-    // Фронтенд должен сохранить tempId и передать его в /sessions/confirm
     @PostMapping("/sessions/register")
     fun registerSession(
         @AuthenticationPrincipal user: User,
@@ -151,7 +155,7 @@ class AdminUserbotController(
         return try {
             val goReq = mapOf(
                 "phone"   to req.phone,
-                "apiId"   to req.apiID,   // Go ждёт "apiId" (camelCase), не "apiID"
+                "apiId"   to req.apiID,
                 "apiHash" to req.apiHash,
             )
             val entity = HttpEntity(goReq, internalHeaders())
@@ -168,8 +172,7 @@ class AdminUserbotController(
         }
     }
 
-    // Шаг 2: передаём tempId (из ответа register) + код из Telegram + пароль 2FA (если есть)
-    // Go ждёт: { "tempId": "...", "code": "...", "password": "..." }
+
     @PostMapping("/sessions/confirm")
     fun confirmSession(
         @AuthenticationPrincipal user: User,
@@ -193,6 +196,48 @@ class AdminUserbotController(
         } catch (e: Exception) {
             log.error("ошибка подтверждения сессии userbot: ${e.message}")
             ResponseEntity.internalServerError().body(mapOf("error" to (e.message ?: "ошибка")))
+        }
+    }
+
+
+    @PostMapping("/sessions/delete")
+    fun deleteSession(
+        @AuthenticationPrincipal user: User,
+        @RequestBody req: DeleteSessionRequest,
+    ): ResponseEntity<Any> {
+        requireAdmin(user)
+        return try {
+            val goReq = mapOf("sessionId" to req.sessionId)
+            val entity = HttpEntity(goReq, internalHeaders())
+            val resp = restTemplate.postForObject(
+                "$userbotUrl/admin/sessions/delete",
+                entity,
+                Map::class.java,
+            )
+            log.info("userbot delete session OK: sessionId=${req.sessionId}")
+            ResponseEntity.ok(resp)
+        } catch (e: Exception) {
+            log.error("ошибка удаления сессии userbot: ${e.message}")
+            ResponseEntity.internalServerError().body(mapOf("error" to (e.message ?: "ошибка")))
+        }
+    }
+
+
+    @GetMapping("/sessions")
+    fun getSessions(@AuthenticationPrincipal user: User): ResponseEntity<Any> {
+        requireAdmin(user)
+        return try {
+            val entity = HttpEntity<Void>(internalHeaders())
+            val resp = restTemplate.exchange(
+                "$userbotUrl/admin/sessions",
+                org.springframework.http.HttpMethod.GET,
+                entity,
+                List::class.java,
+            )
+            ResponseEntity.ok(resp.body ?: emptyList<Any>())
+        } catch (e: Exception) {
+            log.warn("не удалось получить список сессий из Go: ${e.message}")
+            ResponseEntity.ok(emptyList<Any>())
         }
     }
 }

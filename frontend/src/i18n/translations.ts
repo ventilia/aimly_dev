@@ -107,7 +107,7 @@ export const t: Record<Lang, Record<string, string>> = {
         'pricing.title':   'Тарифы',
         'pricing.sub':     'Тариф можно сменить в любой момент.',
         'plan.badge':      'РЕКОМЕНДУЕМ',
-        'plan.name':       'Минимум',
+        'plan.name':       'START',
         'plan.desc':       'Мониторинг с AI и персонализацией',
         'plan.old':        '7 000',
         'plan.price':      '4 990',
@@ -124,6 +124,8 @@ export const t: Record<Lang, Record<string, string>> = {
 
         'reviews.title': 'Что говорят первые пользователи',
         'reviews.sub':   'Реальный опыт тех, кто уже тестирует AIMLY в раннем доступе.',
+
+        'aiNeedPlan':    'Доступно на тарифе Start и выше',
 
         'faq.title': 'Частые вопросы',
         'faq.q1': 'Это безопасно? Зачем вообще авторизовывать Telegram-аккаунт?',
@@ -355,7 +357,7 @@ export const t: Record<Lang, Record<string, string>> = {
         'pricing.title':   'Pricing',
         'pricing.sub':     'You can change the plan at any time.',
         'plan.badge':      'RECOMMENDED',
-        'plan.name':       'Minimum',
+        'plan.name':       'START',
         'plan.desc':       'Monitoring with AI and personalization',
         'plan.old':        '70',
         'plan.price':      '49',
@@ -369,6 +371,8 @@ export const t: Record<Lang, Record<string, string>> = {
         'plan.f5':         'Business personalization',
         'plan.cta':        'Connect',
         'plan.pay':        'Pay by card, Visa/Mastercard or crypto — any way you prefer.',
+
+        'aiNeedPlan':    'Available on Start plan and above',
 
         // reviews
         'reviews.title': 'What early users say',

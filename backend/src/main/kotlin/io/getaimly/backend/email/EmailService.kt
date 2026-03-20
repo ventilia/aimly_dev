@@ -30,6 +30,15 @@ class EmailService(
         )
     }
 
+    fun sendPasswordResetCode(to: String, code: String, firstName: String?) {
+        val name = firstName ?: "там"
+        send(
+            to      = to,
+            subject = "Сброс пароля — AIMLY",
+            html    = buildPasswordResetEmail(name, code),
+        )
+    }
+
     private fun send(to: String, subject: String, html: String) {
         val body = mapOf(
             "from"    to "$fromName <$fromEmail>",
@@ -69,6 +78,35 @@ class EmailService(
             </div>
             <p style="color:#7a786f; font-size:14px;">
               Код действителен 15 минут. Если ты не регистрировался в AIMLY — просто проигнорируй это письмо.
+            </p>
+          </div>
+        </body>
+        </html>
+    """.trimIndent()
+
+    private fun buildPasswordResetEmail(name: String, code: String) = """
+        <!DOCTYPE html>
+        <html>
+        <body style="font-family: Arial, sans-serif; background:#f8f7f4; padding:40px;">
+          <div style="max-width:480px; margin:0 auto; background:#fff;
+                      border-radius:16px; padding:40px; border:1px solid #e4e2dc;">
+            <h2 style="color:#0f0e0c; margin-bottom:8px;">Привет, $name</h2>
+            <p style="color:#3d3b36; margin-bottom:8px;">
+              Мы получили запрос на сброс пароля для вашего аккаунта AIMLY.
+            </p>
+            <p style="color:#3d3b36; margin-bottom:24px;">
+              Введите этот код для подтверждения:
+            </p>
+            <div style="background:#eeebfb; border-radius:12px; padding:24px;
+                        text-align:center; margin-bottom:24px;">
+              <span style="font-size:36px; font-weight:800; letter-spacing:8px;
+                           color:#5c39df;">$code</span>
+            </div>
+            <p style="color:#7a786f; font-size:14px; margin-bottom:8px;">
+              Код действителен 15 минут.
+            </p>
+            <p style="color:#7a786f; font-size:14px;">
+              Если вы не запрашивали сброс пароля — просто проигнорируйте это письмо. Ваш пароль останется прежним.
             </p>
           </div>
         </body>

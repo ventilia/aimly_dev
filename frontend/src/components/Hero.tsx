@@ -48,13 +48,26 @@ export default function Hero({ lang }: { lang: Lang }) {
                         <div className={s.liveBadge}>{tr('hero.live')}</div>
                         <div className={s.videoCard}>
                             <div className={s.ytEmbed}>
-                                <iframe
-                                    src="https://www.youtube.com/embed/MQFzdhg0yGk"
-                                    title="AIMLY — как работает сервис"
-                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                                    allowFullScreen
-                                    loading="lazy"
-                                />
+                                <div style={{
+                                    position:       'absolute',
+                                    inset:          0,
+                                    display:        'flex',
+                                    flexDirection:  'column',
+                                    alignItems:     'center',
+                                    justifyContent: 'center',
+                                    gap:            12,
+                                    background:     'linear-gradient(135deg, #1a1830 0%, #0f0e1a 100%)',
+                                    borderRadius:   'inherit',
+                                    color:          'rgba(255,255,255,0.35)',
+                                    fontFamily:     'var(--font-body)',
+                                }}>
+                                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ opacity: 0.5 }}>
+                                        <polygon points="5 3 19 12 5 21 5 3" />
+                                    </svg>
+                                    <span style={{ fontSize: 13, letterSpacing: '0.03em' }}>
+                                        {lang === 'ru' ? 'Видео скоро появится' : 'Video coming soon'}
+                                    </span>
+                                </div>
                             </div>
                         </div>
                     </div>

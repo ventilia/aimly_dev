@@ -1,54 +1,48 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Lang } from '../i18n/translations'
-
-import { subscriptionApi } from '../api/auth'
 import { useAuthContext } from '../context/AuthContext'
+import { authApi } from '../api/auth'
+import AuthModal from '../components/AuthModal'
 import s from './Checkout.module.css'
 
 interface Props { lang: Lang; setLang: (l: Lang) => void }
 
-const PRICES = { MINIMUM: 4999, START: 4999 }
 
 const txt = {
     ru: {
-        back:       '← Назад',
-        buyBtn:     (price: number) => `Оплатить — ${price.toLocaleString('ru-RU')} ₽`,
-        noBalance:  'Недостаточно средств на балансе',
-        buying:     'Оформляем...',
-        successMsg: (plan: string, date: string) => `✅ Тариф ${plan} активирован! Действует до ${date}`,
-        errMsg:     'Ошибка оплаты. Попробуйте через поддержку.',
-        title:      'Оформление подписки',
-        sub:        'Выберите подходящий тариф',
-        perMonth:   '/мес',
-        comingSoon: 'В разработке',
-        comingSoonDesc: 'Тариф находится в разработке и будет доступен в ближайшее время.',
-        skip:       'Пропустить',
+        back:           '← Назад',
+        title:          'Оформление подписки',
+        sub:            'Выберите тариф и перейдите к оплате',
+        perMonth:       '/мес',
+        comingSoon:     'В разработке',
+        comingSoonDesc: 'Скоро станет доступным.',
+        skip:           'Пропустить',
+        buyBtn:         (price: number) => `Оплатить — ${price.toLocaleString('ru-RU')} ₽`,
+        autoActivate:   'После оплаты подписка активируется автоматически в течение минуты.',
     },
     en: {
-        back:       '← Back',
-        buyBtn:     (price: number) => `Pay — ${price} ₽`,
-        noBalance:  'Insufficient balance',
-        buying:     'Purchasing...',
-        successMsg: (plan: string, date: string) => `✅ ${plan} plan activated! Valid until ${date}`,
-        errMsg:     'Payment error. Please contact support.',
-        title:      'Checkout',
-        sub:        'Choose the right plan',
-        perMonth:   '/month',
-        comingSoon: 'Coming soon',
-        comingSoonDesc: 'This plan is in development and will be available soon.',
-        skip:       'Skip for now',
+        back:           '← Back',
+        title:          'Subscription',
+        sub:            'Choose a plan and proceed to payment',
+        perMonth:       '/month',
+        comingSoon:     'Coming soon',
+        comingSoonDesc: 'Available soon.',
+        skip:           'Skip for now',
+        buyBtn:         (price: number) => `Pay — ${price.toLocaleString('en-US')} ₽`,
+        autoActivate:   'After payment your subscription activates automatically within a minute.',
     },
 } as const
+
 
 const PLANS = {
     ru: [
         {
-            id: 'MINIMUM',
-            name: 'Минимум',
-            price: 4999,
-            badge: 'РЕКОМЕНДУЕМ',
-            desc: 'Мониторинг с AI и персонализацией',
+            id:       'START',
+            name:     'Start',
+            price:    4990,
+            badge:    'РЕКОМЕНДУЕМ',
+            desc:     'Мониторинг с AI и персонализацией',
             features: [
                 '✔ Добавление Telegram-чатов',
                 '✔ Мониторинг по ключевым словам',
@@ -58,27 +52,38 @@ const PLANS = {
                 '✔ AI-фильтрация контекста сообщений',
                 '✔ Персонализация под ваш бизнес',
             ],
-            accent: true,
+            accent:   true,
             disabled: false,
         },
         {
-            id: 'START',
-            name: 'Старт',
-            price: 4990,
-            badge: null,
-            desc: null,
-            features: [],
-            accent: false,
+            id:       'BUSINESS',
+            name:     'Business',
+            price:    9990,
+            badge:    null,
+            desc:     'Всё из Start плюс расширенные возможности',
+            features: [
+                '✔ Добавление Telegram-чатов',
+                '✔ Мониторинг по ключевым словам',
+                '✔ Telegram-уведомления о лидах',
+                '✔ Лиды без ограничений',
+                '✔ AI-семантический поиск лидов',
+                '✔ AI-фильтрация контекста сообщений',
+                '✔ Персонализация под ваш бизнес',
+                '✔ ИИ продавец',
+                '✔ Круглосуточная поддержка',
+                '✔ Улучшенный AI',
+            ],
+            accent:   false,
             disabled: true,
         },
     ],
     en: [
         {
-            id: 'MINIMUM',
-            name: 'Minimum',
-            price: 4999,
-            badge: 'RECOMMENDED',
-            desc: 'Monitoring with AI and personalization',
+            id:       'START',
+            name:     'Start',
+            price:    4990,
+            badge:    'RECOMMENDED',
+            desc:     'Monitoring with AI and personalization',
             features: [
                 '✔ Add Telegram chats',
                 '✔ Keyword monitoring',
@@ -88,61 +93,82 @@ const PLANS = {
                 '✔ AI context message filtering',
                 '✔ Business personalization',
             ],
-            accent: true,
+            accent:   true,
             disabled: false,
         },
         {
-            id: 'START',
-            name: 'Start',
-            price: 4990,
-            badge: null,
-            desc: null,
-            features: [],
-            accent: false,
+            id:       'BUSINESS',
+            name:     'Business',
+            price:    9990,
+            badge:    null,
+            desc:     'Everything in Start plus advanced features',
+            features: [
+                '✔ Add Telegram chats',
+                '✔ Keyword monitoring',
+                '✔ Telegram lead notifications',
+                '✔ Unlimited leads',
+                '✔ AI semantic lead search',
+                '✔ AI context message filtering',
+                '✔ Business personalization',
+                '✔ AI sales agent',
+                '✔ 24/7 support',
+                '✔ Enhanced AI',
+            ],
+            accent:   false,
             disabled: true,
         },
     ],
 }
 
+const START_FEATURE_COUNT = 7
+
 export default function Checkout({ lang, setLang }: Props) {
-    const l = txt[lang]
-    const { user, refreshUser } = useAuthContext()
-    const navigate = useNavigate()
-    const [buying,   setBuying]  = useState<string | null>(null)
-    const [msg,      setMsg]     = useState<Record<string, string>>({})
-    const [isError,  setIsError] = useState<Record<string, boolean>>({})
+    const l                     = txt[lang]
+    const { user, loading }     = useAuthContext()
+    const navigate              = useNavigate()
+    const plans                 = PLANS[lang]
+    const [showAuthModal, setShowAuthModal] = useState(false)
+    const [botLoading, setBotLoading]       = useState(false)
 
-    const plans = PLANS[lang]
+    const openBotForPayment = async () => {
+        setBotLoading(true)
+        try {
+            const res  = await authApi.getTelegramLink()
+            const link = `https://t.me/${res.botUsername}?start=pay_${res.linkToken}`
+            window.open(link, '_blank', 'noopener,noreferrer')
+        } catch {
+            window.open('https://t.me/aimlyAIbot?start=pay', '_blank', 'noopener,noreferrer')
+        } finally {
+            setBotLoading(false)
+        }
+    }
 
-    const handleBuy = async (planId: string) => {
-        const price = PRICES[planId as keyof typeof PRICES]
-        const balance = user?.balance ?? 0
-        if (balance < price) {
-            setIsError(prev => ({ ...prev, [planId]: true }))
-            setMsg(prev => ({ ...prev, [planId]: l.noBalance }))
+    const handleBuy = () => {
+        if (loading || botLoading) return
+        if (!user) {
+            setShowAuthModal(true)
             return
         }
-        setBuying(planId)
-        setIsError(prev => ({ ...prev, [planId]: false }))
-        setMsg(prev => ({ ...prev, [planId]: '' }))
-        try {
-            const res = await subscriptionApi.purchase(planId)
-            await refreshUser()
-            const date = new Date(res.expiresAt).toLocaleDateString(
-                lang === 'ru' ? 'ru-RU' : 'en-US',
-                { day: 'numeric', month: 'long', year: 'numeric' }
-            )
-            setMsg(prev => ({ ...prev, [planId]: l.successMsg(planId, date) }))
-        } catch (e: unknown) {
-            setIsError(prev => ({ ...prev, [planId]: true }))
-            setMsg(prev => ({ ...prev, [planId]: e instanceof Error ? e.message : l.errMsg }))
-        } finally {
-            setBuying(null)
-        }
+        openBotForPayment()
+    }
+
+    const handleAuthSuccess = () => {
+        setShowAuthModal(false)
+        setTimeout(openBotForPayment, 300)
     }
 
     return (
         <div className={s.root}>
+
+            {showAuthModal && (
+                <AuthModal
+                    lang={lang}
+                    onClose={() => setShowAuthModal(false)}
+                    onSuccess={handleAuthSuccess}
+                    initialTab="register"
+                />
+            )}
+
             <header className={s.header}>
                 <a href="/" className={s.logo}>
                     <img src="/AIMLY.png" alt="AIMLY" className={s.logoImg} />
@@ -165,7 +191,7 @@ export default function Checkout({ lang, setLang }: Props) {
             </header>
 
             <main className={s.main}>
-                <div className={s.wrap} style={{ maxWidth: 680, margin: '0 auto' }}>
+                <div className={s.wrap} style={{ maxWidth: 720, margin: '0 auto' }}>
                     <div className={s.left} style={{ width: '100%' }}>
                         <h1 className={s.title}>{l.title}</h1>
                         <p className={s.sub}>{l.sub}</p>
@@ -175,65 +201,102 @@ export default function Checkout({ lang, setLang }: Props) {
                                 <div
                                     key={plan.id}
                                     className={`${s.planCard} ${plan.disabled ? s.planCardDisabled : ''}`}
-                                    style={plan.accent && !plan.disabled ? {
-                                        borderColor: 'rgba(92,57,223,.5)',
-                                        boxShadow: '0 8px 32px rgba(92,57,223,.18)',
-                                    } : undefined}
+                                    style={{
+                                        ...(plan.accent && !plan.disabled ? {
+                                            borderColor: 'rgba(92,57,223,.5)',
+                                            boxShadow:   '0 8px 32px rgba(92,57,223,.18)',
+                                        } : {}),
+                                        ...(plan.disabled ? { opacity: 0.6 } : {}),
+                                    }}
                                 >
                                     {plan.badge && <div className={s.planBadge}>{plan.badge}</div>}
                                     <h3 className={s.planName}>{plan.name}</h3>
 
                                     {plan.disabled ? (
-                                        <div className={s.comingSoonBlock}>
-                                            <span className={s.comingSoonLabel}>{l.comingSoon}</span>
-                                            <p className={s.comingSoonText}>{l.comingSoonDesc}</p>
-                                        </div>
+                                        <>
+                                            {plan.desc && <p className={s.planDesc}>{plan.desc}</p>}
+
+                                            <ul className={s.planFeatures}>
+                                                {plan.features.map((f, i) => (
+                                                    <li
+                                                        key={i}
+                                                        style={{
+                                                            color:   '#ccc',
+                                                            opacity: i < START_FEATURE_COUNT ? 0.6 : 1,
+                                                        }}
+                                                    >
+                                                        {f}
+                                                    </li>
+                                                ))}
+                                            </ul>
+
+                                            <div className={s.comingSoonBlock}>
+                                                <span className={s.comingSoonLabel}>{l.comingSoon}</span>
+                                                <p className={s.comingSoonText}>{l.comingSoonDesc}</p>
+                                            </div>
+                                        </>
                                     ) : (
                                         <>
                                             {plan.desc && <p className={s.planDesc}>{plan.desc}</p>}
+
                                             <div className={s.planPrice}>
-                                                <span className={s.priceVal}>{plan.price.toLocaleString(lang === 'ru' ? 'ru-RU' : 'en-US')}</span>
+                                                <span className={s.priceVal}>
+                                                    {plan.price.toLocaleString(lang === 'ru' ? 'ru-RU' : 'en-US')}
+                                                </span>
                                                 <span className={s.currency}>₽</span>
                                                 <span className={s.period}>{l.perMonth}</span>
                                             </div>
+
                                             <ul className={s.planFeatures}>
                                                 {plan.features.map((f, i) => (
-                                                    <li key={i} style={{ color: f.startsWith('✗') ? '#6b7280' : '#ccc', opacity: f.startsWith('✗') ? 0.65 : 1 }}>{f}</li>
+                                                    <li
+                                                        key={i}
+                                                        style={{
+                                                            color:   f.startsWith('✗') ? '#6b7280' : '#ccc',
+                                                            opacity: f.startsWith('✗') ? 0.65 : 1,
+                                                        }}
+                                                    >
+                                                        {f}
+                                                    </li>
                                                 ))}
                                             </ul>
+
                                             <button
                                                 className={s.buyBtn}
-                                                onClick={() => handleBuy(plan.id)}
-                                                disabled={buying === plan.id}
-                                                style={!plan.accent ? { background: 'rgba(255,255,255,.08)', color: 'rgba(255,255,255,.7)' } : undefined}
+                                                onClick={handleBuy}
+                                                disabled={loading || botLoading}
                                             >
-                                                {buying === plan.id ? l.buying : l.buyBtn(plan.price)}
+                                                {botLoading ? '...' : l.buyBtn(plan.price)}
                                             </button>
-                                            {msg[plan.id] && (
-                                                <div className={isError[plan.id] ? s.errorMsg : s.successMsg}>
-                                                    {msg[plan.id]}
-                                                </div>
-                                            )}
+
+                                            <p style={{
+                                                fontSize:   12,
+                                                color:      'var(--c-ink-3)',
+                                                textAlign:  'center',
+                                                marginTop:  10,
+                                                lineHeight: 1.55,
+                                            }}>
+                                                {l.autoActivate}
+                                            </p>
                                         </>
                                     )}
                                 </div>
                             ))}
                         </div>
 
-                        {/* Пропустить — ведёт в личный кабинет без тарифа */}
                         <div style={{ textAlign: 'center', marginTop: 20 }}>
                             <button
                                 onClick={() => navigate('/dashboard')}
                                 style={{
-                                    background: 'none',
-                                    border: 'none',
-                                    color: 'var(--c-ink-3)',
-                                    fontSize: 13,
-                                    cursor: 'pointer',
-                                    padding: '6px 12px',
-                                    fontFamily: 'var(--font-body)',
-                                    transition: 'color .15s',
-                                    textDecoration: 'underline',
+                                    background:          'none',
+                                    border:              'none',
+                                    color:               'var(--c-ink-3)',
+                                    fontSize:            13,
+                                    cursor:              'pointer',
+                                    padding:             '6px 12px',
+                                    fontFamily:          'var(--font-body)',
+                                    transition:          'color .15s',
+                                    textDecoration:      'underline',
                                     textUnderlineOffset: 3,
                                 }}
                                 onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.color = 'var(--c-ink-2)'}

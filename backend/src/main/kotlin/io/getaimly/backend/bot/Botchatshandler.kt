@@ -27,7 +27,7 @@ class BotChatsHandler(
 
         val chats = subscriptionRepository.findByUserIdAndIsActiveTrue(user.id)
 
-        // Проверяем доступ к AI-поиску
+
         val plan      = user.subscriptionPlan
         val status    = user.subscriptionStatus
         val hasSearch = plan in setOf("MINIMUM", "START") || status == "TRIAL"
@@ -77,7 +77,7 @@ class BotChatsHandler(
             rows.add(row(btn("$icon 🗑 $label", "chat:del:${sub.id}")))
         }
 
-        // Навигация по страницам
+
         if (totalPages > 1) {
             val navBtns = mutableListOf<org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton>()
             if (safePage > 0)              navBtns.add(btn("◀️", "chat:page:${safePage - 1}"))
@@ -86,7 +86,7 @@ class BotChatsHandler(
             rows.add(org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow(navBtns))
         }
 
-        // Кнопки действий
+
         val actionBtns = mutableListOf<org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton>()
         actionBtns.add(btn("➕ Добавить", "chat:add"))
         if (hasSearch) {

@@ -1,6 +1,7 @@
 package io.getaimly.backend.auth
 
 import io.getaimly.backend.auth.dto.*
+import io.getaimly.backend.bot.AimlyBot
 import io.getaimly.backend.email.EmailService
 import io.getaimly.backend.security.JwtService
 import io.getaimly.backend.security.RateLimitService
@@ -25,6 +26,7 @@ class AuthService(
     private val rateLimitService:         RateLimitService,
 
     @Lazy private val subscriptionService: SubscriptionService,
+    @Lazy private val bot: AimlyBot,
 ) {
     private val log    = LoggerFactory.getLogger(AuthService::class.java)
     private val random = SecureRandom()
@@ -238,7 +240,6 @@ class AuthService(
             return false
         }
 
-        // открепить telegram от предыдущего владельца, если такой есть
         userRepository.findByTelegramId(telegramId).ifPresent { oldUser ->
             if (oldUser.id != verification.user.id) {
                 log.info("telegramId=$telegramId открепляется от пользователя id=${oldUser.id}")
@@ -310,6 +311,144 @@ class AuthService(
     }
 
 
+    // ─── Сброс пароля ─────────────────────────────────────────────────────────────
+
+    /**
+     * Шаг 1: запросить сброс пароля.
+     * Всегда возвращает одно и то же сообщение — чтобы не раскрывать,
+     * зарегистрирован ли email.
+     * Отправляет код на email + в Telegram, если TG привязан.
+     */
+    @Transactional
+    fun requestPasswordReset(email: String): MessageResponse {
+        val normalizedEmail = email.trim().lowercase()
+
+        val rateLimitKey = "pwd_reset:$normalizedEmail"
+        if (rateLimitService.isBlocked(rateLimitKey)) {
+            throw TooManyRequestsException("Слишком много запросов. Попробуйте через 30 минут")
+        }
+
+        val user = userRepository.findByEmail(normalizedEmail).orElse(null)
+
+        if (user == null) {
+            // Не раскрываем существование email, просто логируем
+            log.info("запрос сброса пароля для несуществующего email: $normalizedEmail")
+            return MessageResponse("Если такой email зарегистрирован, код отправлен на него")
+        }
+
+        // Проверяем cooldown: не чаще раза в 60 сек
+        val lastCode = verificationRepository
+            .findFirstByUserIdAndTypeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
+                user.id, VerificationType.PASSWORD_RESET, LocalDateTime.now()
+            )
+        if (lastCode.isPresent) {
+            val secondsAgo = java.time.Duration
+                .between(lastCode.get().createdAt, LocalDateTime.now())
+                .seconds
+            if (secondsAgo < 60) {
+                throw TooManyRequestsException("Подождите ${60 - secondsAgo} секунд перед повторной отправкой")
+            }
+        }
+
+        // Удаляем старые неиспользованные коды
+        verificationRepository.deleteAllUnusedByUserIdAndType(user.id, VerificationType.PASSWORD_RESET)
+
+        val code = generateCode(6)
+        verificationRepository.save(
+            EmailVerification(
+                user      = user,
+                code      = code,
+                type      = VerificationType.PASSWORD_RESET,
+                expiresAt = LocalDateTime.now().plusMinutes(15),
+            )
+        )
+
+        // Отправляем на email
+        try {
+            emailService.sendPasswordResetCode(user.email, code, user.firstName)
+            log.info("код сброса пароля отправлен на email: userId=${user.id}")
+        } catch (e: Exception) {
+            log.error("не удалось отправить письмо для сброса пароля на ${user.email}: ${e.message}")
+        }
+
+        // Отправляем в Telegram, если привязан
+        user.telegramId?.let { tgId ->
+            runCatching {
+                bot.sendText(
+                    tgId,
+                    "🔐 Сброс пароля AIMLY\n\n" +
+                            "Ваш код для сброса пароля:\n\n" +
+                            "$code\n\n" +
+                            "Код действителен 15 минут.\n" +
+                            "Если вы не запрашивали сброс — проигнорируйте это сообщение.",
+                )
+            }.onFailure {
+                log.warn("не удалось отправить код сброса пароля в Telegram userId=${user.id}: ${it.message}")
+            }
+        }
+
+        rateLimitService.recordFailedAttempt(rateLimitKey) // считаем попытки
+        log.info("запрос сброса пароля: userId=${user.id} email=$normalizedEmail tgLinked=${user.telegramId != null}")
+        return MessageResponse("Если такой email зарегистрирован, код отправлен на него")
+    }
+
+    /**
+     * Шаг 2: подтвердить код и установить новый пароль.
+     * После успешной смены — автологин через JWT-куку.
+     */
+    @Transactional
+    fun resetPassword(request: ResetPasswordRequest): AuthResponse {
+        if (request.newPassword != request.confirmPassword) {
+            throw BadRequestException("Пароли не совпадают")
+        }
+        if (request.newPassword.length < 8) {
+            throw BadRequestException("Пароль должен содержать минимум 8 символов")
+        }
+
+        val passwordRegex = Regex("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).+$")
+        if (!passwordRegex.matches(request.newPassword)) {
+            throw BadRequestException("Пароль должен содержать строчные, заглавные буквы и цифры")
+        }
+
+        val verification = verificationRepository
+            .findByCodeAndType(request.code.trim(), VerificationType.PASSWORD_RESET)
+            .orElseThrow { BadRequestException("Неверный или истёкший код") }
+
+        if (!verification.isValid()) {
+            throw BadRequestException("Код истёк, запросите новый")
+        }
+
+        val user = verification.user
+
+        user.password  = passwordEncoder.encode(request.newPassword)
+        user.updatedAt = LocalDateTime.now()
+        verification.used = true
+        userRepository.save(user)
+
+        // Инвалидируем все остальные коды сброса пароля этого пользователя
+        verificationRepository.deleteAllUnusedByUserIdAndType(user.id, VerificationType.PASSWORD_RESET)
+
+        log.info("пароль успешно сброшен: userId=${user.id} email=${user.email}")
+
+        // Уведомляем в Telegram
+        user.telegramId?.let { tgId ->
+            runCatching {
+                bot.sendText(
+                    tgId,
+                    "✅ Пароль от вашего аккаунта AIMLY успешно изменён.\n\n" +
+                            "Если это были не вы — немедленно обратитесь в поддержку: @aimly_support"
+                )
+            }.onFailure {
+                log.warn("не удалось отправить уведомление о смене пароля в Telegram userId=${user.id}: ${it.message}")
+            }
+        }
+
+        return buildAuthResponse(user)
+    }
+
+
+    // ─── Вспомогательные методы ────────────────────────────────────────────────────
+
     private fun sendVerificationCode(user: User) {
         verificationRepository.deleteAllUnusedByUserIdAndType(
             user.id, VerificationType.EMAIL_CONFIRM
@@ -354,6 +493,7 @@ class AuthService(
         subscriptionPlan      = user.subscriptionPlan,
         createdAt             = user.createdAt?.toString(),
         businessContext       = user.businessContext,
+        trialUsed             = user.trialUsed,
     )
 }
 

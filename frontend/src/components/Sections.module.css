@@ -216,16 +216,19 @@
     box-shadow: 0 8px 40px rgba(92,57,223,.2);
 }
 
-/* Карточка «в разработке» — приглушённая, без hover-эффекта */
 .pricingCardDisabled {
-    opacity: .65;
+    opacity: .35;
     cursor: default;
     pointer-events: none;
+    filter: grayscale(0.5);
 }
+
 .pricingCardDisabled:hover {
     border-color: var(--c-border);
     box-shadow: 0 2px 16px rgba(0,0,0,.06);
+    transform: none;
 }
+
 
 .pricingBadge {
     position: absolute;
@@ -243,7 +246,6 @@
     white-space: nowrap;
 }
 
-/* Бейдж «В разработке» на карточке Старт */
 .pricingComingSoonBadge {
     display: inline-block;
     margin: 8px auto 16px;
@@ -256,10 +258,11 @@
     letter-spacing: .5px;
     text-transform: uppercase;
     color: var(--c-ink-3);
+    opacity: 0.6;
     text-align: center;
 }
 
-/* Описательный текст под бейджем */
+
 .pricingComingSoonText {
     font-size: 13px;
     color: var(--c-ink-3);
@@ -784,4 +787,38 @@
     }
     .trialDaysNum { font-size: 30px; }
     .trialNote { padding: 10px 20px 14px; }
+}
+.pricingCtaGhost {
+    background: transparent;
+    color: var(--c-accent);
+    border: 1.5px solid var(--c-accent);
+}
+.pricingCtaGhost:hover {
+    background: var(--c-accent-soft);
+}
+
+.trialAction {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid var(--c-border);
+    display: flex;
+    justify-content: center;
+}
+
+.pricingCtaDisabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: var(--c-bg) !important;
+    color: var(--c-ink-3) !important;
+    border-color: var(--c-border) !important;
+}
+
+.pricingCtaGhost {
+    background: transparent;
+    color: var(--c-accent);
+    border: 1.5px solid var(--c-accent);
+}
+
+.pricingCtaGhost:hover:not(:disabled) {
+    background: var(--c-accent-soft);
 }

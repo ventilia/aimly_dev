@@ -34,6 +34,14 @@ class LeadController(private val service: LeadService) {
         @RequestBody req: UpdateStatusRequest,
     ): ResponseEntity<LeadDto> =
         ResponseEntity.ok(service.updateLeadStatus(user, id, req.status))
+
+    @PostMapping("/read-all")
+    fun markAllRead(
+        @AuthenticationPrincipal user: User,
+    ): ResponseEntity<Void> {
+        service.markAllRead(user)
+        return ResponseEntity.noContent().build()
+    }
 }
 
 
@@ -134,11 +142,11 @@ class KeywordController(
 
         val plan   = user.subscriptionPlan
         val status = user.subscriptionStatus
-        val hasAccess = plan in setOf("MINIMUM", "START") || status == "TRIAL"
+        val hasAccess = plan in setOf("START", "BUSINESS") || status == "TRIAL"
 
         if (!hasAccess) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(mapOf("error" to "AI-генерация ключевых слов доступна на тарифе MINIMUM"))
+                .body(mapOf("error" to "AI-генерация ключевых слов доступна на тарифе START"))
         }
 
         if (req.businessContext.isBlank() || req.businessContext.trim().length < 20) {
@@ -179,9 +187,6 @@ class BusinessContextController(private val service: LeadService) {
 }
 
 
-// ─── Тумблер «реагировать на предложения услуг» ──────────────────────────────
-
-// ─── Тумблер «реагировать на предложения услуг» ──────────────────────────────
 data class ServiceOffersToggleResponse(val respondToServiceOffers: Boolean)
 
 @RestController
@@ -189,13 +194,7 @@ data class ServiceOffersToggleResponse(val respondToServiceOffers: Boolean)
 class UserSettingsController(
     private val userRepository: UserRepository,
 ) {
-    /**
-     * GET /api/v1/settings/service-offers
-     * Возвращает текущее значение флага.
-     *
-     * ИСПРАВЛЕНО: читаем свежее значение из БД, а не из SecurityContext-объекта,
-     * который может быть stale (загружен в JwtAuthFilter в другой сессии).
-     */
+
     @GetMapping("/service-offers")
     fun getServiceOffers(
         @AuthenticationPrincipal user: User,
@@ -204,18 +203,7 @@ class UserSettingsController(
         return ResponseEntity.ok(ServiceOffersToggleResponse(fresh.respondToServiceOffers))
     }
 
-    /**
-     * POST /api/v1/settings/service-offers
-     * Body: {"enabled": true}
-     * Устанавливает флаг и сохраняет в БД.
-     *
-     * ИСПРАВЛЕНО:
-     * 1. Добавлена аннотация @Transactional — без неё merge detached-entity
-     *    может не зафиксироваться надёжно.
-     * 2. Явно перечитываем пользователя из БД (findById) перед изменением,
-     *    чтобы работать с managed-entity в текущей транзакции, а не с
-     *    detached-объектом из SecurityContext.
-     */
+
     @PostMapping("/service-offers")
     @Transactional
     fun setServiceOffers(
@@ -224,7 +212,6 @@ class UserSettingsController(
     ): ResponseEntity<ServiceOffersToggleResponse> {
         val enabled = body["enabled"] ?: return ResponseEntity.badRequest().build()
 
-        // Перечитываем из БД — managed entity в текущей транзакции
         val managedUser = userRepository.findById(user.id)
             .orElse(null) ?: return ResponseEntity.notFound().build()
 

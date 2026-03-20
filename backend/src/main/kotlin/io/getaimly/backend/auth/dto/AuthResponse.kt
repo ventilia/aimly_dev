@@ -14,6 +14,7 @@ data class AuthResponse(
     val subscriptionExpiresAt: String? = null,
     val createdAt:             String? = null,
     val businessContext:       String? = null,
+    val trialUsed:             Boolean = false,
 )
 
 data class MessageResponse(val message: String)
