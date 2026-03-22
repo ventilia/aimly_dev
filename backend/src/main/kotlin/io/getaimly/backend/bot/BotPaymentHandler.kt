@@ -4,7 +4,6 @@ import io.getaimly.backend.subscription.SubscriptionExpiryRepository
 import io.getaimly.backend.user.UserRepository
 import org.slf4j.LoggerFactory
 
-
 class BotPaymentHandler(
     private val sender: BotSender,
     private val userRepository: UserRepository,

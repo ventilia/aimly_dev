@@ -252,13 +252,33 @@ class SubscriptionService(
                 log.info("подписка истекла: ${user.email} (был ${if (wasTrial) "TRIAL" else "ACTIVE"})")
                 user.telegramId?.let { tgId ->
                     runCatching {
-                        bot.sendText(
-                            tgId,
-                            if (wasTrial)
-                                "❌ Пробный период AIMLY истёк.\nЧтобы продолжить — свяжитесь с поддержкой: @aimly_support"
-                            else
-                                "❌ Подписка AIMLY истекла. Свяжитесь с поддержкой для продления: @aimly_support"
-                        )
+                        val msg = if (wasTrial)
+                            "Пробный период закончился.\n\n" +
+                                    "Вы попробовали AIMLY — теперь можно оформить полный доступ и продолжить получать лиды из Telegram.\n\n" +
+                                    "Тариф START — 4 990 ₽/мес:\n" +
+                                    "✔ Мониторинг чатов по ключевым словам\n" +
+                                    "✔ Лиды без ограничений\n" +
+                                    "✔ AI-поиск и фильтрация лидов\n" +
+                                    "✔ Персонализация под ваш бизнес"
+                        else
+                            "Подписка AIMLY закончилась.\n\n" +
+                                    "Мониторинг приостановлен. Чтобы снова получать лиды — продлите подписку.\n\n" +
+                                    "Тариф START — 4 990 ₽/мес:\n" +
+                                    "✔ Мониторинг чатов по ключевым словам\n" +
+                                    "✔ Лиды без ограничений\n" +
+                                    "✔ AI-поиск и фильтрация лидов\n" +
+                                    "✔ Персонализация под ваш бизнес"
+
+                        val markup = InlineKeyboardMarkup(listOf(
+                            InlineKeyboardRow(listOf(
+                                InlineKeyboardButton.builder()
+                                    .text("💳 Оформить подписку")
+                                    .url(BotPaymentHandler.TRIBUTE_BOT_URL)
+                                    .build()
+                            ))
+                        ))
+
+                        bot.sendText(tgId, msg, markup)
                     }.onFailure { }
                 }
             }
