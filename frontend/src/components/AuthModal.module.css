@@ -60,7 +60,7 @@
 }
 .closeBtn:hover { background: var(--c-bg); color: var(--c-ink); }
 
-/* Кнопка "Назад" в заголовке */
+/* Кнопка «Назад» в заголовке */
 .backBtn {
     width: 32px;
     height: 32px;
@@ -166,6 +166,7 @@
 .showPassBtn:hover { color: var(--c-ink); background: rgba(0,0,0,.04); }
 .showPassBtn:focus:not(:focus-visible) { outline: none; }
 
+
 .fieldHint {
     font-size: 12px;
     color: var(--c-ink-3);
@@ -188,7 +189,7 @@
 }
 
 
-/* Строка "Забыли пароль?" под полем пароля */
+/* Строка «Забыли пароль?» под полем пароля */
 .forgotRow {
     display: flex;
     justify-content: flex-end;
@@ -337,34 +338,46 @@
 .successBtn { width: 100%; justify-content: center; margin-top: 8px; }
 
 
-
-@media (max-width: 480px) {
+/* ─── Мобильные правки: bottom-sheet паттерн ─── */
+@media (max-width: 520px) {
     .overlay {
-        padding: 0;
         align-items: flex-end;
+        padding: 0;
+        /* Позволяем скроллить если контент не помещается */
+        overflow-y: auto;
     }
 
     .modal {
-        max-width: 100%;
         border-radius: 20px 20px 0 0;
-
-        max-height: 92dvh;
+        max-height: 95dvh;
         overflow-y: auto;
-
+        /* Анимация снизу */
         animation: slideUpMobile .22s ease;
     }
 
     @keyframes slideUpMobile {
-        from { transform: translateY(24px); opacity: 0 }
-        to   { transform: none;            opacity: 1 }
+        from { transform: translateY(40px); opacity: 0 }
+        to   { transform: none; opacity: 1 }
     }
 
-    .header { padding: 20px 20px 0; }
-    .body   { padding: 16px 20px 28px; }
+
+    .modal::before {
+        content: '';
+        display: block;
+        width: 40px;
+        height: 4px;
+        background: var(--c-border);
+        border-radius: 2px;
+        margin: 12px auto 0;
+    }
+
+    .header { padding: 16px 20px 0; }
+    .body   { padding: 16px 20px 24px; }
 
 
     .codeInput {
         width: 100%;
+        max-width: 260px;
         font-size: 24px;
         letter-spacing: 8px;
     }

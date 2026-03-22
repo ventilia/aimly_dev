@@ -98,8 +98,47 @@
     font-family:   var(--font-body);
     transition:    all .15s;
     white-space:   nowrap;
+    text-decoration: none;
+    display:       inline-flex;
+    align-items:   center;
 }
 .backBtn:hover { border-color: var(--c-accent); color: var(--c-accent); }
+
+
+.burger {
+    display:        none;
+    flex-direction: column;
+    gap:            4px;
+    padding:        7px;
+    border:         none;
+    background:     none;
+    cursor:         pointer;
+    border-radius:  7px;
+    transition:     background .15s;
+    flex-shrink:    0;
+    margin-left:    auto;
+}
+.burger:hover { background: var(--c-bg); }
+.burger span {
+    display:         block;
+    width:           18px;
+    height:          2px;
+    background:      var(--c-ink);
+    border-radius:   2px;
+    transition:      all .22s ease;
+    transform-origin: center;
+}
+.burgerOpen span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+.burgerOpen span:nth-child(2) { opacity: 0; transform: scaleX(0); }
+.burgerOpen span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+
+/* Оверлей под открытым sidebar на мобильном */
+.mobileOverlay {
+    position:   fixed;
+    inset:      0;
+    background: rgba(0,0,0,.35);
+    z-index:    99;
+}
 
 
 .body {
@@ -155,6 +194,7 @@
     font-weight: 600;
 }
 
+/* Горизонтальная мобильная навигация — не используется (заменена drawer) */
 .mobileNav {
     display: none;
 }
@@ -588,42 +628,24 @@
     .header { padding: 0 16px; gap: 10px; }
 
 
-    .sidebar { display: none; }
-
-    .mobileNav {
-        display:    flex;
-        overflow-x: auto;
-        gap:        4px;
-        padding:    10px 16px;
-        background: var(--c-surface);
-        border-bottom: 1px solid var(--c-border);
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: none;
-        flex-shrink: 0;
-    }
-    .mobileNav::-webkit-scrollbar { display: none; }
-
-    .mobileNavBtn {
-        flex-shrink:   0;
-        padding:       7px 14px;
-        border-radius: 8px;
-        border:        1px solid var(--c-border);
-        background:    transparent;
-        color:         var(--c-ink-2);
-        font-size:     13px;
-        font-weight:   500;
-        cursor:        pointer;
-        font-family:   var(--font-body);
-        white-space:   nowrap;
-        transition:    all .15s;
-    }
-    .mobileNavBtnActive {
-        background:   var(--c-accent-soft);
-        color:        var(--c-accent);
-        border-color: var(--c-accent);
-        font-weight:  600;
+    .sidebar {
+        position:   fixed;
+        left:       -220px;
+        top:        56px;
+        height:     calc(100vh - 56px);
+        width:      220px;
+        z-index:    100;
+        transition: left .2s cubic-bezier(.4,0,.2,1);
+        box-shadow: 4px 0 20px rgba(0,0,0,.1);
     }
 
+    .sidebarOpen { left: 0; }
+
+    /* Показываем бургер */
+    .burger { display: flex; }
+
+    /* headerRight — скрываем backBtn-текст и langSwitch чтобы влезло в хедер */
+    .langSwitch { display: none; }
 
     .body {
         flex-direction: column;
@@ -641,7 +663,6 @@
     .statsGrid { grid-template-columns: repeat(2, 1fr); }
     .tabTitle { font-size: 17px; }
 
-
     .backBtnText { display: none; }
 }
 
@@ -649,7 +670,6 @@
     .header { padding: 0 12px; }
     .main   { padding: 12px; gap: 12px; }
     .statsGrid { grid-template-columns: 1fr 1fr; }
-    .langSwitch { display: none; }
 
     .usersTable { min-width: 420px; }
     .usersTable th,

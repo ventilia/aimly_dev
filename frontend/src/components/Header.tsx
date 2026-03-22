@@ -153,6 +153,15 @@ function Header({ lang, onLang }: Props) {
                         {tr(l.key)}
                     </a>
                 ))}
+
+                {/* Ссылка на Админ-панель — только для админов */}
+                {isAdmin && (
+                    <a href="/admin" className={s.mobileLink} onClick={close}
+                       style={{ color: 'var(--c-accent)', fontWeight: 600 }}>
+                        🛡 {lang === 'ru' ? 'Админ-панель' : 'Admin Panel'}
+                    </a>
+                )}
+
                 {!user && (
                     <div style={{ display: 'flex', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
                         <button className="btn-ghost"
@@ -167,7 +176,9 @@ function Header({ lang, onLang }: Props) {
                         </button>
                     </div>
                 )}
-                <div className={s.langSwitch} style={{ marginTop: 12 }}>
+
+                {}
+                <div className={s.langSwitch} style={{ marginTop: 12, display: 'flex' }}>
                     {(['ru', 'en'] as Lang[]).map(l => (
                         <button key={l}
                                 className={`${s.langBtn} ${lang === l ? s.langActive : ''}`}

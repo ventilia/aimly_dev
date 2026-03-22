@@ -127,6 +127,15 @@ export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) 
         }
     }, [])
 
+
+    useEffect(() => {
+        const onResize = () => {
+            if (window.innerWidth > 860) setMobileOpen(false)
+        }
+        window.addEventListener('resize', onResize)
+        return () => window.removeEventListener('resize', onResize)
+    }, [])
+
     const handleLogout = async () => {
         await logout()
         navigate('/')
@@ -162,10 +171,12 @@ export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) 
                     )}
                 </a>
 
+                {/* Бургер — виден только на мобильном, margin-left: auto толкает его вправо */}
                 <button className={s.burger} onClick={() => setMobileOpen(v => !v)} aria-label="Меню">
                     <span /><span /><span />
                 </button>
 
+                {/* Правая часть топбара — скрыта на мобильном, важные элементы перенесены в sidebar */}
                 <div className={s.topbarRight}>
                     <div className={s.langSwitch}>
                         {(['ru', 'en'] as Lang[]).map(lng => (
@@ -221,6 +232,18 @@ export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) 
                                 )}
                             </NavLink>
                         ))}
+
+                        {/* Ссылка на Админ-панель в навигации — только для мобильного, чтобы скомпенсировать скрытый adminChip в топбаре */}
+                        {isAdmin && (
+                            <a
+                                href="/admin"
+                                className={s.navItem}
+                                style={{ color: 'var(--c-accent)', fontWeight: 600 }}
+                                onClick={() => setMobileOpen(false)}
+                            >
+                                <span style={{ flex: 1 }}>🛡 {l.adminPanel}</span>
+                            </a>
+                        )}
                     </nav>
 
                     <div className={s.sidebarUser}>
@@ -228,6 +251,10 @@ export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) 
                         <div className={s.sidebarUserInfo}>
                             <div className={s.sidebarUserName}>{displayName}</div>
                         </div>
+                        {}
+                        <button className={s.sidebarLogout} onClick={handleLogout}>
+                            {l.logout}
+                        </button>
                     </div>
                 </aside>
 

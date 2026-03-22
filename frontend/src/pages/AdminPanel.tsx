@@ -518,13 +518,15 @@ function UserbotTab({ lang }: { lang: Lang }) {
                 )}
             </div>
 
-            {/* ─── Таблица сессий ─── */}
-            {stats?.perSession && stats.perSession.length > 0 && (
+            {/* ─── Аккаунты в пуле + кнопка удаления ─── */}
+            {(stats?.perSession?.length ?? 0) > 0 && (
                 <>
-                    <h3 className={s.subCardTitle} style={{ margin: '24px 0 10px' }}>
-                        {ru ? 'Активные сессии' : 'Active sessions'}
+                    <h3 className={s.subCardTitle} style={{ marginTop: 24 }}>
+                        {ru ? 'Аккаунты в пуле' : 'Pool accounts'}
                     </h3>
-                    {deleteError && <div className={s.formError}>{deleteError}</div>}
+                    {deleteError && (
+                        <div className={s.formError} style={{ marginBottom: 8 }}>{deleteError}</div>
+                    )}
                     <div className={s.tableWrapper}>
                         <table className={s.usersTable}>
                             <thead><tr>
@@ -536,19 +538,21 @@ function UserbotTab({ lang }: { lang: Lang }) {
                                 <th>{ru ? 'Действие' : 'Action'}</th>
                             </tr></thead>
                             <tbody>
-                            {stats.perSession.map(sess => (
+                            {stats!.perSession!.map(sess => (
                                 <tr key={sess.sessionId}>
-                                    <td className={s.cellId}>{sess.sessionId}</td>
-                                    <td>{sess.phone}</td>
+                                    <td className={s.cellId}>#{sess.sessionId}</td>
+                                    <td style={{ fontFamily: 'monospace', fontSize: 13 }}>{sess.phone}</td>
                                     <td className={s.cellNum}>{sess.chatCount}</td>
-                                    <td className={s.cellNum}>{sess.leadsCount}</td>
+                                    <td className={s.cellNum}>{sess.leadsCount ?? '—'}</td>
                                     <td>
                                         <span style={{
-                                            fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 4,
-                                            background: sess.online ? 'rgba(16,185,129,.12)' : 'rgba(239,68,68,.1)',
-                                            color: sess.online ? '#10b981' : '#ef4444',
+                                            color:      sess.online ? '#10b981' : 'var(--c-ink-3)',
+                                            fontSize:   12,
+                                            fontWeight: 600,
                                         }}>
-                                            {sess.online ? 'online' : 'offline'}
+                                            {sess.online
+                                                ? (ru ? 'в сети' : 'Online')
+                                                : (ru ? 'не в сети' : 'Offline')}
                                         </span>
                                     </td>
                                     <td>
@@ -689,29 +693,55 @@ function UserbotTab({ lang }: { lang: Lang }) {
                                                             textTransform: 'uppercase', letterSpacing: '.6px',
                                                             color: 'var(--c-ink-3)', marginBottom: 8,
                                                         }}>
-                                                            {ru ? 'Чаты' : 'Chats'}
+                                                            {ru ? 'Чаты' : 'Chats'} ({u.chats.length})
                                                         </div>
-                                                        {u.chats.length === 0
-                                                            ? <span style={{ fontSize: 12, color: 'var(--c-ink-3)' }}>—</span>
-                                                            : u.chats.map((c, i) => (
-                                                                <div key={i} style={{ fontSize: 12, color: 'var(--c-ink-2)', marginBottom: 3 }}>{c}</div>
-                                                            ))
-                                                        }
+                                                        {u.chats.length === 0 ? (
+                                                            <span style={{ fontSize: 12, color: 'var(--c-ink-3)' }}>—</span>
+                                                        ) : (
+                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                                                {u.chats.map(c => (
+                                                                    <a
+                                                                        key={c}
+                                                                        href={c.startsWith('http') ? c : `https://t.me/${c.replace('@', '')}`}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        style={{
+                                                                            fontSize: 12, color: 'var(--c-accent)',
+                                                                            textDecoration: 'none', fontFamily: 'monospace',
+                                                                        }}
+                                                                    >
+                                                                        {c}
+                                                                    </a>
+                                                                ))}
+                                                            </div>
+                                                        )}
                                                     </div>
+
                                                     <div>
                                                         <div style={{
                                                             fontSize: 11, fontWeight: 700,
                                                             textTransform: 'uppercase', letterSpacing: '.6px',
                                                             color: 'var(--c-ink-3)', marginBottom: 8,
                                                         }}>
-                                                            {ru ? 'Ключевые слова' : 'Keywords'}
+                                                            {ru ? 'Ключевые слова' : 'Keywords'} ({u.keywords.length})
                                                         </div>
-                                                        {u.keywords.length === 0
-                                                            ? <span style={{ fontSize: 12, color: 'var(--c-ink-3)' }}>—</span>
-                                                            : u.keywords.map((k, i) => (
-                                                                <div key={i} style={{ fontSize: 12, color: 'var(--c-ink-2)', marginBottom: 3 }}>{k}</div>
-                                                            ))
-                                                        }
+                                                        {u.keywords.length === 0 ? (
+                                                            <span style={{ fontSize: 12, color: 'var(--c-ink-3)' }}>—</span>
+                                                        ) : (
+                                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                                                                {u.keywords.map(kw => (
+                                                                    <span key={kw} style={{
+                                                                        fontSize: 11,
+                                                                        background: 'var(--c-surface)',
+                                                                        border: '1px solid var(--c-border)',
+                                                                        borderRadius: 6, padding: '3px 8px',
+                                                                        color: 'var(--c-ink-2)',
+                                                                    }}>
+                                                                        {kw}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </td>
@@ -880,21 +910,32 @@ export default function AdminPanel({ lang, setLang }: Props) {
     const [usersLoading, setUsersLoading] = useState(false)
 
 
+    const [sidebarOpen, setSidebarOpen] = useState(false)
+
+    useEffect(() => {
+        if (!loading && (!user || user.role !== 'ADMIN')) navigate('/')
+    }, [user, loading, navigate])
+
+
+    useEffect(() => {
+        const onResize = () => {
+            if (window.innerWidth > 860) setSidebarOpen(false)
+        }
+        window.addEventListener('resize', onResize)
+        return () => window.removeEventListener('resize', onResize)
+    }, [])
+
     const fetchUsers = useCallback(async () => {
         setUsersLoading(true)
         try {
             const data = await adminApi.getUsers()
             setUsers(data)
         } catch {
-            // silent
+
         } finally {
             setUsersLoading(false)
         }
     }, [])
-
-    useEffect(() => {
-        if (!loading && (!user || user.role !== 'ADMIN')) navigate('/')
-    }, [user, loading, navigate])
 
     useEffect(() => {
         if (activeTab !== 'users') return
@@ -905,14 +946,30 @@ export default function AdminPanel({ lang, setLang }: Props) {
 
     const ru = lang === 'ru'
 
+    const handleTabChange = (tab: Tab) => {
+        setActiveTab(tab)
+        setSidebarOpen(false)
+    }
+
     return (
         <div className={s.root}>
             <header className={s.header}>
                 <a href="/" className={s.logo}>
                     <img src="/AIMLY.png" alt="AIMLY" className={s.logoImg} />
-                    <span>AIMLY</span>
+                    <span className={s.logoText}>AIMLY</span>
                     <span className={s.adminTag}>Admin</span>
                 </a>
+
+                {}
+                <button
+                    className={`${s.burger} ${sidebarOpen ? s.burgerOpen : ''}`}
+                    onClick={() => setSidebarOpen(v => !v)}
+                    aria-label={sidebarOpen ? (ru ? 'Закрыть меню' : 'Close menu') : (ru ? 'Открыть меню' : 'Open menu')}
+                    aria-expanded={sidebarOpen}
+                >
+                    <span /><span /><span />
+                </button>
+
                 <div className={s.headerRight}>
                     <div className={s.langSwitch}>
                         {(['ru', 'en'] as Lang[]).map(lng => (
@@ -926,39 +983,31 @@ export default function AdminPanel({ lang, setLang }: Props) {
                         ))}
                     </div>
                     <button className={s.backBtn} onClick={() => navigate('/dashboard')}>
-                        <span>{ru ? '← Кабинет' : '← Dashboard'}</span>
+                        <span className={s.backBtnText}>{ru ? '← Кабинет' : '← Dashboard'}</span>
+                        <span style={{ display: 'none' }} aria-hidden>←</span>
                     </button>
                 </div>
             </header>
 
+            {}
+            {sidebarOpen && (
+                <div className={s.mobileOverlay} onClick={() => setSidebarOpen(false)} />
+            )}
+
             <div className={s.body}>
-                {}
-                <aside className={s.sidebar}>
+                <aside className={`${s.sidebar} ${sidebarOpen ? s.sidebarOpen : ''}`}>
                     <nav className={s.nav}>
                         {TABS.map(tab => (
                             <button
                                 key={tab.id}
                                 className={`${s.navItem} ${activeTab === tab.id ? s.navItemActive : ''}`}
-                                onClick={() => setActiveTab(tab.id)}
+                                onClick={() => handleTabChange(tab.id)}
                             >
                                 {tab.label[lang]}
                             </button>
                         ))}
                     </nav>
                 </aside>
-
-                {}
-                <div className={s.mobileNav}>
-                    {TABS.map(tab => (
-                        <button
-                            key={tab.id}
-                            className={`${s.mobileNavBtn} ${activeTab === tab.id ? s.mobileNavBtnActive : ''}`}
-                            onClick={() => setActiveTab(tab.id)}
-                        >
-                            {tab.label[lang]}
-                        </button>
-                    ))}
-                </div>
 
                 <main className={s.main}>
                     {activeTab === 'overview' && (
@@ -971,25 +1020,26 @@ export default function AdminPanel({ lang, setLang }: Props) {
 
                     {activeTab === 'users' && (
                         <div className={s.usersTab}>
-                            {/* Заголовок с кнопкой «Обновить» */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                                <h2 className={s.tabTitle} style={{ margin: 0 }}>
+                            {}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+                                <h2 className={s.tabTitle}>
                                     {ru ? 'Пользователи' : 'Users'}
                                     <span className={s.count}>{users.length}</span>
                                 </h2>
                                 <button
-                                    className={s.actionBtn}
+                                    className={s.grantBtn}
                                     onClick={fetchUsers}
                                     disabled={usersLoading}
-                                    style={{ fontSize: 13, padding: '6px 14px' }}
+                                    style={{ padding: '7px 16px' }}
                                 >
                                     {usersLoading
                                         ? (ru ? 'Загрузка...' : 'Loading...')
-                                        : (ru ? '↻ Обновить' : '↻ Refresh')}
+                                        : (ru ? 'Обновить' : 'Refresh')}
                                 </button>
                             </div>
-
-                            {usersLoading ? <div className={s.loading}>...</div> : (
+                            {usersLoading && users.length === 0 ? (
+                                <div className={s.loading}>...</div>
+                            ) : (
                                 <UsersTable
                                     users={users}
                                     lang={lang}
