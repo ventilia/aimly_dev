@@ -17,7 +17,6 @@
     height: 64px;
 }
 
-
 .logo {
     display: flex;
     align-items: center;
@@ -29,9 +28,9 @@
     color: var(--c-ink);
     flex-shrink: 0;
     transition: opacity .15s;
+    text-decoration: none;
 }
 .logo:hover { opacity: .8; }
-
 
 .owl {
     width: 40px;
@@ -41,7 +40,6 @@
     flex-shrink: 0;
 }
 
-
 .nav { display: flex; align-items: center; gap: 32px; }
 
 .navLink {
@@ -49,18 +47,18 @@
     font-weight: 500;
     color: var(--c-ink-2);
     transition: color .15s;
+    text-decoration: none;
+    white-space: nowrap;
 }
 .navLink:hover { color: var(--c-accent); }
-
 
 .right {
     display: flex;
     align-items: center;
     gap: 12px;
     margin-left: auto;
-    min-width: 0;
+    flex-shrink: 0;
 }
-
 
 .langSwitch {
     display: flex;
@@ -89,7 +87,6 @@
     box-shadow: 0 1px 4px rgba(0,0,0,.1);
 }
 
-
 .burger {
     display: none;
     flex-direction: column;
@@ -116,14 +113,13 @@
 .burgerOpen span:nth-child(2) { opacity: 0; transform: scaleX(0); }
 .burgerOpen span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
 
-
 .mobile {
     display: none;
     position: fixed;
     inset: 64px 0 0;
     background: var(--c-bg);
     z-index: 99;
-    padding: 24px var(--px) 32px;
+    padding: 24px 20px 32px;
     flex-direction: column;
     gap: 4px;
     overflow-y: auto;
@@ -142,29 +138,111 @@
 }
 .mobileLink:hover { color: var(--c-accent); }
 
+/* ═══ МОБИЛЬНЫЕ ПРАВКИ — только ≤860px, десктоп не трогаем ═══ */
 @media (max-width: 860px) {
+    /* Скрываем десктопную навигацию */
     .nav { display: none; }
 
-    .right > :global(.btn-ghost) { display: none; }
+    /* Показываем бургер */
     .burger { display: flex; }
 
-
+    /* Убираем большой gap */
     .inner { gap: 8px; }
-    .right  { gap: 8px; }
-    .langSwitch { display: none; }
+    .right  { gap: 6px; }
 
-    .adminChip { display: none; }
-    .bellBtn   { display: none; }
+    /* Скрываем всё лишнее из хедера */
+    .langSwitch { display: none; }
+    .adminChip  { display: none; }
+    .bellBtn    { display: none; }
+
+    /* Кнопку «Войти» скрываем — она есть в мобильном меню */
+    .right :global(.btn-ghost) { display: none; }
+
+    /* Кнопку «Регистрация» делаем компактнее */
+    .right :global(.btn-primary) {
+        padding: 8px 14px !important;
+        font-size: 13px !important;
+    }
+
+    /* Лого чуть меньше */
+    .logo { font-size: 18px; gap: 8px; }
+    .owl  { width: 32px; height: 32px; }
+    .adminTag { display: none; }
 }
 
+/* На совсем узких экранах убираем и «Регистрацию» */
+@media (max-width: 380px) {
+    .authRow { display: none; }
+}
 
+/* ═══ Остальные стили ═══ */
 .authRow {
     display: flex;
     align-items: center;
     gap: 6px;
-    min-width: 0;
+    flex-shrink: 0;
 }
 
+.adminChip {
+    display:         flex;
+    align-items:     center;
+    gap:             5px;
+    height:          34px;
+    padding:         0 12px;
+    border-radius:   100px;
+    background:      var(--c-accent);
+    color:           #fff;
+    font-size:       13px;
+    font-weight:     700;
+    text-decoration: none;
+    transition:      opacity .15s;
+    white-space:     nowrap;
+    flex-shrink:     0;
+}
+.adminChip:hover { opacity: .88; }
+
+.adminTag {
+    font-size:      10px;
+    font-weight:    700;
+    background:     var(--c-accent);
+    color:          #fff;
+    padding:        2px 7px;
+    border-radius:  6px;
+    margin-left:    4px;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+}
+
+.bellBtn {
+    position:        relative;
+    display:         flex;
+    align-items:     center;
+    justify-content: center;
+    width:           34px;
+    height:          34px;
+    border-radius:   50%;
+    border:          1.5px solid var(--c-border);
+    background:      var(--c-surface);
+    cursor:          pointer;
+    color:           var(--c-ink);
+    transition:      border-color .15s, background .15s;
+    flex-shrink:     0;
+}
+.bellBtn:hover { border-color: var(--c-accent); background: var(--c-bg); }
+.bellBadge {
+    position:      absolute;
+    top:           -4px;
+    right:         -4px;
+    background:    #ef4444;
+    color:         #fff;
+    font-size:     10px;
+    font-weight:   700;
+    line-height:   1;
+    padding:       2px 4px;
+    border-radius: 100px;
+    border:        1.5px solid var(--c-surface);
+    pointer-events: none;
+}
 
 .balanceChip {
     display:      flex;
@@ -183,11 +261,7 @@
     white-space:  nowrap;
     transition:   border-color .15s, background .15s;
 }
-.balanceChip:hover {
-    border-color: var(--c-accent);
-    background:   var(--c-bg);
-}
-
+.balanceChip:hover { border-color: var(--c-accent); background: var(--c-bg); }
 
 .balancePop {
     position:      absolute;
@@ -203,192 +277,55 @@
     animation:     popIn .15s ease;
 }
 .balancePopLabel {
-    font-size:      11px;
-    color:          var(--c-ink-3);
-    font-weight:    700;
-    text-transform: uppercase;
-    letter-spacing: .7px;
-    margin-bottom:  6px;
+    font-size: 11px; color: var(--c-ink-3); font-weight: 700;
+    text-transform: uppercase; letter-spacing: .7px; margin-bottom: 6px;
 }
 .balancePopAmount {
-    font-size:     26px;
-    font-weight:   900;
-    font-family:   var(--font-head);
-    color:         var(--c-ink);
-    margin-bottom: 14px;
+    font-size: 26px; font-weight: 900; font-family: var(--font-head);
+    color: var(--c-ink); margin-bottom: 14px;
 }
 .balancePopBtn {
-    display:         block;
-    width:           100%;
-    padding:         9px 0;
-    background:      var(--c-accent);
-    color:           #fff;
-    border-radius:   9px;
-    border:          none;
-    font-family:     var(--font-body);
-    font-size:       14px;
-    font-weight:     600;
-    cursor:          pointer;
-    text-align:      center;
-    text-decoration: none;
-    transition:      opacity .15s;
+    display: block; width: 100%; padding: 9px 0; background: var(--c-accent);
+    color: #fff; border-radius: 9px; border: none; font-family: var(--font-body);
+    font-size: 14px; font-weight: 600; cursor: pointer;
+    text-align: center; text-decoration: none; transition: opacity .15s;
 }
 .balancePopBtn:hover { opacity: .88; }
 
-
-.bellBtn {
-    position:      relative;
-    display:       flex;
-    align-items:   center;
-    justify-content: center;
-    width:          34px;
-    height:         34px;
-    border-radius:  50%;
-    border:         1.5px solid var(--c-border);
-    background:     var(--c-surface);
-    cursor:         pointer;
-    color:          var(--c-ink);
-    transition:     border-color .15s, background .15s;
-    flex-shrink:    0;
-}
-.bellBtn:hover {
-    border-color: var(--c-accent);
-    background:   var(--c-bg);
-}
-.bellBadge {
-    position:      absolute;
-    top:           -4px;
-    right:         -4px;
-    background:    #ef4444;
-    color:         #fff;
-    font-size:     10px;
-    font-weight:   700;
-    line-height:   1;
-    padding:       2px 4px;
-    border-radius: 100px;
-    border:        1.5px solid var(--c-surface);
-    pointer-events: none;
-}
-
-
 .notifPop {
-    position:      absolute;
-    top:           calc(100% + 8px);
-    right:         0;
-    background:    var(--c-surface);
-    border:        1px solid var(--c-border);
-    border-radius: 16px;
-    box-shadow:    0 12px 40px rgba(0,0,0,.13);
-    width:         320px;
-    z-index:       300;
-    overflow:      hidden;
-    animation:     popIn .15s ease;
+    position: absolute; top: calc(100% + 8px); right: 0;
+    background: var(--c-surface); border: 1px solid var(--c-border);
+    border-radius: 16px; box-shadow: 0 12px 40px rgba(0,0,0,.13);
+    width: 320px; z-index: 300; overflow: hidden; animation: popIn .15s ease;
 }
 .notifPopHead {
-    display:         flex;
-    align-items:     center;
-    justify-content: space-between;
-    padding:         14px 16px 10px;
-    border-bottom:   1px solid var(--c-border);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px 10px; border-bottom: 1px solid var(--c-border);
 }
-.notifPopTitle {
-    font-weight: 700;
-    font-size:   14px;
-    color:       var(--c-ink);
-}
+.notifPopTitle  { font-weight: 700; font-size: 14px; color: var(--c-ink); }
 .notifMarkAll {
-    font-size:   12px;
-    color:       var(--c-accent);
-    background:  none;
-    border:      none;
-    cursor:      pointer;
-    padding:     0;
-    font-weight: 600;
+    font-size: 12px; color: var(--c-accent); background: none;
+    border: none; cursor: pointer; padding: 0; font-weight: 600;
 }
 .notifMarkAll:hover { text-decoration: underline; }
-.notifScroll {
-    max-height:  360px;
-    overflow-y:  auto;
-}
-.notifEmpty {
-    padding:    24px 16px;
-    text-align: center;
-    color:      var(--c-ink-3);
-    font-size:  13px;
-}
+.notifScroll   { max-height: 360px; overflow-y: auto; }
+.notifEmpty    { padding: 24px 16px; text-align: center; color: var(--c-ink-3); font-size: 13px; }
 .notifRow {
-    padding:    12px 16px;
-    cursor:     default;
-    transition: background .1s;
+    padding: 12px 16px; cursor: default; transition: background .1s;
     border-bottom: 1px solid var(--c-border);
 }
 .notifRow:last-child { border-bottom: none; }
 .notifRowUnread {
-    background: rgba(var(--c-accent-rgb, 99,102,241), .04);
-    cursor:     pointer;
+    background: rgba(var(--c-accent-rgb, 99,102,241), .04); cursor: pointer;
 }
 .notifRowUnread:hover { background: rgba(var(--c-accent-rgb, 99,102,241), .08); }
-.notifRowMeta {
-    display:     flex;
-    align-items: center;
-    gap:         6px;
-    margin-bottom: 3px;
-}
-.notifDot {
-    width:         7px;
-    height:        7px;
-    border-radius: 50%;
-    background:    var(--c-accent);
-    flex-shrink:   0;
-}
-.notifRowTitle {
-    font-size:   13px;
-    font-weight: 700;
-    color:       var(--c-ink);
-}
-.notifRowBody {
-    font-size:   13px;
-    color:       var(--c-ink-2, var(--c-ink));
-    margin:      0 0 4px;
-    line-height: 1.45;
-}
-.notifRowDate {
-    font-size: 11px;
-    color:     var(--c-ink-3);
-}
-
-
-.adminChip {
-    display:         flex;
-    align-items:     center;
-    gap:             5px;
-    height:          34px;
-    padding:         0 12px;
-    border-radius:   100px;
-    background:      var(--c-accent);
-    color:           #fff;
-    font-size:       13px;
-    font-weight:     700;
-    text-decoration: none;
-    transition:      opacity .15s;
-    white-space:     nowrap;
-}
-.adminChip:hover { opacity: .88; }
-
-
-.adminTag {
-    font-size:      10px;
-    font-weight:    700;
-    background:     var(--c-accent);
-    color:          #fff;
-    padding:        2px 7px;
-    border-radius:  6px;
-    margin-left:    4px;
-    letter-spacing: .5px;
-    text-transform: uppercase;
-}
+.notifRowMeta  { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+.notifDot      { width: 7px; height: 7px; border-radius: 50%; background: var(--c-accent); flex-shrink: 0; }
+.notifRowTitle { font-size: 13px; font-weight: 700; color: var(--c-ink); }
+.notifRowBody  { font-size: 13px; color: var(--c-ink-2, var(--c-ink)); margin: 0 0 4px; line-height: 1.45; }
+.notifRowDate  { font-size: 11px; color: var(--c-ink-3); }
 
 @keyframes popIn {
     from { opacity: 0; transform: translateY(-6px) scale(.97); }
-    to   { opacity: 1; transform: translateY(0)   scale(1); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
 }

@@ -931,6 +931,7 @@ export default function AdminPanel({ lang, setLang }: Props) {
             const data = await adminApi.getUsers()
             setUsers(data)
         } catch {
+            // dkddk
 
         } finally {
             setUsersLoading(false)
@@ -983,8 +984,8 @@ export default function AdminPanel({ lang, setLang }: Props) {
                         ))}
                     </div>
                     <button className={s.backBtn} onClick={() => navigate('/dashboard')}>
-                        <span className={s.backBtnText}>{ru ? '← Кабинет' : '← Dashboard'}</span>
-                        <span style={{ display: 'none' }} aria-hidden>←</span>
+                        <span className={s.backBtnFull}>{ru ? '← Кабинет' : '← Dashboard'}</span>
+                        <span className={s.backBtnShort}>←</span>
                     </button>
                 </div>
             </header>

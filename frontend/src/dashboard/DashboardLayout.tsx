@@ -36,13 +36,12 @@ const txt = {
 
 interface NavLabels {
     overview: string
-    leads: string
-    chats: string
+    leads:    string
+    chats:    string
     keywords: string
-    profile: string
+    profile:  string
 }
 
-// ЗАДАЧА 3: чаты идут перед ключевыми словами
 const NAV_ITEMS = (l: NavLabels) => [
     { to: '/dashboard',          label: l.overview, exact: true  },
     { to: '/dashboard/leads',    label: l.leads,    exact: false },
@@ -94,11 +93,10 @@ export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) 
     const l = txt[lang]
     const { user, logout } = useAuthContext()
     const navigate = useNavigate()
-    const [mobileOpen, setMobileOpen] = useState(false)
+    const [mobileOpen,    setMobileOpen]    = useState(false)
     const [newLeadsCount, setNewLeadsCount] = useState(0)
 
     const hasSubscription = user?.subscriptionStatus === 'ACTIVE' || user?.subscriptionStatus === 'TRIAL'
-
 
     const refreshNewCount = () => {
         leadsApi.list({ status: 'NEW', size: 1 })
@@ -126,7 +124,6 @@ export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) 
             window.removeEventListener(LEADS_COUNT_CHANGED, handleCountChanged)
         }
     }, [])
-
 
     useEffect(() => {
         const onResize = () => {
@@ -171,12 +168,12 @@ export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) 
                     )}
                 </a>
 
-                {/* Бургер — виден только на мобильном, margin-left: auto толкает его вправо */}
+                {/* Бургер — виден только на мобильном через CSS (margin-left: auto) */}
                 <button className={s.burger} onClick={() => setMobileOpen(v => !v)} aria-label="Меню">
                     <span /><span /><span />
                 </button>
 
-                {/* Правая часть топбара — скрыта на мобильном, важные элементы перенесены в sidebar */}
+                {/* Правая часть — скрыта на мобильном через CSS */}
                 <div className={s.topbarRight}>
                     <div className={s.langSwitch}>
                         {(['ru', 'en'] as Lang[]).map(lng => (
@@ -197,7 +194,6 @@ export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) 
                         </a>
                     )}
 
-                    {}
                     <NotifBell />
 
                     <div className={s.userChip}>
@@ -233,7 +229,7 @@ export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) 
                             </NavLink>
                         ))}
 
-                        {/* Ссылка на Админ-панель в навигации — только для мобильного, чтобы скомпенсировать скрытый adminChip в топбаре */}
+                        {/* Ссылка на Админ-панель в sidebar — без смайлика щита */}
                         {isAdmin && (
                             <a
                                 href="/admin"
@@ -241,7 +237,7 @@ export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) 
                                 style={{ color: 'var(--c-accent)', fontWeight: 600 }}
                                 onClick={() => setMobileOpen(false)}
                             >
-                                <span style={{ flex: 1 }}>🛡 {l.adminPanel}</span>
+                                <span style={{ flex: 1 }}>{l.adminPanel}</span>
                             </a>
                         )}
                     </nav>
@@ -251,7 +247,7 @@ export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) 
                         <div className={s.sidebarUserInfo}>
                             <div className={s.sidebarUserName}>{displayName}</div>
                         </div>
-                        {}
+                        {/* Кнопка «Выход» — видна только на мобильном через CSS */}
                         <button className={s.sidebarLogout} onClick={handleLogout}>
                             {l.logout}
                         </button>

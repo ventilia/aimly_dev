@@ -104,6 +104,10 @@
 }
 .backBtn:hover { border-color: var(--c-accent); color: var(--c-accent); }
 
+/* Текст кнопки «← Кабинет»: полный на десктопе, стрелка на мобильном */
+.backBtnFull  { display: inline; }
+.backBtnShort { display: none; }
+
 
 .burger {
     display:        none;
@@ -663,7 +667,8 @@
     .statsGrid { grid-template-columns: repeat(2, 1fr); }
     .tabTitle { font-size: 17px; }
 
-    .backBtnText { display: none; }
+    .backBtnFull  { display: none; }
+    .backBtnShort { display: inline; }
 }
 
 @media (max-width: 480px) {

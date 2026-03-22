@@ -6,8 +6,6 @@ import AuthModal from './AuthModal'
 import UserMenu  from './UserMenu'
 import s from './Header.module.css'
 
-
-
 const IconBell = () => (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
          stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -23,8 +21,6 @@ const IconShield = () => (
     </svg>
 )
 
-
-
 function NotifBell() {
     return (
         <button
@@ -38,8 +34,6 @@ function NotifBell() {
         </button>
     )
 }
-
-
 
 interface Props {
     lang:   Lang
@@ -147,6 +141,7 @@ function Header({ lang, onLang }: Props) {
                 </div>
             </header>
 
+            {/* Мобильное выпадающее меню */}
             <div className={`${s.mobile} ${menuOpen ? s.mobileOpen : ''}`} aria-hidden={!menuOpen}>
                 {links.map(l => (
                     <a key={l.key} href={l.href} className={s.mobileLink} onClick={close}>
@@ -154,11 +149,11 @@ function Header({ lang, onLang }: Props) {
                     </a>
                 ))}
 
-                {/* Ссылка на Админ-панель — только для админов */}
+                {/* Ссылка на Админ-панель — без смайлика */}
                 {isAdmin && (
                     <a href="/admin" className={s.mobileLink} onClick={close}
                        style={{ color: 'var(--c-accent)', fontWeight: 600 }}>
-                        🛡 {lang === 'ru' ? 'Админ-панель' : 'Admin Panel'}
+                        {lang === 'ru' ? 'Админ-панель' : 'Admin Panel'}
                     </a>
                 )}
 
@@ -177,7 +172,7 @@ function Header({ lang, onLang }: Props) {
                     </div>
                 )}
 
-                {}
+                {/* Переключатель языка */}
                 <div className={s.langSwitch} style={{ marginTop: 12, display: 'flex' }}>
                     {(['ru', 'en'] as Lang[]).map(l => (
                         <button key={l}
