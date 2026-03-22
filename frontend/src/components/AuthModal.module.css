@@ -166,7 +166,6 @@
 .showPassBtn:hover { color: var(--c-ink); background: rgba(0,0,0,.04); }
 .showPassBtn:focus:not(:focus-visible) { outline: none; }
 
-
 .fieldHint {
     font-size: 12px;
     color: var(--c-ink-3);
@@ -336,3 +335,37 @@
 
 .successText { font-size: 14px; color: var(--c-ink-3); line-height: 1.55; margin: 0; }
 .successBtn { width: 100%; justify-content: center; margin-top: 8px; }
+
+
+
+@media (max-width: 480px) {
+    .overlay {
+        padding: 0;
+        align-items: flex-end;
+    }
+
+    .modal {
+        max-width: 100%;
+        border-radius: 20px 20px 0 0;
+
+        max-height: 92dvh;
+        overflow-y: auto;
+
+        animation: slideUpMobile .22s ease;
+    }
+
+    @keyframes slideUpMobile {
+        from { transform: translateY(24px); opacity: 0 }
+        to   { transform: none;            opacity: 1 }
+    }
+
+    .header { padding: 20px 20px 0; }
+    .body   { padding: 16px 20px 28px; }
+
+
+    .codeInput {
+        width: 100%;
+        font-size: 24px;
+        letter-spacing: 8px;
+    }
+}
