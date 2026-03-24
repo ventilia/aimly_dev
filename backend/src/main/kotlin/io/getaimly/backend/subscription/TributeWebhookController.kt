@@ -23,7 +23,6 @@ import javax.crypto.spec.SecretKeySpec
 import java.util.Base64
 
 
-
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class TributeWebhookRequest(
     val name: String = "",
@@ -59,7 +58,6 @@ class TributeWebhookEvent(
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long = 0,
 
-
     @Column(name = "event_key", nullable = false, unique = true, length = 512)
     val eventKey: String,
 
@@ -79,7 +77,6 @@ interface TributeWebhookEventRepository : JpaRepository<TributeWebhookEvent, Lon
 }
 
 
-
 @RestController
 @RequestMapping("/api/v1/webhooks/tribute")
 class TributeWebhookController(
@@ -88,19 +85,14 @@ class TributeWebhookController(
     private val eventRepository:  TributeWebhookEventRepository,
     private val objectMapper:     ObjectMapper,
     private val bot:              AimlyBot,
-
-    private val cfg: TributeProperties,
+    private val cfg:              TributeProperties,
 ) {
     private val log = LoggerFactory.getLogger(TributeWebhookController::class.java)
 
     companion object {
-
         private const val MAX_BODY_BYTES = 64 * 1024
-
-
-        private const val TRIBUTE_PLAN = "START"
+        private const val TRIBUTE_PLAN   = "START"
     }
-
 
 
     @GetMapping
@@ -108,13 +100,11 @@ class TributeWebhookController(
         ResponseEntity.ok(mapOf("status" to "ok", "endpoint" to "tribute-webhook"))
 
 
-
     @PostMapping(consumes = ["application/json", "application/*+json", "*/*"])
     fun handleWebhook(
         httpRequest: HttpServletRequest,
         @RequestHeader(value = "trbt-signature", required = false) signature: String?,
     ): ResponseEntity<Map<String, String>> {
-
 
         val contentLength = httpRequest.contentLength
         if (contentLength > MAX_BODY_BYTES) {
@@ -130,18 +120,14 @@ class TributeWebhookController(
 
         val rawBody = String(rawBytes, Charsets.UTF_8)
 
-
         val signatureValid = verifySignature(rawBytes, signature)
         if (!signatureValid) {
             if (cfg.signatureStrict) {
                 log.warn("Tribute webhook: неверная или отсутствующая подпись — запрос отклонён (strict mode)")
-
                 return ResponseEntity.ok(mapOf("status" to "ignored", "reason" to "invalid_signature"))
             }
-
             log.warn("Tribute webhook: подпись не прошла проверку, но strict=false — продолжаем")
         }
-
 
         if (rawBody.isBlank()) {
             log.warn("Tribute webhook: пустое тело запроса")
@@ -155,7 +141,6 @@ class TributeWebhookController(
             return ResponseEntity.ok(mapOf("status" to "ok"))
         }
 
-
         val eventTime = parseEventTime(event.sentAt ?: event.createdAt)
         if (eventTime != null) {
             val ageMinutes = java.time.Duration.between(eventTime, LocalDateTime.now(ZoneOffset.UTC)).toMinutes()
@@ -166,7 +151,6 @@ class TributeWebhookController(
                 )
                 return ResponseEntity.ok(mapOf("status" to "ok", "reason" to "event_too_old"))
             }
-
             if (ageMinutes < -2) {
                 log.warn("Tribute webhook: событие из будущего (age=${ageMinutes}мин) — пропускаем")
                 return ResponseEntity.ok(mapOf("status" to "ok", "reason" to "event_from_future"))
@@ -175,20 +159,16 @@ class TributeWebhookController(
             log.warn("Tribute webhook: нет метки времени в событии '${event.name}' — пропускаем проверку возраста")
         }
 
-
         val eventKey = buildEventKey(event)
         if (eventRepository.existsByEventKey(eventKey)) {
             log.info("Tribute webhook: событие '${event.name}' key='$eventKey' уже обработано — пропускаем")
             return ResponseEntity.ok(mapOf("status" to "ok", "reason" to "already_processed"))
         }
 
-
         log.info(
             "Tribute webhook: обрабатываем event='${event.name}' " +
-                    "tgId=${event.payload?.telegramUserId} " +
-                    "key='$eventKey'"
+                    "tgId=${event.payload?.telegramUserId} key='$eventKey'"
         )
-
 
         runCatching {
             when (event.name) {
@@ -202,21 +182,18 @@ class TributeWebhookController(
             }
         }.onFailure { e ->
             log.error("Tribute webhook: ошибка обработки '${event.name}': ${e.message}", e)
-
             return ResponseEntity.ok(mapOf("status" to "ok"))
         }
-
 
         runCatching {
             eventRepository.save(
                 TributeWebhookEvent(
-                    eventKey      = eventKey,
-                    eventName     = event.name,
+                    eventKey       = eventKey,
+                    eventName      = event.name,
                     telegramUserId = event.payload?.telegramUserId,
                 )
             )
         }.onFailure { e ->
-
             if (e is DataIntegrityViolationException) {
                 log.info("Tribute webhook: гонка при сохранении идемпотентности для key='$eventKey' — ок")
             } else {
@@ -227,6 +204,109 @@ class TributeWebhookController(
         return ResponseEntity.ok(mapOf("status" to "ok"))
     }
 
+
+    @Transactional
+    fun handleNewSubscription(req: TributeWebhookRequest) {
+        val payload   = req.payload ?: run { log.warn("new_subscription: нет payload"); return }
+        val tgId      = payload.telegramUserId ?: run { log.warn("new_subscription: нет telegram_user_id"); return }
+        val plan      = resolvePlan(payload.subscriptionName)
+        val expiresAt = resolveExpiresAt(payload.expiresAt, defaultDays = 31)
+
+        val user = userRepository.findByTelegramId(tgId).orElse(null) ?: run {
+            log.warn("[SUB][WARN] Оплата без привязки TG: tgId=$tgId — пользователь не найден. Убедитесь что пользователь привязал Telegram перед оформлением подписки.")
+            return
+        }
+
+        user.subscriptionStatus = "ACTIVE"
+        user.subscriptionPlan   = plan
+        user.updatedAt          = LocalDateTime.now()
+        userRepository.save(user)
+
+        val expiry = expiryRepository.findByUserId(user.id)
+            ?.apply { this.expiresAt = expiresAt; this.notifiedRenewal = false }
+            ?: SubscriptionExpiry(user = user, expiresAt = expiresAt)
+        expiryRepository.save(expiry)
+
+        log.info("[SUB] Оплачена (Tribute new): userId=${user.id} email=${user.email} plan=$plan до=$expiresAt tgId=$tgId")
+
+        runCatching {
+            bot.sendText(
+                tgId,
+                "🎉 Подписка AIMLY активирована!\n\n" +
+                        "✅ Тариф ${planDisplayName(plan)} — все функции включены\n" +
+                        "✅ AI-поиск и фильтрация лидов\n" +
+                        "✅ Мониторинг без ограничений\n\n" +
+                        "📅 Действует до: ${expiresAt.toLocalDate()}\n\n" +
+                        "Спасибо! 🙌"
+            )
+        }.onFailure { log.warn("new_subscription TG-уведомление userId=${user.id}: ${it.message}") }
+    }
+
+    @Transactional
+    fun handleRenewedSubscription(req: TributeWebhookRequest) {
+        val payload   = req.payload ?: run { log.warn("renewed_subscription: нет payload"); return }
+        val tgId      = payload.telegramUserId ?: run { log.warn("renewed_subscription: нет telegram_user_id"); return }
+        val plan      = resolvePlan(payload.subscriptionName)
+        val expiresAt = resolveExpiresAt(payload.expiresAt, defaultDays = 31)
+
+        val user = userRepository.findByTelegramId(tgId).orElse(null) ?: run {
+            log.warn("[SUB][WARN] Продление без привязки TG: tgId=$tgId — пользователь не найден")
+            return
+        }
+
+        if (user.subscriptionStatus != "ACTIVE" || user.subscriptionPlan != plan) {
+            user.subscriptionStatus = "ACTIVE"
+            user.subscriptionPlan   = plan
+        }
+        user.updatedAt = LocalDateTime.now()
+        userRepository.save(user)
+
+        val expiry = expiryRepository.findByUserId(user.id)
+            ?.apply { this.expiresAt = expiresAt; this.notifiedRenewal = false }
+            ?: SubscriptionExpiry(user = user, expiresAt = expiresAt)
+        expiryRepository.save(expiry)
+
+        log.info("[SUB] Продлена (Tribute): userId=${user.id} email=${user.email} plan=$plan до=$expiresAt")
+
+        runCatching {
+            bot.sendText(
+                tgId,
+                "🔄 Подписка AIMLY продлена!\n\n" +
+                        "📅 Действует до: ${expiresAt.toLocalDate()}\n\n" +
+                        "Спасибо! 🙌"
+            )
+        }.onFailure { log.warn("renewed_subscription TG-уведомление userId=${user.id}: ${it.message}") }
+    }
+
+    @Transactional
+    fun handleCancelledSubscription(req: TributeWebhookRequest) {
+        val payload = req.payload ?: run { log.warn("cancelled_subscription: нет payload"); return }
+        val tgId    = payload.telegramUserId ?: run { log.warn("cancelled_subscription: нет telegram_user_id"); return }
+
+        val user = userRepository.findByTelegramId(tgId).orElse(null) ?: run {
+            log.warn("[SUB][WARN] Отмена без привязки TG: tgId=$tgId — пользователь не найден")
+            return
+        }
+
+        user.updatedAt = LocalDateTime.now()
+        userRepository.save(user)
+
+        val expiresAt = expiryRepository.findByUserId(user.id)?.expiresAt
+        log.info("[SUB] Отменена (Tribute): userId=${user.id} email=${user.email} доступ до=$expiresAt cancelReason=${payload.cancelReason}")
+
+        runCatching {
+            val tillLine = if (expiresAt != null) "\nДоступ сохраняется до: ${expiresAt.toLocalDate()}" else ""
+            bot.sendText(
+                tgId,
+                "ℹ️ Подписка AIMLY отменена.\n\n" +
+                        "Автопродление отключено.$tillLine\n\n" +
+                        "Для возобновления — подпишитесь снова через Tribute."
+            )
+        }.onFailure { log.warn("cancelled_subscription TG-уведомление userId=${user.id}: ${it.message}") }
+    }
+
+
+    // ─── Вспомогательные ─────────────────────────────────────────────────────────
 
     private fun verifySignature(rawBytes: ByteArray, signature: String?): Boolean {
         if (cfg.apiKey.isBlank()) {
@@ -242,10 +322,9 @@ class TributeWebhookController(
             .removePrefix("sha256=")
             .removePrefix("HMAC-SHA256=")
 
-        val hmacBytes    = computeHmacBytes(rawBytes, cfg.apiKey)
-        val expectedHex  = hmacBytes.toHexString()
-        val expectedB64  = Base64.getEncoder().encodeToString(hmacBytes)
-
+        val hmacBytes   = computeHmacBytes(rawBytes, cfg.apiKey)
+        val expectedHex = hmacBytes.toHexString()
+        val expectedB64 = Base64.getEncoder().encodeToString(hmacBytes)
 
         val matchHex = MessageDigest.isEqual(
             cleanSig.lowercase().toByteArray(Charsets.UTF_8),
@@ -262,122 +341,11 @@ class TributeWebhookController(
         }
     }
 
-
     private fun buildEventKey(event: TributeWebhookRequest): String {
         val base = event.eventId?.takeIf { it.isNotBlank() }
             ?: "${event.name}|${event.payload?.telegramUserId}|${event.payload?.subscriptionId}|${event.createdAt}"
-
         return base.take(512)
     }
-
-
-
-    @Transactional
-    fun handleNewSubscription(req: TributeWebhookRequest) {
-        val payload   = req.payload ?: run { log.warn("new_subscription: нет payload"); return }
-        val tgId      = payload.telegramUserId ?: run { log.warn("new_subscription: нет telegram_user_id"); return }
-        val plan      = resolvePlan(payload.subscriptionName)
-        val expiresAt = resolveExpiresAt(payload.expiresAt, defaultDays = 31)
-
-        val user = userRepository.findByTelegramId(tgId).orElse(null) ?: run {
-            log.warn(
-                "new_subscription: пользователь с telegramId не найден. " +
-                        "Убедитесь, что пользователь привязал Telegram в AIMLY перед оформлением подписки."
-            )
-            return
-        }
-
-        user.subscriptionStatus = "ACTIVE"
-        user.subscriptionPlan   = plan
-        user.updatedAt          = LocalDateTime.now()
-        userRepository.save(user)
-
-        val expiry = expiryRepository.findByUserId(user.id)
-            ?.apply { this.expiresAt = expiresAt; this.notifiedRenewal = false }
-            ?: SubscriptionExpiry(user = user, expiresAt = expiresAt)
-        expiryRepository.save(expiry)
-
-        log.info("✅ Tribute new_subscription: userId=${user.id} plan=$plan до $expiresAt")
-
-        runCatching {
-            bot.sendText(
-                tgId,
-                "🎉 Подписка AIMLY активирована!\n\n" +
-                        "✅ Тариф ${planDisplayName(plan)} — все функции включены\n" +
-                        "✅ AI-поиск и фильтрация лидов\n" +
-                        "✅ Мониторинг без ограничений\n\n" +
-                        "📅 Действует до: ${expiresAt.toLocalDate()}\n\n" +
-                        "Спасибо! 🙌"
-            )
-        }.onFailure { log.warn("new_subscription TG-уведомление: ${it.message}") }
-    }
-
-    @Transactional
-    fun handleRenewedSubscription(req: TributeWebhookRequest) {
-        val payload   = req.payload ?: run { log.warn("renewed_subscription: нет payload"); return }
-        val tgId      = payload.telegramUserId ?: run { log.warn("renewed_subscription: нет telegram_user_id"); return }
-        val plan      = resolvePlan(payload.subscriptionName)
-        val expiresAt = resolveExpiresAt(payload.expiresAt, defaultDays = 31)
-
-        val user = userRepository.findByTelegramId(tgId).orElse(null) ?: run {
-            log.warn("renewed_subscription: пользователь telegramId не найден")
-            return
-        }
-
-
-        if (user.subscriptionStatus != "ACTIVE" || user.subscriptionPlan != plan) {
-            user.subscriptionStatus = "ACTIVE"
-            user.subscriptionPlan   = plan
-        }
-        user.updatedAt = LocalDateTime.now()
-        userRepository.save(user)
-
-        val expiry = expiryRepository.findByUserId(user.id)
-            ?.apply { this.expiresAt = expiresAt; this.notifiedRenewal = false }
-            ?: SubscriptionExpiry(user = user, expiresAt = expiresAt)
-        expiryRepository.save(expiry)
-
-        log.info("✅ Tribute renewed_subscription: userId=${user.id} plan=$plan до $expiresAt")
-
-        runCatching {
-            bot.sendText(
-                tgId,
-                "🔄 Подписка AIMLY продлена!\n\n" +
-                        "📅 Действует до: ${expiresAt.toLocalDate()}\n\n" +
-                        "Спасибо! 🙌"
-            )
-        }.onFailure { log.warn("renewed_subscription TG-уведомление: ${it.message}") }
-    }
-
-    @Transactional
-    fun handleCancelledSubscription(req: TributeWebhookRequest) {
-        val payload = req.payload ?: run { log.warn("cancelled_subscription: нет payload"); return }
-        val tgId    = payload.telegramUserId ?: run { log.warn("cancelled_subscription: нет telegram_user_id"); return }
-
-        val user = userRepository.findByTelegramId(tgId).orElse(null) ?: run {
-            log.warn("cancelled_subscription: пользователь telegramId не найден")
-            return
-        }
-
-
-        user.updatedAt = LocalDateTime.now()
-        userRepository.save(user)
-
-        val expiresAt = expiryRepository.findByUserId(user.id)?.expiresAt
-        log.info("Tribute cancelled_subscription: userId=${user.id} expiresAt=$expiresAt")
-
-        runCatching {
-            val tillLine = if (expiresAt != null) "\nДоступ сохраняется до: ${expiresAt.toLocalDate()}" else ""
-            bot.sendText(
-                tgId,
-                "ℹ️ Подписка AIMLY отменена.\n\n" +
-                        "Автопродление отключено.$tillLine\n\n" +
-                        "Для возобновления — подпишитесь снова через Tribute."
-            )
-        }.onFailure { log.warn("cancelled_subscription TG-уведомление: ${it.message}") }
-    }
-
-
 
     private fun computeHmacBytes(body: ByteArray, key: String): ByteArray {
         val mac = Mac.getInstance("HmacSHA256")
@@ -387,7 +355,6 @@ class TributeWebhookController(
 
     private fun ByteArray.toHexString(): String =
         joinToString("") { "%02x".format(it) }
-
 
     private fun parseEventTime(raw: String?): LocalDateTime? {
         if (raw.isNullOrBlank()) return null
@@ -415,9 +382,8 @@ class TributeWebhookController(
         else      -> plan
     }
 
-
     private fun java.io.InputStream.readBytes(limit: Int): ByteArray {
-        val buf = ByteArray(limit + 1)
+        val buf   = ByteArray(limit + 1)
         var total = 0
         while (total <= limit) {
             val read = read(buf, total, limit + 1 - total)

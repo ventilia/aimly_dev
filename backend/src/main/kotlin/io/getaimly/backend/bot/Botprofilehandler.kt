@@ -29,10 +29,13 @@ class BotProfileHandler(
     private val log = LoggerFactory.getLogger(BotProfileHandler::class.java)
 
 
-
     fun showProfile(chatId: Long, msgId: Int, from: User) {
         val user = userRepository.findByTelegramId(from.id).orElse(null)
-        if (user == null) { sender.editText(chatId, msgId, "Нужно войти. /start"); return }
+        if (user == null) {
+            log.warn("[BOT][PROFILE] Не авторизован при открытии профиля: chatId=$chatId tgId=${from.id}")
+            sender.editText(chatId, msgId, "Нужно войти. /start")
+            return
+        }
 
         val chatCount  = subscriptionRepository.countByUserIdAndIsActiveTrue(user.id)
         val kwCount    = keywordRepository.findByUserIdAndIsActiveTrue(user.id).size
@@ -40,6 +43,8 @@ class BotProfileHandler(
         val newLeads   = leadRepository.countByUserIdAndStatus(user.id, LeadStatus.NEW)
         val expiry     = expiryRepository.findByUserId(user.id)
         val since      = user.createdAt?.toLocalDate()?.toString() ?: "—"
+
+        log.info("[BOT][PROFILE] Просмотр профиля: userId=${user.id} email=${user.email} план=${user.subscriptionPlan} статус=${user.subscriptionStatus} чатов=$chatCount ключ_слов=$kwCount всего_лидов=$totalLeads новых=$newLeads")
 
         val plan          = user.subscriptionPlan
         val hasAiFeatures = plan == "MINIMUM" || plan == "START" || user.subscriptionStatus == "TRIAL"
@@ -73,7 +78,6 @@ class BotProfileHandler(
 
         val rows = mutableListOf<org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow>()
 
-
         if (user.subscriptionStatus != "ACTIVE") {
             rows.add(row(btn("💳 Оплатить подписку", "payment:plans")))
         }
@@ -93,15 +97,19 @@ class BotProfileHandler(
     }
 
 
-
     fun startEditContext(chatId: Long, msgId: Int, tgUserId: Long) {
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
-        if (user == null) { sender.editText(chatId, msgId, "Нужно войти. /start"); return }
+        if (user == null) {
+            log.warn("[BOT][PROFILE] Не авторизован при редактировании контекста: chatId=$chatId tgId=$tgUserId")
+            sender.editText(chatId, msgId, "Нужно войти. /start")
+            return
+        }
 
         val plan          = user.subscriptionPlan
         val hasAiFeatures = plan == "MINIMUM" || plan == "START" || user.subscriptionStatus == "TRIAL"
 
         if (!hasAiFeatures) {
+            log.info("[BOT][PROFILE] AI-персонализация недоступна (нет плана): userId=${user.id} email=${user.email} план=$plan")
             sender.editText(
                 chatId, msgId,
                 "🔒 *AI-персонализация недоступна*\n\n" +
@@ -116,6 +124,9 @@ class BotProfileHandler(
             )
             return
         }
+
+        val hasContext = !user.businessContext.isNullOrBlank()
+        log.info("[BOT][PROFILE] Редактирование AI-контекста: userId=${user.id} email=${user.email} есть_контекст=$hasContext")
 
         val currentContext = user.businessContext
         val currentLine = when {
@@ -147,6 +158,7 @@ class BotProfileHandler(
 
         val trimmed = text.trim()
         if (trimmed.length > 2000) {
+            log.warn("[BOT][PROFILE] Контекст слишком длинный: chatId=$chatId длина=${trimmed.length}")
             sender.sendText(
                 chatId,
                 "⚠️ Слишком длинный текст: ${trimmed.length} символов (макс. 2000).\n\nПожалуйста, сократите описание:",
@@ -158,14 +170,21 @@ class BotProfileHandler(
 
         val userEntity = userRepository.findByTelegramId(chatId).orElse(null)
             ?: run {
+                log.warn("[BOT][PROFILE] Пользователь не найден при сохранении контекста: chatId=$chatId")
                 if (savedMsgId != 0) sender.editText(chatId, savedMsgId, "❌ Ошибка. Попробуйте позже.")
                 else sender.sendText(chatId, "❌ Ошибка.")
                 return
             }
 
+        log.info("[BOT][PROFILE] Сохранение AI-контекста: userId=${userEntity.id} email=${userEntity.email} длина=${trimmed.length}")
+
         runCatching { leadService.saveBusinessContext(userEntity, trimmed) }
             .onSuccess { result ->
-                val confirmText = if (!result.businessContext.isNullOrBlank())
+                val isSaved = !result.businessContext.isNullOrBlank()
+                val action  = if (isSaved) "сохранён" else "очищен"
+                log.info("[BOT][PROFILE] ✅ AI-контекст $action: userId=${userEntity.id} email=${userEntity.email}")
+
+                val confirmText = if (isSaved)
                     "✅ *Бизнес-контекст сохранён!*\n\n" +
                             "🤖 AI теперь учитывает ваш профиль при фильтрации лидов и генерации ключевых слов.\n\n" +
                             "📌 _Описание:_\n${trimmed.take(300).md()}${if (trimmed.length > 300) "…" else ""}"
@@ -180,11 +199,11 @@ class BotProfileHandler(
                         parseMarkdown = true,
                     )
                 } else {
-                    sender.sendText(chatId, if (!result.businessContext.isNullOrBlank()) "✅ Бизнес-контекст сохранён!" else "✅ Бизнес-контекст очищен.")
+                    sender.sendText(chatId, if (isSaved) "✅ Бизнес-контекст сохранён!" else "✅ Бизнес-контекст очищен.")
                 }
             }
             .onFailure { e ->
-                log.warn("handleContextInput failed: ${e.message}")
+                log.warn("[BOT][PROFILE] ❌ Ошибка сохранения AI-контекста: userId=${userEntity.id} email=${userEntity.email} причина=${e.message}")
                 if (savedMsgId != 0) sender.editText(chatId, savedMsgId, "❌ Ошибка: ${e.message}")
                 else sender.sendText(chatId, "❌ Ошибка: ${e.message}")
             }
@@ -192,12 +211,18 @@ class BotProfileHandler(
 
     fun clearContext(chatId: Long, msgId: Int, tgUserId: Long) {
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
-        if (user == null) { sender.editText(chatId, msgId, "Нужно войти. /start"); return }
+        if (user == null) {
+            log.warn("[BOT][PROFILE] Не авторизован при очистке контекста: chatId=$chatId tgId=$tgUserId")
+            sender.editText(chatId, msgId, "Нужно войти. /start")
+            return
+        }
 
         sessions.remove(chatId)
+        log.info("[BOT][PROFILE] Очистка AI-контекста: userId=${user.id} email=${user.email}")
 
         runCatching { leadService.saveBusinessContext(user, "") }
             .onSuccess {
+                log.info("[BOT][PROFILE] ✅ AI-контекст очищен: userId=${user.id} email=${user.email}")
                 sender.editText(
                     chatId, msgId,
                     "✅ *Бизнес-контекст очищен.*\n\nAI будет работать без персонализации.",
@@ -206,14 +231,15 @@ class BotProfileHandler(
                 )
             }
             .onFailure { e ->
+                log.warn("[BOT][PROFILE] ❌ Ошибка очистки контекста: userId=${user.id} email=${user.email} причина=${e.message}")
                 sender.editText(chatId, msgId, "❌ Ошибка: ${e.message}",
                     keyboard(row(btn("◀️ Назад", "menu:profile"))))
             }
     }
 
 
-
     fun showUnlinkConfirm(chatId: Long, msgId: Int) {
+        log.info("[BOT][PROFILE] Запрос отвязки Telegram: chatId=$chatId")
         sender.editText(
             chatId, msgId,
             "⚠️ *Отвязать Telegram?*\n\n" +
@@ -231,10 +257,17 @@ class BotProfileHandler(
 
     fun confirmUnlink(chatId: Long, msgId: Int, tgUserId: Long) {
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
-        if (user == null) { sender.editText(chatId, msgId, "Нужно войти. /start"); return }
+        if (user == null) {
+            log.warn("[BOT][PROFILE] Не авторизован при подтверждении отвязки: chatId=$chatId tgId=$tgUserId")
+            sender.editText(chatId, msgId, "Нужно войти. /start")
+            return
+        }
+
+        log.info("[BOT][PROFILE] Подтверждение отвязки Telegram: userId=${user.id} email=${user.email} tgId=$tgUserId")
 
         runCatching { authService.unlinkTelegram(user.id) }
             .onSuccess {
+                log.info("[BOT][PROFILE] ✅ Telegram отвязан: userId=${user.id} email=${user.email}")
                 sender.editText(
                     chatId, msgId,
                     "✅ Telegram отвязан.\n\nЧтобы снова привязать — зайдите в личный кабинет:\n" +
@@ -242,6 +275,7 @@ class BotProfileHandler(
                 )
             }
             .onFailure { e ->
+                log.warn("[BOT][PROFILE] ❌ Ошибка отвязки Telegram: userId=${user.id} email=${user.email} причина=${e.message}")
                 sender.editText(chatId, msgId, "❌ Ошибка: ${e.message}",
                     keyboard(row(btn("◀️ Назад", "menu:profile"))))
             }

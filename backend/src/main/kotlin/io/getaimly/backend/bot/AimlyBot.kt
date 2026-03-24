@@ -56,7 +56,6 @@ class AimlyBot(
         expiryRepository = expiryRepository,
     )
 
-
     private val authHandler = BotAuthHandler(
         sender         = sender,
         sessions       = sessions,
@@ -120,8 +119,11 @@ class AimlyBot(
     @Scheduled(fixedDelay = 5 * 60 * 1000)
     fun cleanupStaleSessions() {
         val threshold = LocalDateTime.now().minusMinutes(10)
+        val before    = sessions.size
         val removed   = sessions.entries.removeIf { it.value.createdAt.isBefore(threshold) }
-        if (removed) log.debug("cleanupStaleSessions: устаревшие сессии удалены")
+        if (removed) {
+            log.info("[BOT] Очистка устаревших сессий: было=$before осталось=${sessions.size}")
+        }
     }
 
     override fun getBotToken(): String = token
@@ -131,7 +133,7 @@ class AimlyBot(
         sender.sendText(chatId, text)
     }
 
- //перегрузка
+    // перегрузка
     fun sendText(chatId: Long, text: String, markup: InlineKeyboardMarkup?) {
         sender.sendText(chatId, text, markup)
     }
@@ -144,7 +146,12 @@ class AimlyBot(
                 update.hasCallbackQuery()                       -> handleCallback(update)
             }
         } catch (e: Exception) {
-            log.error("Ошибка обработки update ${update.updateId}: ${e.message}", e)
+            val ctx = when {
+                update.hasMessage()       -> "сообщение от tgId=${update.message.from.id} (@${update.message.from.userName ?: "—"})"
+                update.hasCallbackQuery() -> "callback \"${update.callbackQuery.data}\" от tgId=${update.callbackQuery.from.id} (@${update.callbackQuery.from.userName ?: "—"})"
+                else                      -> "unknown update"
+            }
+            log.error("[BOT] ❌ Ошибка обработки update #${update.updateId} ($ctx): ${e.message}", e)
         }
     }
 
@@ -153,12 +160,21 @@ class AimlyBot(
         val chatId     = msg.chatId
         val text       = msg.text.trim()
         val from       = msg.from
+        val tgUser     = "${from.firstName} (@${from.userName ?: "—"}, tgId=${from.id})"
         val startToken = if (text.startsWith("/start ")) text.removePrefix("/start ").trim() else null
+
+        // Не логируем пароль в открытом виде
+        val session = sessions[chatId]
+        if (session?.step == BotStep.WAITING_PASSWORD) {
+            log.info("[BOT][MSG] $tgUser → [ПАРОЛЬ СКРЫТ]")
+        } else {
+            log.info("[BOT][MSG] $tgUser → «${text.take(100)}»")
+        }
 
         when {
             text == "/start"    -> authHandler.handleStart(chatId, from, null)
             startToken != null  -> { sessions.remove(chatId); authHandler.handleStart(chatId, from, startToken) }
-            text == "/cancel"   -> handleCancel(chatId)
+            text == "/cancel"   -> handleCancel(chatId, tgUser)
             text == "/help"     -> sendHelp(chatId)
             text == "/status"   -> sendStatus(chatId, from.id)
             text == "/leads"    -> {
@@ -214,9 +230,10 @@ class AimlyBot(
         }
     }
 
-    private fun handleCancel(chatId: Long) {
+    private fun handleCancel(chatId: Long, tgUser: String) {
         val session = sessions.remove(chatId)
-        val msgId   = session?.msgId ?: 0
+        log.info("[BOT] /cancel: $tgUser был_шаг=${session?.step ?: "нет сессии"}")
+        val msgId = session?.msgId ?: 0
         if (msgId != 0) {
             sender.editText(chatId, msgId, "Отменено. Нажмите /start чтобы начать.")
         } else {
@@ -230,12 +247,19 @@ class AimlyBot(
         val msgId  = q.message.messageId
         val from   = q.from
         val data   = q.data ?: return
+        val tgUser = "${from.firstName} (@${from.userName ?: "—"}, tgId=${from.id})"
 
         if (data == "noop") return
 
+        log.info("[BOT][CB] $tgUser → \"$data\"")
+
         when {
             data == "auth:login"     -> authHandler.startLoginFlow(chatId, msgId)
-            data == "auth:cancel"    -> { sessions.remove(chatId); sender.editText(chatId, msgId, "Отменено. Нажмите /start чтобы начать.") }
+            data == "auth:cancel"    -> {
+                sessions.remove(chatId)
+                log.info("[BOT][CB] Отмена авторизации: $tgUser")
+                sender.editText(chatId, msgId, "Отменено. Нажмите /start чтобы начать.")
+            }
             data == "auth:retry"     -> authHandler.startLoginFlow(chatId, msgId)
             data == "auth:retry_pay" -> {
                 sessions[chatId] = UserSession(step = BotStep.WAITING_EMAIL, msgId = msgId, pendingAction = "pay")
@@ -301,7 +325,6 @@ class AimlyBot(
                 chatSearchHandler.addPage(chatId, msgId, from.id, pg)
             }
 
-
             data == "kw:add"          -> keywordsHandler.startAddKeyword(chatId, msgId, from.id)
             data == "kw:del:cancel"   -> keywordsHandler.showKeywords(chatId, msgId, from.id)
             data.startsWith("kw:page:")          -> keywordsHandler.showKeywords(chatId, msgId, from.id, data.removePrefix("kw:page:").toIntOrNull() ?: 0)
@@ -320,10 +343,9 @@ class AimlyBot(
             data == "profile:unlink_tg"         -> profileHandler.showUnlinkConfirm(chatId, msgId)
             data == "profile:unlink_tg:confirm" -> profileHandler.confirmUnlink(chatId, msgId, from.id)
 
-            else -> log.warn("Неизвестный callback: $data от chatId=$chatId")
+            else -> log.warn("[BOT][CB] Неизвестный callback: \"$data\" от $tgUser")
         }
     }
-
 
 
     fun notifyNewLead(
@@ -343,10 +365,7 @@ class AimlyBot(
             authorName.isNotBlank()     -> "\n👤 Автор: $authorName"
             else                        -> ""
         }
-        val headline = if (isHistorical)
-            "🕐 Старый лид (за последние 24 ч)"
-        else
-            "🎯 Новый лид!"
+        val headline = if (isHistorical) "🕐 Старый лид (за последние 24 ч)" else "🎯 Новый лид!"
 
         val rows = mutableListOf<InlineKeyboardRow>()
         if (link.isNotBlank()) {
@@ -374,9 +393,11 @@ class AimlyBot(
                     .replyMarkup(InlineKeyboardMarkup(rows))
                     .build()
             )
-        }.onFailure { log.warn("notifyNewLead failed chatId=$telegramChatId: ${it.message}") }
+            log.info("[BOT][NOTIFY] ✅ Уведомление отправлено: tgChatId=$telegramChatId leadId=$leadId keyword=\"$keyword\" исторический=$isHistorical")
+        }.onFailure {
+            log.warn("[BOT][NOTIFY] ❌ Ошибка отправки уведомления: tgChatId=$telegramChatId leadId=$leadId причина=${it.message}")
+        }
     }
-
 
 
     fun sendStatus(chatId: Long, tgUserId: Long) {
@@ -393,6 +414,7 @@ class AimlyBot(
             "TRIAL"  -> "🔵 Пробный период"
             else     -> "❌ Нет подписки"
         }
+        log.info("[BOT] /status: userId=${user.id} email=${user.email} подписка=${user.subscriptionStatus} чатов=$chats ключевых_слов=$keywords новых_лидов=$newLeads")
         sender.sendText(
             chatId,
             "📊 Статус аккаунта\n\n" +

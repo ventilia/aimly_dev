@@ -34,28 +34,35 @@ class BotAuthHandler(
 
 
     fun handleStart(chatId: Long, from: User, linkToken: String?) {
+        val tgUser   = "${from.firstName} (@${from.userName ?: "—"}, tgId=${from.id})"
+        val existing = userRepository.findByTelegramId(from.id).orElse(null)
+
         if (linkToken != null) {
+            log.info("[BOT][AUTH] /start с токеном: $tgUser token=\"${linkToken.take(20)}…\"")
             handleLinkToken(chatId, from, linkToken)
             return
         }
-        val existing = userRepository.findByTelegramId(from.id).orElse(null)
+
         if (existing != null) {
+            log.info("[BOT][AUTH] /start: $tgUser уже привязан → userId=${existing.id} email=${existing.email} план=${existing.subscriptionPlan} статус=${existing.subscriptionStatus}")
             showMainMenu(chatId, existing.firstName)
         } else {
+            log.info("[BOT][AUTH] /start: $tgUser — не авторизован, показываем приветствие")
             showWelcome(chatId, from.firstName)
         }
     }
 
     private fun handleLinkToken(chatId: Long, from: User, token: String) {
-
+        val tgUser = "${from.firstName} (@${from.userName ?: "—"}, tgId=${from.id})"
 
         if (token.startsWith(PAY_PREFIX)) {
             val realToken = token.removePrefix(PAY_PREFIX)
-            val linked    = authService.linkTelegram(realToken, from.id, from.userName)
+            log.info("[BOT][AUTH] Попытка привязки через pay_token: $tgUser")
+            val linked = authService.linkTelegram(realToken, from.id, from.userName)
 
             if (linked) {
                 val user = userRepository.findByTelegramId(from.id).orElse(null)
-                val name = user?.firstName ?: from.firstName ?: "там"
+                log.info("[BOT][AUTH] ✅ Привязка через pay_token успешна: $tgUser userId=${user?.id} email=${user?.email}")
                 sender.sendText(
                     chatId,
                     "✅ *Telegram привязан к аккаунту AIMLY!*\n\n" +
@@ -63,16 +70,14 @@ class BotAuthHandler(
                     parseMarkdown = true,
                 )
                 paymentHandler.sendPaymentMessage(chatId, from.id)
-                log.info("pay_token: привязан и отправлена оплата, tgId=${from.id}")
             } else {
                 val existing = userRepository.findByTelegramId(from.id).orElse(null)
                 if (existing != null) {
-                    sender.sendText(
-                        chatId,
-                        "Ссылка привязки устарела, но вы уже авторизованы. Вот кнопка оплаты:",
-                    )
+                    log.info("[BOT][AUTH] pay_token устарел, но пользователь уже привязан: $tgUser userId=${existing.id} email=${existing.email}")
+                    sender.sendText(chatId, "Ссылка привязки устарела, но вы уже авторизованы. Вот кнопка оплаты:")
                     paymentHandler.sendPaymentMessage(chatId, from.id)
                 } else {
+                    log.warn("[BOT][AUTH] ❌ pay_token устарел, пользователь не найден: $tgUser")
                     sender.sendText(
                         chatId,
                         "Ссылка привязки устарела.\n\n" +
@@ -87,8 +92,10 @@ class BotAuthHandler(
         if (token == "pay") {
             val existing = userRepository.findByTelegramId(from.id).orElse(null)
             if (existing != null) {
+                log.info("[BOT][AUTH] /start?pay: $tgUser уже привязан → переход к оплате userId=${existing.id} email=${existing.email}")
                 paymentHandler.sendPaymentMessage(chatId, from.id)
             } else {
+                log.info("[BOT][AUTH] /start?pay: $tgUser не авторизован → запрашиваем email для входа перед оплатой")
                 sessions[chatId] = UserSession(
                     step          = BotStep.WAITING_EMAIL,
                     msgId         = 0,
@@ -97,16 +104,18 @@ class BotAuthHandler(
                 sender.sendText(
                     chatId,
                     "Для оплаты подписки войдите в аккаунт AIMLY.\n\nВведите email:",
-                    markup        = keyboard(row(btn("❌ Отмена", "auth:cancel"))),
+                    markup = keyboard(row(btn("❌ Отмена", "auth:cancel"))),
                 )
             }
             return
         }
 
+        // Обычная привязка через link token
+        log.info("[BOT][AUTH] Попытка привязки Telegram: $tgUser")
         val ok = authService.linkTelegram(token, from.id, from.userName)
         if (ok) {
             val user = userRepository.findByTelegramId(from.id).orElse(null)
-            val name = user?.firstName ?: from.firstName ?: "там"
+            log.info("[BOT][AUTH] ✅ Telegram успешно привязан: $tgUser userId=${user?.id} email=${user?.email}")
             sender.sendText(
                 chatId,
                 "✅ *Telegram успешно привязан к аккаунту AIMLY\\!*\n\n" +
@@ -118,8 +127,9 @@ class BotAuthHandler(
                         "  2\\. Укажите ключевые слова → «🔍 Ключевые слова»",
                 parseMarkdown = true,
             )
-            showMainMenu(chatId, name)
+            showMainMenu(chatId, user?.firstName)
         } else {
+            log.warn("[BOT][AUTH] ❌ Недействительный link token: $tgUser")
             sender.sendText(
                 chatId,
                 "❌ Ссылка недействительна или истекла.\n\n" +
@@ -130,6 +140,7 @@ class BotAuthHandler(
     }
 
     fun showWelcome(chatId: Long, name: String?) {
+        log.info("[BOT][AUTH] Показываем приветствие: chatId=$chatId firstName=${name ?: "—"}")
         sender.sendText(
             chatId,
             "👋 Привет, ${name ?: "там"}!\n\n" +
@@ -193,6 +204,7 @@ class BotAuthHandler(
 
 
     fun startLoginFlow(chatId: Long, msgId: Int) {
+        log.info("[BOT][AUTH] Начало входа (форма логина): chatId=$chatId")
         sessions[chatId] = UserSession(step = BotStep.WAITING_EMAIL, msgId = msgId)
         sender.editText(
             chatId, msgId,
@@ -204,11 +216,16 @@ class BotAuthHandler(
 
     fun handleWaitingEmail(chatId: Long, text: String) {
         val session = sessions[chatId] ?: return
-        if (!text.contains('@') || !text.contains('.')) {
+        val email   = text.lowercase().trim()
+
+        if (!email.contains('@') || !email.contains('.')) {
+            log.warn("[BOT][AUTH] Некорректный email: chatId=$chatId input=\"$text\"")
             sender.sendText(chatId, "⚠️ Некорректный формат email.\n\nПопробуйте ещё раз:")
             return
         }
-        session.email = text.lowercase().trim()
+
+        log.info("[BOT][AUTH] Email введён: chatId=$chatId email=\"$email\"")
+        session.email = email
         session.step  = BotStep.WAITING_PASSWORD
         sender.sendText(chatId, "🔑 Введите пароль:")
     }
@@ -216,6 +233,9 @@ class BotAuthHandler(
     fun handleWaitingPassword(chatId: Long, text: String, from: User) {
         val session = sessions.remove(chatId) ?: return
         val email   = session.email ?: return
+        val tgUser  = "${from.firstName} (@${from.userName ?: "—"}, tgId=${from.id})"
+
+        log.info("[BOT][AUTH] Попытка входа: $tgUser email=\"$email\"")
 
         runCatching {
             authService.login(
@@ -229,14 +249,20 @@ class BotAuthHandler(
                         authService.linkTelegramDirect(result.auth.userId, from.id, from.userName)
                     }
                     val name = result.auth.firstName ?: email.split("@").first()
+                    log.info("[BOT][AUTH] ✅ Успешный вход: $tgUser userId=${result.auth.userId} email=$email план=${result.auth.subscriptionPlan} статус=${result.auth.subscriptionStatus}")
+
                     sender.sendText(chatId, "✅ Добро пожаловать, $name!\n\nТеперь лиды будут приходить сюда.")
 
                     when (session.pendingAction) {
-                        "pay" -> paymentHandler.sendPaymentMessage(chatId, from.id)
+                        "pay" -> {
+                            log.info("[BOT][AUTH] После входа → переход к оплате: userId=${result.auth.userId} email=$email")
+                            paymentHandler.sendPaymentMessage(chatId, from.id)
+                        }
                         else  -> showMainMenu(chatId, name)
                     }
                 }
                 is LoginResult.PendingVerification -> {
+                    log.warn("[BOT][AUTH] Email не подтверждён: $tgUser email=\"$email\"")
                     sender.sendText(
                         chatId,
                         "📧 Email не подтверждён.\n\nПроверьте почту $email и перейдите по ссылке.",
@@ -245,6 +271,15 @@ class BotAuthHandler(
                 }
             }
         }.onFailure { e ->
+            val reason = when (e) {
+                is ForbiddenException       -> "аккаунт заблокирован"
+                is UnauthorizedException    -> "неверный пароль"
+                is TooManyRequestsException -> "слишком много попыток"
+                is BadRequestException      -> e.message ?: "ошибка запроса"
+                else                        -> e.message ?: "неизвестная ошибка"
+            }
+            log.warn("[BOT][AUTH] ❌ Ошибка входа: $tgUser email=\"$email\" причина=\"$reason\"")
+
             val msg = when (e) {
                 is ForbiddenException       -> "🚫 Аккаунт заблокирован."
                 is UnauthorizedException    -> "❌ Неверный email или пароль."

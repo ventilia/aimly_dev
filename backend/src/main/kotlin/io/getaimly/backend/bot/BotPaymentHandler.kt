@@ -13,19 +13,23 @@ class BotPaymentHandler(
     private val log = LoggerFactory.getLogger(BotPaymentHandler::class.java)
 
     companion object {
-
         const val TRIBUTE_BOT_URL =
             "https://t.me/tribute/app?startapp=ep_8xkUDdkgdcdIKFpXiZ9B7LGSk6x4TbxwNNWPQSFjRxqZQnNIZq"
     }
 
 
-
     fun showPlans(chatId: Long, msgId: Int, tgUserId: Long) {
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
-        if (user == null) { sender.editText(chatId, msgId, "Нужно войти. /start"); return }
+        if (user == null) {
+            log.warn("[BOT][PAY] Не авторизован при просмотре тарифов: chatId=$chatId tgId=$tgUserId")
+            sender.editText(chatId, msgId, "Нужно войти. /start")
+            return
+        }
 
         val expiry  = expiryRepository.findByUserId(user.id)
         val tillStr = expiry?.expiresAt?.toLocalDate()?.toString() ?: "—"
+
+        log.info("[BOT][PAY] Просмотр тарифов: userId=${user.id} email=${user.email} статус=${user.subscriptionStatus} план=${user.subscriptionPlan} до=$tillStr")
 
         val text = when (user.subscriptionStatus) {
             "ACTIVE" ->
@@ -59,8 +63,6 @@ class BotPaymentHandler(
             ),
             parseMarkdown = true,
         )
-
-        log.info("showPlans: tgUserId=$tgUserId subscriptionStatus=${user.subscriptionStatus}")
     }
 
 
@@ -68,6 +70,8 @@ class BotPaymentHandler(
         val user    = userRepository.findByTelegramId(tgUserId).orElse(null)
         val expiry  = user?.let { expiryRepository.findByUserId(it.id) }
         val tillStr = expiry?.expiresAt?.toLocalDate()?.toString()
+
+        log.info("[BOT][PAY] Сообщение об оплате: chatId=$chatId tgId=$tgUserId userId=${user?.id} email=${user?.email} статус=${user?.subscriptionStatus} до=$tillStr")
 
         val text = when {
             user?.subscriptionStatus == "ACTIVE" && tillStr != null ->
@@ -93,7 +97,5 @@ class BotPaymentHandler(
             ),
             parseMarkdown = true,
         )
-
-        log.info("sendPaymentMessage: chatId=$chatId tgUserId=$tgUserId")
     }
 }

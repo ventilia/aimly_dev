@@ -14,8 +14,8 @@ import org.springframework.web.filter.OncePerRequestFilter
 
 @Component
 class JwtAuthFilter(
-    private val jwtService:     JwtService,
-    private val userRepository: UserRepository,
+    private val jwtService:      JwtService,
+    private val userRepository:  UserRepository,
     @Value("\${app.cookie.domain:}") private val cookieDomain: String,
 ) : OncePerRequestFilter() {
 
@@ -29,7 +29,6 @@ class JwtAuthFilter(
         "/api/v1/auth/me",
     )
 
-
     private val publicAuthEndpoints = setOf(
         "/api/v1/auth/register",
         "/api/v1/auth/login",
@@ -37,6 +36,8 @@ class JwtAuthFilter(
         "/api/v1/auth/resend-code",
         "/api/v1/auth/logout",
     )
+
+    private val internalPrefixes = listOf("/internal/")
 
     override fun doFilterInternal(
         request:  HttpServletRequest,
@@ -46,7 +47,10 @@ class JwtAuthFilter(
         val token = extractToken(request)
 
         if (token == null) {
-            log.debug("нет токена в запросе к ${request.requestURI}")
+            val isInternal = internalPrefixes.any { request.requestURI.startsWith(it) }
+            if (!isInternal) {
+                log.trace("нет токена в запросе к ${request.requestURI}")
+            }
             chain.doFilter(request, response)
             return
         }
@@ -73,7 +77,7 @@ class JwtAuthFilter(
             val allowUnverified = unverifiedAllowed.any { path.startsWith(it) }
 
             if (!user.emailVerified && !allowUnverified) {
-                log.debug("пользователь $userId не подтвердил почту, запрос к $path отклонён")
+                log.trace("пользователь $userId не подтвердил почту, запрос к $path отклонён")
                 chain.doFilter(request, response)
                 return@ifPresentOrElse
             }
@@ -84,9 +88,8 @@ class JwtAuthFilter(
                 listOf(SimpleGrantedAuthority("ROLE_${user.role.name}")),
             )
             SecurityContextHolder.getContext().authentication = auth
-            log.debug("пользователь $userId аутентифицирован через куку, emailVerified=${user.emailVerified}")
+            log.trace("пользователь $userId аутентифицирован через куку, emailVerified=${user.emailVerified}")
         }, {
-
             if (!isPublicAuthEndpoint(request.requestURI)) {
                 log.warn("токен содержит несуществующий userId=$userId — очищаем куку")
                 clearAuthCookie(response)
@@ -100,7 +103,6 @@ class JwtAuthFilter(
 
     private fun isPublicAuthEndpoint(uri: String): Boolean =
         publicAuthEndpoints.any { uri.startsWith(it) }
-
 
     private fun clearAuthCookie(response: HttpServletResponse) {
         val cookieHeader = buildString {

@@ -23,14 +23,18 @@ class BotChatsHandler(
 
     fun showChats(chatId: Long, msgId: Int, tgUserId: Long, page: Int = 0) {
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
-        if (user == null) { sender.editText(chatId, msgId, "Нужно войти. /start"); return }
+        if (user == null) {
+            log.warn("[BOT][CHATS] Не авторизован: chatId=$chatId tgId=$tgUserId")
+            sender.editText(chatId, msgId, "Нужно войти. /start")
+            return
+        }
 
-        val chats = subscriptionRepository.findByUserIdAndIsActiveTrue(user.id)
-
-
-        val plan      = user.subscriptionPlan
-        val status    = user.subscriptionStatus
+        val chats  = subscriptionRepository.findByUserIdAndIsActiveTrue(user.id)
+        val plan   = user.subscriptionPlan
+        val status = user.subscriptionStatus
         val hasSearch = plan in setOf("MINIMUM", "START") || status == "TRIAL"
+
+        log.info("[BOT][CHATS] Список чатов: userId=${user.id} email=${user.email} активных=${chats.size} страница=$page")
 
         if (chats.isEmpty()) {
             val rows = mutableListOf<org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow>()
@@ -77,7 +81,6 @@ class BotChatsHandler(
             rows.add(row(btn("$icon 🗑 $label", "chat:del:${sub.id}")))
         }
 
-
         if (totalPages > 1) {
             val navBtns = mutableListOf<org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton>()
             if (safePage > 0)              navBtns.add(btn("◀️", "chat:page:${safePage - 1}"))
@@ -85,7 +88,6 @@ class BotChatsHandler(
             if (safePage < totalPages - 1) navBtns.add(btn("▶️", "chat:page:${safePage + 1}"))
             rows.add(org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow(navBtns))
         }
-
 
         val actionBtns = mutableListOf<org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton>()
         actionBtns.add(btn("➕ Добавить", "chat:add"))
@@ -100,6 +102,7 @@ class BotChatsHandler(
 
 
     fun startAddChat(chatId: Long, msgId: Int) {
+        log.info("[BOT][CHATS] Начало добавления чата вручную: chatId=$chatId")
         sessions[chatId] = UserSession(step = BotStep.WAITING_CHAT_LINK, msgId = msgId)
         sender.editText(
             chatId, msgId,
@@ -117,16 +120,25 @@ class BotChatsHandler(
     fun handleChatLinkInput(chatId: Long, text: String, from: org.telegram.telegrambots.meta.api.objects.User) {
         val session    = sessions.remove(chatId) ?: return
         val savedMsgId = session.msgId
+        val tgUser     = "${from.firstName} (@${from.userName ?: "—"}, tgId=${from.id})"
         val user       = userRepository.findByTelegramId(from.id).orElse(null)
-            ?: run { sender.sendText(chatId, "Нужно войти. /start"); return }
+            ?: run {
+                log.warn("[BOT][CHATS] Не авторизован при вводе ссылки чата: chatId=$chatId tgId=${from.id}")
+                sender.sendText(chatId, "Нужно войти. /start")
+                return
+            }
 
-        runCatching { leadService.addSubscription(user, text) }
+        val link = text.trim()
+        log.info("[BOT][CHATS] Попытка добавить чат: userId=${user.id} email=${user.email} $tgUser link=\"$link\"")
+
+        runCatching { leadService.addSubscription(user, link) }
             .onSuccess { sub ->
-                val title = sub.chatTitle.ifBlank { sub.chatLink }.md()
+                val title = sub.chatTitle.ifBlank { sub.chatLink }
+                log.info("[BOT][CHATS] ✅ Чат добавлен: userId=${user.id} email=${user.email} chatLink=\"${sub.chatLink}\" chatTitle=\"$title\"")
                 if (savedMsgId != 0) {
                     sender.editText(
                         chatId, savedMsgId,
-                        "✅ *Чат добавлен!*\n\n💬 $title\n\n" +
+                        "✅ *Чат добавлен!*\n\n💬 ${title.md()}\n\n" +
                                 "Userbot вступит в чат и начнёт мониторинг.\n" +
                                 "История за последние 24 часа будет проверена в фоне.",
                         keyboard(
@@ -136,10 +148,11 @@ class BotChatsHandler(
                         parseMarkdown = true,
                     )
                 } else {
-                    sender.sendText(chatId, "✅ Чат добавлен: ${sub.chatTitle.ifBlank { sub.chatLink }}")
+                    sender.sendText(chatId, "✅ Чат добавлен: $title")
                 }
             }
             .onFailure { e ->
+                log.warn("[BOT][CHATS] ❌ Ошибка добавления чата: userId=${user.id} email=${user.email} link=\"$link\" причина=\"${e.message}\"")
                 if (savedMsgId != 0) {
                     sender.editText(
                         chatId, savedMsgId,
@@ -158,10 +171,15 @@ class BotChatsHandler(
 
     fun showDeleteChatConfirm(chatId: Long, msgId: Int, tgUserId: Long, subId: Long) {
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
-        if (user == null) { sender.editText(chatId, msgId, "Нужно войти. /start"); return }
+        if (user == null) {
+            log.warn("[BOT][CHATS] Не авторизован при удалении чата: chatId=$chatId tgId=$tgUserId")
+            sender.editText(chatId, msgId, "Нужно войти. /start")
+            return
+        }
 
         val sub   = subscriptionRepository.findByUserIdAndIsActiveTrue(user.id).find { it.id == subId }
         val label = sub?.chatTitle?.ifBlank { sub.chatLink } ?: "этот чат"
+        log.info("[BOT][CHATS] Запрос удаления чата: userId=${user.id} email=${user.email} subId=$subId chatLink=\"${sub?.chatLink}\"")
 
         sender.editText(
             chatId, msgId,
@@ -179,8 +197,20 @@ class BotChatsHandler(
     }
 
     fun deleteChat(tgUserId: Long, subId: Long) {
-        val user = userRepository.findByTelegramId(tgUserId).orElse(null) ?: return
+        val user = userRepository.findByTelegramId(tgUserId).orElse(null)
+        if (user == null) {
+            log.warn("[BOT][CHATS] Не авторизован при подтверждении удаления: tgId=$tgUserId subId=$subId")
+            return
+        }
+        val sub = subscriptionRepository.findById(subId).orElse(null)
+        log.info("[BOT][CHATS] Удаление чата: userId=${user.id} email=${user.email} subId=$subId chatLink=\"${sub?.chatLink}\"")
+
         runCatching { leadService.removeSubscription(user, subId) }
-            .onFailure { log.warn("deleteChat failed subId=$subId: ${it.message}") }
+            .onSuccess {
+                log.info("[BOT][CHATS] ✅ Чат удалён: userId=${user.id} email=${user.email} chatLink=\"${sub?.chatLink}\"")
+            }
+            .onFailure {
+                log.warn("[BOT][CHATS] ❌ Ошибка удаления чата: userId=${user.id} email=${user.email} subId=$subId причина=${it.message}")
+            }
     }
 }

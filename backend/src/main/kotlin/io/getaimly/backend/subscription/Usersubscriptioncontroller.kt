@@ -26,7 +26,6 @@ data class PurchaseResponse(
 )
 
 
-
 @RestController
 @RequestMapping("/api/v1/subscriptions")
 class UserSubscriptionController(private val service: UserSubscriptionService) {
@@ -38,7 +37,6 @@ class UserSubscriptionController(private val service: UserSubscriptionService) {
     ): ResponseEntity<PurchaseResponse> =
         ResponseEntity.ok(service.purchase(user, req))
 }
-
 
 
 @Service
@@ -77,15 +75,12 @@ class UserSubscriptionService(
             ?: SubscriptionExpiry(user = user, expiresAt = expiresAt)
         expiryRepository.save(expiry)
 
-        log.info("покупка тарифа $plan пользователем ${user.email}, активна до $expiresAt")
+        log.info("[SUB] Куплена (сайт): userId=${user.id} email=${user.email} plan=$plan до=$expiresAt")
 
         user.telegramId?.let { tgId ->
             runCatching {
-                bot.sendText(
-                    tgId,
-                    "✅ Тариф $plan активирован!\n\nДействует до: ${expiresAt.toLocalDate()}"
-                )
-            }.onFailure { log.warn("telegram notify purchase: ${it.message}") }
+                bot.sendText(tgId, "✅ Тариф $plan активирован!\n\nДействует до: ${expiresAt.toLocalDate()}")
+            }.onFailure { log.warn("telegram notify purchase userId=${user.id}: ${it.message}") }
         }
 
         return PurchaseResponse(

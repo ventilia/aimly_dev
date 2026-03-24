@@ -92,5 +92,6 @@ management:
 logging:
   level:
     io.getaimly: DEBUG
-    org.springframework.security: DEBUG
+    org.springframework.security: WARN
+    io.getaimly.backend.security.JwtAuthFilter: WARN
     io.getaimly.backend.lead.TgstatSearchController: DEBUG

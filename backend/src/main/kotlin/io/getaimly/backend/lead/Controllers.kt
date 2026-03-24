@@ -104,9 +104,10 @@ data class GenerateKeywordsResponse(val keywords: List<String>)
 @RestController
 @RequestMapping("/api/v1/keywords")
 class KeywordController(
-    private val service: LeadService,
+    private val service:   LeadService,
     private val aiService: AiService,
 ) {
+    private val log = LoggerFactory.getLogger(KeywordController::class.java)
 
     @GetMapping
     fun list(@AuthenticationPrincipal user: User): ResponseEntity<List<KeywordDto>> =
@@ -140,11 +141,12 @@ class KeywordController(
         @RequestBody req: GenerateKeywordsRequest,
     ): ResponseEntity<*> {
 
-        val plan   = user.subscriptionPlan
-        val status = user.subscriptionStatus
+        val plan      = user.subscriptionPlan
+        val status    = user.subscriptionStatus
         val hasAccess = plan in setOf("START", "BUSINESS") || status == "TRIAL"
 
         if (!hasAccess) {
+            log.warn("[KEYWORDS] Нет доступа к AI-генерации: userId=${user.id} email=${user.email} plan=$plan status=$status")
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(mapOf("error" to "AI-генерация ключевых слов доступна на тарифе START"))
         }
@@ -154,13 +156,18 @@ class KeywordController(
                 .body(mapOf("error" to "Описание бизнеса слишком короткое (минимум 20 символов)"))
         }
 
+        log.info("[KEYWORDS] AI-генерация запрошена: userId=${user.id} email=${user.email} контекст=\"${req.businessContext.trim().take(80)}\"")
+
         return try {
             val keywords = aiService.generateKeywords(req.businessContext)
+            log.info("[KEYWORDS] AI-генерация выполнена: userId=${user.id} email=${user.email} сгенерировано=${keywords.size}")
             ResponseEntity.ok(GenerateKeywordsResponse(keywords))
         } catch (e: IllegalStateException) {
+            log.error("AI-генерация: сервис недоступен для userId=${user.id}: ${e.message}")
             ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(mapOf("error" to "AI-сервис временно недоступен"))
         } catch (e: Exception) {
+            log.error("AI-генерация: ошибка для userId=${user.id}: ${e.message}")
             ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(mapOf("error" to "Ошибка генерации ключевых слов: ${e.message}"))
         }
@@ -194,6 +201,7 @@ data class ServiceOffersToggleResponse(val respondToServiceOffers: Boolean)
 class UserSettingsController(
     private val userRepository: UserRepository,
 ) {
+    private val log = LoggerFactory.getLogger(UserSettingsController::class.java)
 
     @GetMapping("/service-offers")
     fun getServiceOffers(
@@ -202,7 +210,6 @@ class UserSettingsController(
         val fresh = userRepository.findById(user.id).orElse(user)
         return ResponseEntity.ok(ServiceOffersToggleResponse(fresh.respondToServiceOffers))
     }
-
 
     @PostMapping("/service-offers")
     @Transactional
@@ -218,6 +225,7 @@ class UserSettingsController(
         managedUser.respondToServiceOffers = enabled
         userRepository.save(managedUser)
 
+        log.info("[SETTINGS] AI service-offers: userId=${user.id} email=${user.email} enabled=$enabled")
         return ResponseEntity.ok(ServiceOffersToggleResponse(managedUser.respondToServiceOffers))
     }
 }

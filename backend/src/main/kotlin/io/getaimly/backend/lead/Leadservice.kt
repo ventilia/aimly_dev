@@ -21,46 +21,45 @@ import java.util.concurrent.Executors
 
 
 data class LeadDto(
-    val id: Long,
-    val chatTitle: String,
-    val chatLink: String,
-    val authorName: String,
-    val authorUsername: String,
-    val messageText: String,
-    val messageLink: String,
-    val matchedKeyword: String,
-    val status: String,
-    val foundAt: String,
-    val aiValid: Boolean?,
-    val aiReason: String?,
+    val id:              Long,
+    val chatTitle:       String,
+    val chatLink:        String,
+    val authorName:      String,
+    val authorUsername:  String,
+    val messageText:     String,
+    val messageLink:     String,
+    val matchedKeyword:  String,
+    val status:          String,
+    val foundAt:         String,
+    val aiValid:         Boolean?,
+    val aiReason:        String?,
     val contextMessages: List<String>,
 )
 
 data class LeadPageDto(
-    val content: List<LeadDto>,
+    val content:       List<LeadDto>,
     val totalElements: Long,
-    val totalPages: Int,
-    val page: Int,
-    val size: Int,
-    val newCount: Long,
+    val totalPages:    Int,
+    val page:          Int,
+    val size:          Int,
+    val newCount:      Long,
 )
 
 data class ChatSubscriptionDto(
-    val id: Long,
-    val chatLink: String,
+    val id:        Long,
+    val chatLink:  String,
     val chatTitle: String,
-    val chatTgId: Long,
-    val isActive: Boolean,
+    val chatTgId:  Long,
+    val isActive:  Boolean,
     val createdAt: String,
 )
 
 data class KeywordDto(
-    val id: Long,
-    val keyword: String,
+    val id:       Long,
+    val keyword:  String,
     val isActive: Boolean,
     val variants: List<String> = emptyList(),
 )
-
 
 data class BusinessContextDto(
     val businessContext: String?,
@@ -69,10 +68,10 @@ data class BusinessContextDto(
 
 @Service
 class LeadService(
-    private val leadRepo: LeadRepository,
+    private val leadRepo:         LeadRepository,
     private val subscriptionRepo: ChatSubscriptionRepository,
-    private val keywordRepo: KeywordRepository,
-    private val userRepo: UserRepository,
+    private val keywordRepo:      KeywordRepository,
+    private val userRepo:         UserRepository,
 
     @Lazy private val bot: AimlyBot,
     private val aiService: AiService,
@@ -80,7 +79,6 @@ class LeadService(
     @Value("\${internal.api-secret:aimly_internal_secret_change_in_prod}") private val internalSecret: String,
 ) {
     private val log = LoggerFactory.getLogger(LeadService::class.java)
-
 
     private val AI_PLANS = setOf("START", "BUSINESS", "TRIAL")
 
@@ -101,6 +99,7 @@ class LeadService(
     private val userbotExecutor: ExecutorService = Executors.newFixedThreadPool(4)
 
 
+
     fun getLeads(user: User, status: String?, page: Int, size: Int): LeadPageDto {
         val pageable = PageRequest.of(page, size.coerceIn(1, 100))
         val result = if (status != null) {
@@ -111,6 +110,12 @@ class LeadService(
             leadRepo.findByUserIdOrderByFoundAtDesc(user.id, pageable)
         }
         val newCount = leadRepo.countByUserIdAndStatus(user.id, LeadStatus.NEW)
+
+        val isPolling = size == 1 && status?.uppercase() == "NEW"
+        if (!isPolling) {
+            log.info("[LEAD] Список запрошен: userId=${user.id} email=${user.email} filter=${status ?: "ALL"} page=$page size=$size")
+        }
+
         return LeadPageDto(
             content       = result.content.map { it.toDto() },
             totalElements = result.totalElements,
@@ -125,15 +130,22 @@ class LeadService(
     fun updateLeadStatus(user: User, leadId: Long, status: String): LeadDto {
         val lead = leadRepo.findById(leadId).orElseThrow { NoSuchElementException("лид не найден") }
         if (lead.user.id != user.id) throw SecurityException("нет доступа")
-        lead.status = runCatching { LeadStatus.valueOf(status.uppercase()) }
+
+        val oldStatus = lead.status.name
+        val newStatus = runCatching { LeadStatus.valueOf(status.uppercase()) }
             .getOrElse { throw IllegalArgumentException("неверный статус: $status") }
-        return leadRepo.save(lead).toDto()
+
+        lead.status = newStatus
+        val saved = leadRepo.save(lead)
+
+        log.info("[LEAD] Статус изменён: userId=${user.id} email=${user.email} leadId=$leadId $oldStatus → ${newStatus.name}")
+        return saved.toDto()
     }
 
     @Transactional
     fun markAllRead(user: User) {
         leadRepo.markAllViewedByUserId(user.id)
-        log.info("markAllRead: userId=${user.id}")
+        log.info("[LEAD] Все прочитаны: userId=${user.id} email=${user.email}")
     }
 
 
@@ -146,13 +158,12 @@ class LeadService(
         }
 
         if (user.subscriptionStatus !in setOf("ACTIVE", "TRIAL")) {
-            log.warn("пользователь ${user.email} не имеет активной подписки — лид проигнорирован")
+            log.warn("[LEAD][WARN] Нет подписки: userId=${user.id} email=${user.email} — лид пропущен")
             return
         }
 
-
         if (leadRepo.existsByTgMessageIdAndTgChatIdAndUserId(req.tgMessageId, req.chatTgId, req.userId)) {
-            log.debug("дубль: messageId=${req.tgMessageId} chatId=${req.chatTgId} userId=${req.userId}")
+            log.debug("[LEAD] Дубль пропущен: messageId=${req.tgMessageId} chatId=${req.chatTgId} userId=${user.id} email=${user.email}")
             return
         }
 
@@ -163,7 +174,6 @@ class LeadService(
             subscriptionRepo.save(sub)
             log.info("обновлён chatTgId для подписки: chatLink=${req.chatLink} chatTgId=${req.chatTgId}")
         }
-
 
         val hasAiPlan = user.subscriptionPlan in AI_PLANS
 
@@ -185,10 +195,9 @@ class LeadService(
         user.leadsCount = user.leadsCount + 1
         userRepo.save(user)
 
-        log.info("лид #${saved.id} userId=${user.id} keyword=${req.matchedKeyword} chat=${req.chatTitle} aiEnabled=$hasAiPlan historical=${req.isHistorical}")
+        log.info("[LEAD] Создан: leadId=#${saved.id} userId=${user.id} email=${user.email} keyword=\"${req.matchedKeyword}\" chat=\"${req.chatTitle}\" aiEnabled=$hasAiPlan historical=${req.isHistorical}")
 
         if (hasAiPlan) {
-
             val recentLeads = leadRepo.findRecentByUserId(
                 userId   = user.id,
                 since    = LocalDateTime.now().minusDays(7),
@@ -201,27 +210,30 @@ class LeadService(
                 )
             }
 
-            val businessContext = user.businessContext
-            val respondToServiceOffers = user.respondToServiceOffers
+
+            val capturedUserId  = user.id
+            val capturedEmail   = user.email
+            val capturedKeyword = req.matchedKeyword
+            val capturedLeadId  = saved.id
 
             aiService.validateAsync(
                 messageText            = req.messageText,
                 keyword                = req.matchedKeyword,
                 contextMessages        = req.contextMessages.take(3),
                 recentLeads            = recentLeads,
-                businessContext        = businessContext,
-                respondToServiceOffers = respondToServiceOffers,
+                businessContext        = user.businessContext,
+                respondToServiceOffers = user.respondToServiceOffers,
             ) { result ->
                 if (result != null) {
                     runCatching {
-                        leadRepo.findById(saved.id).ifPresent { l ->
+                        leadRepo.findById(capturedLeadId).ifPresent { l ->
                             l.aiValid  = result.valid
                             l.aiReason = result.reason
                             if (result.valid == false) {
                                 l.status = LeadStatus.IGNORED
-                                log.info("лид #${l.id} автоматически архивирован (AI отклонил): ${result.reason}")
+                                log.info("[AI] Отклонён: leadId=#${l.id} userId=$capturedUserId email=$capturedEmail keyword=\"$capturedKeyword\" reason=\"${result.reason.take(150)}\"")
                             } else {
-                                log.debug("ai: лид #${l.id} valid=${result.valid} reason=${result.reason}")
+                                log.info("[AI] Принят: leadId=#${l.id} userId=$capturedUserId email=$capturedEmail keyword=\"$capturedKeyword\" reason=\"${result.reason.take(150)}\"")
                             }
                             leadRepo.save(l)
                         }
@@ -233,39 +245,42 @@ class LeadService(
                     user.telegramId?.let { tgId ->
                         runCatching {
                             bot.notifyNewLead(
-                                telegramChatId  = tgId,
-                                leadId          = saved.id,
-                                chatTitle       = req.chatTitle,
-                                text            = req.messageText.take(200),
-                                link            = req.messageLink,
-                                keyword         = req.matchedKeyword,
-                                authorUsername  = req.authorUsername,
-                                authorName      = req.authorName,
-                                isHistorical    = req.isHistorical,
+                                telegramChatId = tgId,
+                                leadId         = saved.id,
+                                chatTitle      = req.chatTitle,
+                                text           = req.messageText.take(200),
+                                link           = req.messageLink,
+                                keyword        = req.matchedKeyword,
+                                authorUsername = req.authorUsername,
+                                authorName     = req.authorName,
+                                isHistorical   = req.isHistorical,
                             )
-                        }.onFailure { log.warn("ошибка telegram уведомления: ${it.message}") }
+                        }.onFailure { log.warn("ошибка telegram уведомления leadId=#${saved.id}: ${it.message}") }
                     }
                 }
             }
         } else {
-
             user.telegramId?.let { tgId ->
                 runCatching {
                     bot.notifyNewLead(
-                        telegramChatId  = tgId,
-                        leadId          = saved.id,
-                        chatTitle       = req.chatTitle,
-                        text            = req.messageText.take(200),
-                        link            = req.messageLink,
-                        keyword         = req.matchedKeyword,
-                        authorUsername  = req.authorUsername,
-                        authorName      = req.authorName,
-                        isHistorical    = req.isHistorical,
+                        telegramChatId = tgId,
+                        leadId         = saved.id,
+                        chatTitle      = req.chatTitle,
+                        text           = req.messageText.take(200),
+                        link           = req.messageLink,
+                        keyword        = req.matchedKeyword,
+                        authorUsername = req.authorUsername,
+                        authorName     = req.authorName,
+                        isHistorical   = req.isHistorical,
                     )
-                }.onFailure { log.warn("ошибка telegram уведомления: ${it.message}") }
+                }.onFailure { log.warn("ошибка telegram уведомления leadId=#${saved.id}: ${it.message}") }
             }
         }
     }
+
+
+
+
     internal fun String.normalizeKeyword(): String =
         this.trim()
             .lowercase()
@@ -274,75 +289,8 @@ class LeadService(
             .replace(Regex("\\s{2,}"), " ")
             .trim()
 
-    fun getSubscriptions(user: User): List<ChatSubscriptionDto> =
-        subscriptionRepo.findByUserIdAndIsActiveTrue(user.id).map { it.toDto() }
-
-    @Transactional
-    fun addSubscription(user: User, chatLink: String): ChatSubscriptionDto {
-        val normalized = normalizeLink(chatLink)
-
-        val activeExisting = subscriptionRepo.findByUserIdAndChatLinkAndIsActiveTrue(user.id, normalized)
-        if (activeExisting != null) {
-            throw IllegalArgumentException("Вы уже подписаны на этот чат")
-        }
-
-        val saved = if (subscriptionRepo.findByUserIdAndChatLink(user.id, normalized) != null) {
-            val existing = subscriptionRepo.findByUserIdAndChatLink(user.id, normalized)!!
-            existing.isActive = true
-            subscriptionRepo.save(existing)
-        } else {
-            subscriptionRepo.save(ChatSubscription(user = user, chatLink = normalized))
-        }
-
-        val keywords = getKeywords(user).map { it.keyword }
-        userbotExecutor.submit {
-            runCatching {
-                val h = httpHeaders()
-                val resp = restTemplate.postForEntity(
-                    "$userbotUrl/chats/subscribe",
-                    HttpEntity(mapOf("userId" to user.id, "chatLink" to saved.chatLink, "keywords" to keywords), h),
-                    Map::class.java,
-                )
-                val body    = resp.body
-                val tgId    = (body?.get("chatTgID") as? Number)?.toLong() ?: 0L
-                val tgTitle = body?.get("title") as? String ?: ""
-                if (tgId != 0L) {
-                    subscriptionRepo.findById(saved.id).ifPresent { sub ->
-                        sub.chatTgId  = tgId
-                        sub.chatTitle = tgTitle.ifBlank { sub.chatTitle }
-                        subscriptionRepo.save(sub)
-                    }
-                }
-                log.info("userbot subscribe OK (async): userId=${user.id} chat=${saved.chatLink} tgId=$tgId")
-            }.onFailure {
-                log.warn("userbot subscribe failed (async): userId=${user.id} chat=${saved.chatLink} — ${it.message}")
-            }
-        }
-
-        return saved.toDto()
-    }
-
-    @Transactional
-    fun removeSubscription(user: User, subscriptionId: Long) {
-        val sub = subscriptionRepo.findById(subscriptionId)
-            .orElseThrow { NoSuchElementException("подписка не найдена") }
-        if (sub.user.id != user.id) throw SecurityException("нет доступа")
-        sub.isActive = false
-        subscriptionRepo.save(sub)
-        if (sub.chatTgId != 0L) {
-            val remaining = subscriptionRepo.findByChatTgId(sub.chatTgId)
-            if (remaining.isEmpty()) {
-                notifyUserbotLeaveChat(sub.chatTgId)
-            }
-        }
-        notifyUserbotUnsubscribe(user, sub.chatLink)
-    }
-
-
-
     fun getKeywords(user: User): List<KeywordDto> =
         keywordRepo.findByUserIdAndIsActiveTrue(user.id).map { it.toDto() }
-
 
     @Transactional
     fun addKeyword(user: User, keyword: String): KeywordDto {
@@ -367,13 +315,16 @@ class LeadService(
             keywordRepo.save(Keyword(user = user, keyword = trimmed))
         }
 
+        log.info("[KEYWORDS] Добавлено: userId=${user.id} email=${user.email} keyword=\"$trimmed\" итого=${currentCount + 1}")
+
         val hasAiPlan = user.subscriptionPlan in AI_PLANS
         if (hasAiPlan) {
-            val allVariants = aiService.expandKeyword(trimmed)
+            val allVariants  = aiService.expandKeyword(trimmed)
             val variantsOnly = allVariants.filter { it != trimmed }
             if (variantsOnly.isNotEmpty()) {
                 kw.variants = variantsOnly.joinToString(",")
                 keywordRepo.save(kw)
+                log.info("[KEYWORDS] AI-варианты: userId=${user.id} email=${user.email} keyword=\"$trimmed\" вариантов=${variantsOnly.size}")
             }
         }
 
@@ -385,9 +336,13 @@ class LeadService(
     fun removeKeyword(user: User, keywordId: Long) {
         val kw = keywordRepo.findById(keywordId).orElseThrow { NoSuchElementException("ключевое слово не найдено") }
         if (kw.user.id != user.id) throw SecurityException("нет доступа")
+
+        log.info("[KEYWORDS] Удалено: userId=${user.id} email=${user.email} keyword=\"${kw.keyword}\"")
         keywordRepo.delete(kw)
         syncKeywordsToUserbot(user)
     }
+
+
 
 
     fun getBusinessContext(user: User): BusinessContextDto =
@@ -397,46 +352,99 @@ class LeadService(
     fun saveBusinessContext(user: User, context: String): BusinessContextDto {
         val trimmed = context.trim()
         if (trimmed.length > 2000) throw IllegalArgumentException("Описание слишком длинное (макс. 2000 символов)")
+
         val u = userRepo.findById(user.id).orElseThrow { NoSuchElementException("пользователь не найден") }
         u.businessContext = trimmed.ifBlank { null }
         userRepo.save(u)
+
+        if (trimmed.isNotBlank()) {
+            log.info("[KEYWORDS] Бизнес-контекст обновлён: userId=${user.id} email=${user.email} длина=${trimmed.length}")
+        } else {
+            log.info("[KEYWORDS] Бизнес-контекст очищен: userId=${user.id} email=${user.email}")
+        }
+
         return BusinessContextDto(businessContext = u.businessContext)
     }
+
+
+
+
+    fun getSubscriptions(user: User): List<ChatSubscriptionDto> =
+        subscriptionRepo.findByUserIdAndIsActiveTrue(user.id).map { it.toDto() }
+
+    @Transactional
+    fun addSubscription(user: User, chatLink: String): ChatSubscriptionDto {
+        val normalized = normalizeLink(chatLink)
+
+        val activeExisting = subscriptionRepo.findByUserIdAndChatLinkAndIsActiveTrue(user.id, normalized)
+        if (activeExisting != null) {
+            throw IllegalArgumentException("Вы уже подписаны на этот чат")
+        }
+
+        val saved = if (subscriptionRepo.findByUserIdAndChatLink(user.id, normalized) != null) {
+            val existing = subscriptionRepo.findByUserIdAndChatLink(user.id, normalized)!!
+            existing.isActive = true
+            subscriptionRepo.save(existing)
+        } else {
+            subscriptionRepo.save(ChatSubscription(user = user, chatLink = normalized))
+        }
+
+        log.info("[CHATS] Добавлен: userId=${user.id} email=${user.email} chatLink=\"$normalized\"")
+
+        val keywords = getKeywords(user).map { it.keyword }
+        userbotExecutor.submit {
+            runCatching {
+                val h = httpHeaders()
+                val resp = restTemplate.postForEntity(
+                    "$userbotUrl/chats/subscribe",
+                    HttpEntity(mapOf("userId" to user.id, "chatLink" to saved.chatLink, "keywords" to keywords), h),
+                    Map::class.java,
+                )
+                val body    = resp.body
+                val tgId    = (body?.get("chatTgID") as? Number)?.toLong() ?: 0L
+                val tgTitle = body?.get("title") as? String ?: ""
+                if (tgId != 0L) {
+                    subscriptionRepo.findById(saved.id).ifPresent { sub ->
+                        sub.chatTgId  = tgId
+                        sub.chatTitle = tgTitle.ifBlank { sub.chatTitle }
+                        subscriptionRepo.save(sub)
+                    }
+                }
+                log.info("userbot subscribe OK (async): userId=${user.id} email=${user.email} chat=$normalized tgId=$tgId title=\"$tgTitle\"")
+            }.onFailure {
+                log.warn("userbot subscribe failed (async): userId=${user.id} email=${user.email} chat=$normalized — ${it.message}")
+            }
+        }
+
+        return saved.toDto()
+    }
+
+    @Transactional
+    fun removeSubscription(user: User, subscriptionId: Long) {
+        val sub = subscriptionRepo.findById(subscriptionId)
+            .orElseThrow { NoSuchElementException("подписка не найдена") }
+        if (sub.user.id != user.id) throw SecurityException("нет доступа")
+
+        sub.isActive = false
+        subscriptionRepo.save(sub)
+
+        log.info("[CHATS] Удалён: userId=${user.id} email=${user.email} chatLink=\"${sub.chatLink}\"")
+
+        if (sub.chatTgId != 0L) {
+            val remaining = subscriptionRepo.findByChatTgId(sub.chatTgId)
+            if (remaining.isEmpty()) {
+                notifyUserbotLeaveChat(sub.chatTgId)
+            }
+        }
+        notifyUserbotUnsubscribe(user, sub.chatLink)
+    }
+
 
 
     private data class UserbotSubscribeResponse(
         val chatTgId: Long = 0,
         val chatTitle: String = "",
     )
-
-    private fun notifyUserbotSubscribeSync(
-        user: User,
-        sub: ChatSubscription,
-        keywords: List<String>,
-    ): UserbotSubscribeResponse? {
-        return try {
-            val h = httpHeaders()
-            val resp = restTemplate.postForEntity(
-                "$userbotUrl/chats/subscribe",
-                HttpEntity(mapOf("userId" to user.id, "chatLink" to sub.chatLink, "keywords" to keywords), h),
-                Map::class.java,
-            )
-
-            val body = resp.body
-            val chatTgId = when (val v = body?.get("chatTgID")) {
-                is Number -> v.toLong()
-                else      -> 0L
-            }
-            val chatTitle = body?.get("title") as? String ?: ""
-
-            log.info("userbot subscribe OK: userId=${user.id} chat=${sub.chatLink} chatTgId=$chatTgId title=$chatTitle")
-            UserbotSubscribeResponse(chatTgId = chatTgId, chatTitle = chatTitle)
-
-        } catch (e: Exception) {
-            log.error("userbot subscribe failed (sync): userId=${user.id} chat=${sub.chatLink} — ${e.message}")
-            throw RuntimeException("Не удалось подключиться к чату. Попробуйте позже. (${e.message})")
-        }
-    }
 
     private fun notifyUserbotUnsubscribe(user: User, chatLink: String) {
         userbotExecutor.submit {
@@ -470,16 +478,14 @@ class LeadService(
         }
     }
 
-
     private fun syncKeywordsToUserbot(user: User) {
-        val kwEntities = keywordRepo.findByUserIdAndIsActiveTrue(user.id)
-        val originals = kwEntities.map { it.keyword }.distinct()
-
+        val kwEntities  = keywordRepo.findByUserIdAndIsActiveTrue(user.id)
+        val originals   = kwEntities.map { it.keyword }.distinct()
         val allVariants = kwEntities.flatMap { it.allVariants() }.distinct()
-        val userId = user.id
+        val userId      = user.id
 
         log.info(
-            "userbot keywords sync: userId=$userId originals=${originals.size} total=${allVariants.size} (с вариантами)" +
+            "userbot keywords sync: userId=$userId email=${user.email} originals=${originals.size} total=${allVariants.size} (с вариантами)" +
                     "\n  → originals: [${originals.joinToString(", ") { "\"$it\"" }}]" +
                     "\n  → allVariants: [${allVariants.joinToString(", ") { "\"$it\"" }}]"
         )
@@ -507,11 +513,12 @@ class LeadService(
     }
 
 
+
+
     private fun httpHeaders() = HttpHeaders().apply {
         contentType = MediaType.APPLICATION_JSON
         set("X-Internal-Secret", internalSecret)
     }
-
 
     private fun String.sanitize(): String = this.replace("\u0000", "").trim()
 
@@ -521,18 +528,18 @@ class LeadService(
         val ctx = if (rawCtx.isNullOrBlank()) emptyList()
         else rawCtx.split("\u001F", "\u0000").filter { it.isNotBlank() }
         return LeadDto(
-            id             = id,
-            chatTitle      = sub?.chatTitle?.ifBlank { sub.chatLink } ?: "",
-            chatLink       = sub?.chatLink ?: "",
-            authorName     = authorName,
-            authorUsername = authorUsername,
-            messageText    = messageText,
-            messageLink    = messageLink,
-            matchedKeyword = matchedKeyword,
-            status         = status.name,
-            foundAt        = foundAt.toString(),
-            aiValid        = aiValid,
-            aiReason       = aiReason,
+            id              = id,
+            chatTitle       = sub?.chatTitle?.ifBlank { sub.chatLink } ?: "",
+            chatLink        = sub?.chatLink ?: "",
+            authorName      = authorName,
+            authorUsername  = authorUsername,
+            messageText     = messageText,
+            messageLink     = messageLink,
+            matchedKeyword  = matchedKeyword,
+            status          = status.name,
+            foundAt         = foundAt.toString(),
+            aiValid         = aiValid,
+            aiReason        = aiReason,
             contextMessages = ctx,
         )
     }

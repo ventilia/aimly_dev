@@ -23,13 +23,11 @@ data class SubscriptionDto(
     val expiresAt: String?,
 )
 
-
 data class GrantSubscriptionRequest(
     val userId:       Long,
     val plan:         String,
     val durationDays: Int = 30,
 )
-
 
 data class ChangePlanRequest(
     val userId: Long,
@@ -44,9 +42,6 @@ data class SetExpiryRequest(
 )
 
 
-// Реальные тарифы: START и BUSINESS.
-// TRIAL — это пробный период, он по факту даёт возможности START.
-// "MINIMUM" не существует и нигде не используется.
 private val VALID_PLANS = setOf("START", "BUSINESS", "TRIAL")
 
 
@@ -83,11 +78,11 @@ class SubscriptionService(
             ?: SubscriptionExpiry(user = user, expiresAt = expiresAt)
         expiryRepository.save(expiry)
 
-        log.info("подписка $plan выдана пользователю ${user.email} до $expiresAt")
+        log.info("[SUB] Выдана вручную: userId=${user.id} email=${user.email} plan=$plan до=$expiresAt дней=${req.durationDays}")
 
         user.telegramId?.let { tgId ->
             runCatching { bot.sendText(tgId, buildGrantMessage(plan, expiresAt)) }
-                .onFailure { log.warn("telegram notify grant: ${it.message}") }
+                .onFailure { log.warn("telegram notify grant userId=${user.id}: ${it.message}") }
         }
 
         return user.toDto()
@@ -96,12 +91,10 @@ class SubscriptionService(
 
     @Transactional
     fun grantTrial(user: User) {
-        // Не выдаём trial повторно
         if (user.trialUsed) {
             log.debug("пропускаем trial для ${user.email} — trialUsed=true")
             return
         }
-        // Не перебиваем уже активную подписку
         if (user.subscriptionStatus != null && user.subscriptionStatus !in setOf("INACTIVE")) {
             log.debug("пропускаем trial для ${user.email} — статус ${user.subscriptionStatus}")
             return
@@ -111,7 +104,6 @@ class SubscriptionService(
 
         user.trialUsed          = true
         user.subscriptionStatus = "TRIAL"
-        // Trial даёт те же возможности что START — план START, статус TRIAL
         user.subscriptionPlan   = "START"
         userRepository.save(user)
 
@@ -120,12 +112,11 @@ class SubscriptionService(
             ?: SubscriptionExpiry(user = user, expiresAt = expiresAt)
         expiryRepository.save(expiry)
 
-        log.info("trial выдан пользователю ${user.email}, истекает $expiresAt")
+        log.info("[SUB] Trial выдан: userId=${user.id} email=${user.email} до=$expiresAt")
 
         user.telegramId?.let { tgId ->
-            runCatching {
-                bot.sendText(tgId, buildGrantMessage("TRIAL", expiresAt))
-            }.onFailure { log.warn("telegram notify trial: ${it.message}") }
+            runCatching { bot.sendText(tgId, buildGrantMessage("TRIAL", expiresAt)) }
+                .onFailure { log.warn("telegram notify trial userId=${user.id}: ${it.message}") }
         }
     }
 
@@ -148,13 +139,13 @@ class SubscriptionService(
         user.subscriptionStatus = status
         userRepository.save(user)
 
-        log.info("смена плана ${user.email}: $oldPlan/$oldStatus → $plan/$status")
+        log.info("[SUB] Тариф изменён: userId=${user.id} email=${user.email} $oldPlan/$oldStatus → $plan/$status")
 
         if (oldPlan != plan && status == "ACTIVE") {
             user.telegramId?.let { tgId ->
                 runCatching {
                     bot.sendText(tgId, "📋 Ваш тариф изменён на $plan.\n${planFeatures(plan)}")
-                }.onFailure { log.warn("telegram notify changePlan: ${it.message}") }
+                }.onFailure { log.warn("telegram notify changePlan userId=${user.id}: ${it.message}") }
             }
         }
 
@@ -183,7 +174,7 @@ class SubscriptionService(
             ?: SubscriptionExpiry(user = user, expiresAt = expiresAt)
         expiryRepository.save(expiry)
 
-        log.info("срок подписки изменён для ${user.email} до $expiresAt")
+        log.info("[SUB] Продлена вручную: userId=${user.id} email=${user.email} plan=$plan до=$expiresAt дней=${req.durationDays}")
         return user.toDto()
     }
 
@@ -198,12 +189,12 @@ class SubscriptionService(
         user.subscriptionPlan   = null
         userRepository.save(user)
 
-        log.info("подписка отозвана: ${user.email} (был план: $oldPlan)")
+        log.info("[SUB] Отозвана: userId=${user.id} email=${user.email} был план=$oldPlan")
 
         user.telegramId?.let { tgId ->
             runCatching {
                 bot.sendText(tgId, "⚠️ Ваша подписка AIMLY деактивирована. Напишите в поддержку для продления.")
-            }.onFailure { }
+            }.onFailure { log.warn("telegram notify revoke userId=${user.id}: ${it.message}") }
         }
 
         return user.toDto()
@@ -235,7 +226,9 @@ class SubscriptionService(
                     bot.sendText(tgId, msg, markup)
                     expiry.notifiedRenewal = true
                     expiryRepository.save(expiry)
-                }.onFailure { log.warn("notify expiring: ${it.message}") }
+
+                    log.info("[SUB] Уведомление об истечении: userId=${user.id} email=${user.email} дата=$date isTrial=$isTrial")
+                }.onFailure { log.warn("notify expiring userId=${user.id}: ${it.message}") }
             }
         }
     }
@@ -249,7 +242,9 @@ class SubscriptionService(
                 user.subscriptionStatus = "INACTIVE"
                 user.subscriptionPlan   = null
                 userRepository.save(user)
-                log.info("подписка истекла: ${user.email} (был ${if (wasTrial) "TRIAL" else "ACTIVE"})")
+
+                log.info("[SUB] Истекла: userId=${user.id} email=${user.email} был=${if (wasTrial) "TRIAL" else "ACTIVE"}")
+
                 user.telegramId?.let { tgId ->
                     runCatching {
                         val msg = if (wasTrial)
@@ -279,11 +274,12 @@ class SubscriptionService(
                         ))
 
                         bot.sendText(tgId, msg, markup)
-                    }.onFailure { }
+                    }.onFailure { log.warn("notify expired userId=${user.id}: ${it.message}") }
                 }
             }
         }
     }
+
 
 
     private fun buildGrantMessage(plan: String, expiresAt: LocalDateTime) = when (plan) {
@@ -308,7 +304,6 @@ class SubscriptionService(
                     "Действует до: ${expiresAt.toLocalDate()}"
     }
 
-
     private fun planFeatures(plan: String) = when (plan) {
         "START" ->
             "✅ Мониторинг по ключевым словам\n" +
@@ -320,10 +315,8 @@ class SubscriptionService(
         "BUSINESS" ->
             "✅ Все функции тарифа START\n" +
                     "✅ Расширенные возможности"
-        else ->
-            "В разработке"
+        else -> "В разработке"
     }
-
 
     private fun User.toDto() = SubscriptionDto(
         userId    = id,

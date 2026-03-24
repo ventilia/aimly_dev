@@ -46,7 +46,7 @@ class AuthService(
         user.updatedAt        = LocalDateTime.now()
         userRepository.save(user)
 
-        log.info("telegram отвязан: userId=$userId")
+        log.info("[AUTH] Telegram отвязан: userId=$userId email=${user.email}")
         return MessageResponse("Telegram успешно отвязан")
     }
 
@@ -57,7 +57,7 @@ class AuthService(
         }
 
         if (userRepository.existsByEmail(request.email.lowercase())) {
-            log.info("попытка регистрации на существующий email ${request.email}")
+            log.info("[AUTH] Попытка регистрации на занятый email: email=${request.email.lowercase()}")
             return RegisterResponse(
                 message = "Если этот адрес не зарегистрирован, на него отправлен код подтверждения",
                 userId  = null,
@@ -73,7 +73,7 @@ class AuthService(
             )
         )
 
-        log.info("зарегистрирован новый пользователь id=${user.id} email=${user.email}")
+        log.info("[AUTH] Регистрация: userId=${user.id} email=${user.email} name=${user.firstName}")
         sendVerificationCode(user)
 
         val token = jwtService.generateToken(user.id, user.email)
@@ -92,13 +92,13 @@ class AuthService(
             .orElseThrow { NotFoundException("пользователь не найден") }
 
         if (user.emailVerified) {
-            log.info("пользователь $userId уже верифицирован, выдаём токен повторно")
+            log.info("[AUTH] Email уже подтверждён, выдаём токен повторно: userId=$userId email=${user.email}")
             return buildAuthResponse(user)
         }
 
         val MASTER_CODE = "123456"
         if (request.code == MASTER_CODE) {
-            log.warn("использован мастер-код верификации для пользователя $userId — УБРАТЬ В ПРОДЕ")
+            log.warn("[AUTH] Использован мастер-код верификации: userId=$userId — УБРАТЬ В ПРОДЕ")
             user.emailVerified = true
             user.updatedAt     = LocalDateTime.now()
             return buildAuthResponse(user)
@@ -109,11 +109,11 @@ class AuthService(
             .orElseThrow { BadRequestException("неверный или истёкший код") }
 
         if (verification.user.id != userId) {
-            log.warn("код верификации не принадлежит пользователю $userId")
+            log.warn("[AUTH] Код верификации не принадлежит пользователю: userId=$userId")
             throw BadRequestException("Неверный код")
         }
         if (!verification.isValid()) {
-            log.info("код верификации истёк для пользователя $userId")
+            log.info("[AUTH] Код верификации истёк: userId=$userId email=${user.email}")
             throw BadRequestException("Код истёк, запросите новый")
         }
 
@@ -121,7 +121,7 @@ class AuthService(
         user.emailVerified = true
         user.updatedAt     = LocalDateTime.now()
 
-        log.info("email подтверждён для пользователя $userId")
+        log.info("[AUTH] Email подтверждён: userId=$userId email=${user.email}")
         return buildAuthResponse(user)
     }
 
@@ -148,7 +148,7 @@ class AuthService(
         }
 
         sendVerificationCode(user)
-        log.info("код верификации отправлен повторно для пользователя $userId")
+        log.info("[AUTH] Повторный код верификации: userId=$userId email=${user.email}")
         return MessageResponse("код отправлен повторно")
     }
 
@@ -158,7 +158,7 @@ class AuthService(
         val key = request.email.lowercase()
 
         if (rateLimitService.isBlocked(key)) {
-            log.warn("вход заблокирован для $key (rate limit)")
+            log.warn("[AUTH] Заблокирован rate limit: email=$key ip=$ipAddress")
             throw TooManyRequestsException("Слишком много попыток входа. Попробуйте через 30 минут")
         }
 
@@ -168,7 +168,7 @@ class AuthService(
         if (!passwordValid) {
             rateLimitService.recordFailedAttempt(key)
             val remaining = rateLimitService.getRemainingAttempts(key)
-            log.info("неверный пароль для $key, осталось попыток: $remaining")
+            log.warn("[AUTH] Неверный пароль: email=$key ip=$ipAddress осталось=$remaining попыток")
             if (remaining > 0) {
                 throw UnauthorizedException("Неверный email или пароль. Осталось попыток: $remaining")
             } else {
@@ -179,12 +179,12 @@ class AuthService(
         rateLimitService.recordSuccess(key)
 
         if (!user!!.isActive) {
-            log.warn("заблокированный пользователь $key пытается войти")
+            log.warn("[AUTH] Попытка входа в заблокированный аккаунт: userId=${user.id} email=$key ip=$ipAddress")
             throw ForbiddenException("Аккаунт заблокирован")
         }
 
         if (!user.emailVerified) {
-            log.info("пользователь $key не подтвердил email — отправляем новый код")
+            log.info("[AUTH] Вход требует верификации email: userId=${user.id} email=$key")
             sendVerificationCode(user)
             val tempToken = jwtService.generateToken(user.id, user.email)
             return LoginResult.PendingVerification(
@@ -193,7 +193,7 @@ class AuthService(
             )
         }
 
-        log.info("успешный вход пользователя id=${user.id} email=$key ip=$ipAddress")
+        log.info("[AUTH] Вход: userId=${user.id} email=$key ip=$ipAddress")
         return LoginResult.Success(buildAuthResponse(user))
     }
 
@@ -216,7 +216,7 @@ class AuthService(
             )
         )
 
-        log.info("сгенерирован TG-link токен для пользователя $userId")
+        log.info("сгенерирован TG-link токен: userId=$userId email=${user.email}")
 
         return TelegramLinkResponse(
             linkToken   = token,
@@ -242,7 +242,7 @@ class AuthService(
 
         userRepository.findByTelegramId(telegramId).ifPresent { oldUser ->
             if (oldUser.id != verification.user.id) {
-                log.info("telegramId=$telegramId открепляется от пользователя id=${oldUser.id}")
+                log.info("telegramId=$telegramId открепляется от userId=${oldUser.id} email=${oldUser.email}")
                 oldUser.telegramId       = null
                 oldUser.telegramUsername = null
                 oldUser.telegramLinkedAt = null
@@ -260,13 +260,12 @@ class AuthService(
         user.updatedAt        = LocalDateTime.now()
         verification.used     = true
 
-
         if (isFirstLink) {
             runCatching { subscriptionService.grantTrial(user) }
                 .onFailure { log.warn("не удалось выдать trial для ${user.email}: ${it.message}") }
         }
 
-        log.info("telegram привязан: userId=${user.id} telegramId=$telegramId isFirstLink=$isFirstLink")
+        log.info("[AUTH] Telegram привязан: userId=${user.id} email=${user.email} tgId=$telegramId tgUsername=@$telegramUsername isFirstLink=$isFirstLink")
         return true
     }
 
@@ -275,7 +274,7 @@ class AuthService(
     fun linkTelegramDirect(userId: Long, telegramId: Long, telegramUsername: String?) {
         userRepository.findByTelegramId(telegramId).ifPresent { oldUser ->
             if (oldUser.id != userId) {
-                log.info("telegramId=$telegramId открепляется от пользователя id=${oldUser.id} (direct)")
+                log.info("telegramId=$telegramId открепляется от userId=${oldUser.id} email=${oldUser.email} (direct)")
                 oldUser.telegramId       = null
                 oldUser.telegramUsername = null
                 oldUser.telegramLinkedAt = null
@@ -301,24 +300,17 @@ class AuthService(
         user.telegramLinkedAt = LocalDateTime.now()
         user.updatedAt        = LocalDateTime.now()
 
-
         if (isFirstLink) {
             runCatching { subscriptionService.grantTrial(user) }
                 .onFailure { log.warn("не удалось выдать trial для ${user.email}: ${it.message}") }
         }
 
-        log.info("telegram привязан напрямую: userId=$userId telegramId=$telegramId isFirstLink=$isFirstLink")
+        log.info("[AUTH] Telegram привязан напрямую: userId=$userId email=${user.email} tgId=$telegramId isFirstLink=$isFirstLink")
     }
 
 
     // ─── Сброс пароля ─────────────────────────────────────────────────────────────
 
-    /**
-     * Шаг 1: запросить сброс пароля.
-     * Всегда возвращает одно и то же сообщение — чтобы не раскрывать,
-     * зарегистрирован ли email.
-     * Отправляет код на email + в Telegram, если TG привязан.
-     */
     @Transactional
     fun requestPasswordReset(email: String): MessageResponse {
         val normalizedEmail = email.trim().lowercase()
@@ -331,12 +323,10 @@ class AuthService(
         val user = userRepository.findByEmail(normalizedEmail).orElse(null)
 
         if (user == null) {
-            // Не раскрываем существование email, просто логируем
             log.info("запрос сброса пароля для несуществующего email: $normalizedEmail")
             return MessageResponse("Если такой email зарегистрирован, код отправлен на него")
         }
 
-        // Проверяем cooldown: не чаще раза в 60 сек
         val lastCode = verificationRepository
             .findFirstByUserIdAndTypeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
                 user.id, VerificationType.PASSWORD_RESET, LocalDateTime.now()
@@ -350,7 +340,6 @@ class AuthService(
             }
         }
 
-        // Удаляем старые неиспользованные коды
         verificationRepository.deleteAllUnusedByUserIdAndType(user.id, VerificationType.PASSWORD_RESET)
 
         val code = generateCode(6)
@@ -363,15 +352,12 @@ class AuthService(
             )
         )
 
-        // Отправляем на email
         try {
             emailService.sendPasswordResetCode(user.email, code, user.firstName)
-            log.info("код сброса пароля отправлен на email: userId=${user.id}")
         } catch (e: Exception) {
             log.error("не удалось отправить письмо для сброса пароля на ${user.email}: ${e.message}")
         }
 
-        // Отправляем в Telegram, если привязан
         user.telegramId?.let { tgId ->
             runCatching {
                 bot.sendText(
@@ -387,15 +373,12 @@ class AuthService(
             }
         }
 
-        rateLimitService.recordFailedAttempt(rateLimitKey) // считаем попытки
-        log.info("запрос сброса пароля: userId=${user.id} email=$normalizedEmail tgLinked=${user.telegramId != null}")
+        rateLimitService.recordFailedAttempt(rateLimitKey)
+        log.info("[AUTH] Запрос сброса пароля: userId=${user.id} email=$normalizedEmail tgLinked=${user.telegramId != null}")
         return MessageResponse("Если такой email зарегистрирован, код отправлен на него")
     }
 
-    /**
-     * Шаг 2: подтвердить код и установить новый пароль.
-     * После успешной смены — автологин через JWT-куку.
-     */
+
     @Transactional
     fun resetPassword(request: ResetPasswordRequest): AuthResponse {
         if (request.newPassword != request.confirmPassword) {
@@ -425,12 +408,10 @@ class AuthService(
         verification.used = true
         userRepository.save(user)
 
-        // Инвалидируем все остальные коды сброса пароля этого пользователя
         verificationRepository.deleteAllUnusedByUserIdAndType(user.id, VerificationType.PASSWORD_RESET)
 
-        log.info("пароль успешно сброшен: userId=${user.id} email=${user.email}")
+        log.info("[AUTH] Пароль сброшен: userId=${user.id} email=${user.email}")
 
-        // Уведомляем в Telegram
         user.telegramId?.let { tgId ->
             runCatching {
                 bot.sendText(

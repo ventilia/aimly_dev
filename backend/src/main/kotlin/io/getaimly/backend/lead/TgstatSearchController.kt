@@ -8,12 +8,10 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.*
 
 
-
 data class TgstatSearchRequest(
-    val query: String = "",
+    val query:    String  = "",
     val peerType: String? = null,
 )
-
 
 data class TgstatChannelResult(
     val title:             String,
@@ -28,7 +26,6 @@ data class TgstatSearchResponse(
     val results: List<TgstatChannelResult>,
     val queries: List<String>,
 )
-
 
 
 @RestController
@@ -47,7 +44,9 @@ class TgstatSearchController(
         val plan      = user.subscriptionPlan
         val status    = user.subscriptionStatus
         val hasAccess = plan in setOf("START", "BUSINESS") || status == "TRIAL"
+
         if (!hasAccess) {
+            log.warn("[CHATS] Нет доступа к поиску TGStat: userId=${user.id} email=${user.email} plan=$plan status=$status")
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(mapOf("error" to "Поиск чатов доступен на тарифе START и выше"))
         }
@@ -58,16 +57,17 @@ class TgstatSearchController(
                 .body(mapOf("error" to "Введите запрос или заполните AI-профиль в настройках"))
         }
 
-        // Нормализуем peerType
         val peerType = when (req.peerType?.lowercase()?.trim()) {
             "chat"    -> "chat"
             "channel" -> "channel"
             else      -> null
         }
 
+        log.info("[CHATS] Поиск TGStat: userId=${user.id} email=${user.email} query=\"${inputText.take(80)}\" type=${peerType ?: "all"}")
+
         return try {
-            log.info("поиск чатов: userId=${user.id} query='${inputText.take(80)}' peerType=${peerType ?: "all"}")
             val searchResult = chatSearchService.search(inputText, peerType)
+            log.info("[CHATS] Результаты TGStat: userId=${user.id} email=${user.email} найдено=${searchResult.results.size} query=\"${inputText.take(60)}\"")
             ResponseEntity.ok(
                 TgstatSearchResponse(
                     results = searchResult.results.map { it.toPublicDto() },
@@ -75,11 +75,11 @@ class TgstatSearchController(
                 )
             )
         } catch (e: IllegalStateException) {
-            log.error("chatSearchService.search ошибка конфигурации: ${e.message}")
+            log.error("chatSearchService.search ошибка конфигурации userId=${user.id}: ${e.message}")
             ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(mapOf("error" to (e.message ?: "Сервис поиска недоступен")))
         } catch (e: Exception) {
-            log.error("chatSearchService.search неожиданная ошибка: ${e.message}", e)
+            log.error("chatSearchService.search неожиданная ошибка userId=${user.id}: ${e.message}", e)
             ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(mapOf("error" to "Ошибка поиска. Попробуйте позже."))
         }

@@ -24,10 +24,10 @@ class BotLeadsHandler(
     private val log = LoggerFactory.getLogger(BotLeadsHandler::class.java)
 
 
-
     fun showLeadsMenu(chatId: Long, tgUserId: Long, msgId: Int? = null) {
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
         if (user == null) {
+            log.warn("[BOT][LEADS] Не авторизован при открытии меню лидов: chatId=$chatId tgId=$tgUserId")
             val t = "Нужно войти. /start"
             if (msgId != null) sender.editText(chatId, msgId, t) else sender.sendText(chatId, t)
             return
@@ -35,7 +35,9 @@ class BotLeadsHandler(
 
         val newCount   = leadRepository.countByUserIdAndStatus(user.id, LeadStatus.NEW)
         val totalCount = leadRepository.countByUserId(user.id)
-        val newLabel   = if (newCount > 0) "📬 Новые лиды  •  $newCount" else "📬 Новых лидов нет"
+        log.info("[BOT][LEADS] Меню лидов: userId=${user.id} email=${user.email} всего=$totalCount новых=$newCount")
+
+        val newLabel = if (newCount > 0) "📬 Новые лиды  •  $newCount" else "📬 Новых лидов нет"
 
         val text = "📋 Лиды\n\n" +
                 "Всего лидов: $totalCount\n" +
@@ -59,11 +61,21 @@ class BotLeadsHandler(
 
     fun markAllRead(chatId: Long, msgId: Int, tgUserId: Long) {
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
-        if (user == null) { sender.editText(chatId, msgId, "Нужно войти. /start"); return }
+        if (user == null) {
+            log.warn("[BOT][LEADS] Не авторизован при «прочитать всё»: chatId=$chatId tgId=$tgUserId")
+            sender.editText(chatId, msgId, "Нужно войти. /start")
+            return
+        }
+
+        val countBefore = leadRepository.countByUserIdAndStatus(user.id, LeadStatus.NEW)
+        log.info("[BOT][LEADS] «Прочитать всё»: userId=${user.id} email=${user.email} будет_помечено=$countBefore")
 
         runCatching {
             leadService.markAllRead(user)
-        }.onFailure { log.warn("markAllRead failed userId=${user.id}: ${it.message}") }
+            log.info("[BOT][LEADS] ✅ Все лиды помечены прочитанными: userId=${user.id} email=${user.email} помечено=$countBefore")
+        }.onFailure {
+            log.warn("[BOT][LEADS] ❌ Ошибка «прочитать всё»: userId=${user.id} email=${user.email} причина=${it.message}")
+        }
 
         showLeadsMenu(chatId, tgUserId, msgId)
     }
@@ -71,12 +83,19 @@ class BotLeadsHandler(
 
     fun showLeadsList(chatId: Long, msgId: Int, tgUserId: Long, page: Int, statusFilter: String?) {
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
-        if (user == null) { sender.editText(chatId, msgId, "Нужно войти. /start"); return }
+        if (user == null) {
+            log.warn("[BOT][LEADS] Не авторизован при просмотре списка: chatId=$chatId tgId=$tgUserId")
+            sender.editText(chatId, msgId, "Нужно войти. /start")
+            return
+        }
 
-        val pageDto    = leadService.getLeads(user, statusFilter, page, LEADS_PAGE_SIZE)
-        val filterTag  = statusFilter ?: "all"
+        log.info("[BOT][LEADS] Список лидов: userId=${user.id} email=${user.email} фильтр=${statusFilter ?: "ALL"} страница=$page")
+
+        val pageDto   = leadService.getLeads(user, statusFilter, page, LEADS_PAGE_SIZE)
+        val filterTag = statusFilter ?: "all"
 
         if (pageDto.content.isEmpty()) {
+            log.info("[BOT][LEADS] Список пуст: userId=${user.id} email=${user.email} фильтр=${statusFilter ?: "ALL"}")
             sender.editText(
                 chatId, msgId,
                 "📭 Лидов нет\n\n" +
@@ -113,12 +132,11 @@ class BotLeadsHandler(
             rows.add(row(btn("$statusIcon №$num — Подробнее", "lead:open:${lead.id}")))
         }
 
-
         if (pageDto.totalPages > 1) {
             val navBtns = mutableListOf<InlineKeyboardButton>()
-            if (page > 0)                        navBtns.add(btn("◀️", "leads:page:${page - 1}:$filterTag"))
+            if (page > 0)                       navBtns.add(btn("◀️", "leads:page:${page - 1}:$filterTag"))
             navBtns.add(btn("${page + 1}/${pageDto.totalPages}", "noop"))
-            if (page < pageDto.totalPages - 1)   navBtns.add(btn("▶️", "leads:page:${page + 1}:$filterTag"))
+            if (page < pageDto.totalPages - 1)  navBtns.add(btn("▶️", "leads:page:${page + 1}:$filterTag"))
             rows.add(InlineKeyboardRow(navBtns))
         }
 
@@ -128,16 +146,27 @@ class BotLeadsHandler(
     }
 
 
-
     fun showLeadDetail(chatId: Long, msgId: Int, tgUserId: Long, leadId: Long) {
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
-        if (user == null) { sender.editText(chatId, msgId, "Нужно войти. /start"); return }
+        if (user == null) {
+            log.warn("[BOT][LEADS] Не авторизован при открытии лида: chatId=$chatId tgId=$tgUserId leadId=$leadId")
+            sender.editText(chatId, msgId, "Нужно войти. /start")
+            return
+        }
 
         val lead = leadRepository.findById(leadId).orElse(null)
-        if (lead == null || lead.user.id != user.id) {
+        if (lead == null) {
+            log.warn("[BOT][LEADS] Лид не найден: userId=${user.id} email=${user.email} leadId=$leadId")
             sender.editText(chatId, msgId, "❌ Лид не найден.")
             return
         }
+        if (lead.user.id != user.id) {
+            log.warn("[BOT][LEADS] Попытка доступа к чужому лиду: userId=${user.id} email=${user.email} leadId=$leadId владелец=${lead.user.id}")
+            sender.editText(chatId, msgId, "❌ Лид не найден.")
+            return
+        }
+
+        log.info("[BOT][LEADS] Просмотр лида: userId=${user.id} email=${user.email} leadId=$leadId статус=${lead.status} keyword=\"${lead.matchedKeyword}\" автор=@${lead.authorUsername.ifBlank { lead.authorName }}")
 
         val sub       = lead.subscriptionId?.let { subscriptionRepository.findById(it).orElse(null) }
         val chatLabel = sub?.chatTitle?.ifBlank { sub.chatLink } ?: ""
@@ -201,20 +230,35 @@ class BotLeadsHandler(
 
         sender.editText(chatId, msgId, text, InlineKeyboardMarkup(rows))
 
-
+        // Автоматически помечаем как просмотренный
         if (lead.status == LeadStatus.NEW) {
-            runCatching { leadService.updateLeadStatus(user, leadId, "VIEWED") }
+            runCatching {
+                leadService.updateLeadStatus(user, leadId, "VIEWED")
+                log.info("[BOT][LEADS] Лид авто-помечен VIEWED: userId=${user.id} email=${user.email} leadId=$leadId")
+            }.onFailure {
+                log.warn("[BOT][LEADS] ❌ Ошибка авто-VIEWED: userId=${user.id} email=${user.email} leadId=$leadId причина=${it.message}")
+            }
         }
     }
 
 
-
     fun changeLeadStatus(tgUserId: Long, leadId: Long, status: String) {
-        val user = userRepository.findByTelegramId(tgUserId).orElse(null) ?: return
-        runCatching { leadService.updateLeadStatus(user, leadId, status) }
-            .onFailure { log.warn("changeLeadStatus failed leadId=$leadId status=$status: ${it.message}") }
-    }
+        val user = userRepository.findByTelegramId(tgUserId).orElse(null)
+        if (user == null) {
+            log.warn("[BOT][LEADS] Не авторизован при смене статуса: tgId=$tgUserId leadId=$leadId status=$status")
+            return
+        }
 
+        val oldStatus = leadRepository.findById(leadId).orElse(null)?.status?.name ?: "?"
+        log.info("[BOT][LEADS] Смена статуса лида: userId=${user.id} email=${user.email} leadId=$leadId $oldStatus → $status")
+
+        runCatching {
+            leadService.updateLeadStatus(user, leadId, status)
+            log.info("[BOT][LEADS] ✅ Статус изменён: userId=${user.id} email=${user.email} leadId=$leadId → $status")
+        }.onFailure {
+            log.warn("[BOT][LEADS] ❌ Ошибка смены статуса: userId=${user.id} email=${user.email} leadId=$leadId status=$status причина=${it.message}")
+        }
+    }
 
 
     private fun statusIcon(status: String) = when (status) {
