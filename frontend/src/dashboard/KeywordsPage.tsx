@@ -4,6 +4,7 @@ import { authApi } from '../api/auth'
 import { useAuthContext } from '../context/AuthContext'
 import s from './Keywordspage.module.css'
 import { CHAT_SEARCH_QUERY_KEY } from './chatSearchShared'
+import { logEvent } from '../analytics/userLogger'
 
 const MAX_KEYWORDS = 50
 
@@ -281,16 +282,20 @@ export default function KeywordsPage() {
             return
         }
         setAdding(true); setError('')
+        logEvent('KEYWORD_ADD_START', { label: 'Добавление ключевого слова', meta: { keyword: word.slice(0, 60) } })
         try {
             const added = await keywordsApi.add(word)
+            logEvent('KEYWORD_ADD_SUCCESS', { label: 'Ключевое слово добавлено' })
             setKeywords(prev => prev.find(k => k.id === added.id) ? prev : [...prev, added])
             if (!kw) setInput('')
         } catch (e: unknown) {
+            logEvent('KEYWORD_ADD_FAIL', { label: e instanceof Error ? e.message : 'Ошибка' })
             setError(e instanceof Error ? e.message : 'Не удалось добавить')
         } finally { setAdding(false) }
     }
 
     const remove = async (id: number) => {
+        logEvent('KEYWORD_DELETE', { label: 'Удаление ключевого слова', meta: { keywordId: String(id) } })
         setRemoving(id)
         try {
             await keywordsApi.remove(id)
@@ -302,6 +307,7 @@ export default function KeywordsPage() {
 
     const saveBizContext = async () => {
         setBizSaving(true); setBizError(''); setBizSuccess(false)
+        logEvent('PROFILE_EDIT_SAVE', { label: 'Сохранение AI-профиля (бизнес-контекст)', page: '/dashboard/keywords' })
         setAiSuggestions([]); setAiError('')
         try {
             const res = await businessContextApi.save(bizContext)
@@ -311,6 +317,7 @@ export default function KeywordsPage() {
             setTimeout(() => setBizSuccess(false), 2500)
             if (v.trim().length > 20) {
                 setAiGenerating(true)
+                logEvent('KEYWORD_EXPAND_CLICK', { label: 'Генерация ключевых слов через AI' })
                 try {
                     const generated = await generateKeywordsFromContext(v)
                     setAiSuggestions(generated)
@@ -338,6 +345,7 @@ export default function KeywordsPage() {
     }
 
     const addAiSuggestion = async (kw: string) => {
+        logEvent('KEYWORD_ADD_START', { label: 'Добавление AI-подсказки', meta: { keyword: kw.slice(0, 60) } })
         if (keywords.length >= MAX_KEYWORDS) {
             setError(`Достигнут лимит — максимум ${MAX_KEYWORDS} ключевых слов`)
             return
@@ -388,7 +396,7 @@ export default function KeywordsPage() {
                 )}
             </div>
 
-            {/* ЗАДАЧА 4: баннер — предлагаем заполнить форму по запросу из чатов */}
+            {}
             {chatSearchQueryBanner && hasAiFeatures && (
                 <div style={{
                     display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap',

@@ -56,6 +56,10 @@ class SecurityConfig(
                         "/error",
 
                         "/api/v1/webhooks/tribute",
+
+                        // фронтенд-логи: разрешаем и анонимным пользователям
+                        // (собственный rate-limit внутри контроллера)
+                        "/api/v1/log/action",
                     ).permitAll()
                     .anyRequest().authenticated()
             }
