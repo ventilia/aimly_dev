@@ -252,3 +252,17 @@ export const subscriptionApi = {
         })
     },
 }
+
+export interface ReferralStatsDto {
+    code:           string
+    referralLink:   string
+    totalReferrals: number
+    paidReferrals:  number
+    bonusDaysLeft:  number
+}
+
+export const referralApi = {
+    getStats(): Promise<ReferralStatsDto> {
+        return request('/api/v1/referral/stats')
+    },
+}

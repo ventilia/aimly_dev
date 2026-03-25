@@ -21,6 +21,9 @@ data class UserSession(
 
     var pendingAction: String? = null,
 
+
+    var pendingReferralCode: String? = null,
+
     var aiKeywordSuggestions: List<String> = emptyList(),
     var aiKeywordPage: Int = 0,
     var chatSearchResults: List<ChatSearchResult> = emptyList(),

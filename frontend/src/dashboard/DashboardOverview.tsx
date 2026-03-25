@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Lang } from '../i18n/translations'
-import { authApi } from '../api/auth'
+import { authApi, referralApi, type ReferralStatsDto } from '../api/auth'
 import { leadsApi, chatsApi, keywordsApi } from '../api/leads'
 import { useAuthContext } from '../context/AuthContext'
 import s from './DashboardOverview.module.css'
@@ -46,6 +46,17 @@ const txt = {
         linkUnavailable:'Ссылка недоступна',
         linkNote:       'Если ссылка не открывается — проверьте настройки приватности чата',
         viewAll:        'Все лиды →',
+        // Referral
+        refTitle:       'Реферальная программа',
+        refSub:         'Приглашайте друзей — получайте бонусные дни',
+        refBonus:       'Бонусных дней',
+        refInvited:     'Перешли по ссылке',
+        refPaid:        'Оплатили подписку',
+        refLinkLabel:   'Ваша реферальная ссылка',
+        refCopy:        'Скопировать',
+        refCopied:      'Скопировано!',
+        refBonusHint:   'Используются автоматически если автоплатёж не пройдёт',
+        refPerRef:      '+5 дней за каждого оплатившего',
     },
     en: {
         title:          'Overview',
@@ -86,6 +97,17 @@ const txt = {
         linkUnavailable:'Link unavailable',
         linkNote:       'If the link does not open — check the chat privacy settings',
         viewAll:        'All leads →',
+        // Referral
+        refTitle:       'Referral program',
+        refSub:         'Invite friends — earn bonus days',
+        refBonus:       'Bonus days',
+        refInvited:     'Clicked your link',
+        refPaid:        'Paid subscription',
+        refLinkLabel:   'Your referral link',
+        refCopy:        'Copy',
+        refCopied:      'Copied!',
+        refBonusHint:   'Used automatically if autopayment fails',
+        refPerRef:      '+5 days per paid referral',
     },
 } as const
 
@@ -141,6 +163,10 @@ export default function DashboardOverview({ lang }: Props) {
 
     const [lastLead, setLastLead] = useState<import('../api/leads').Lead | null>(null)
 
+    // ── Referral ────────────────────────────────────────────────────────────
+    const [referralStats, setReferralStats] = useState<ReferralStatsDto | null>(null)
+    const [refCopied,     setRefCopied]     = useState(false)
+
     useEffect(() => {
         leadsApi.list({ size: 20 })
             .then(p => {
@@ -157,6 +183,10 @@ export default function DashboardOverview({ lang }: Props) {
 
         keywordsApi.list()
             .then(list => setKeywordsCount(list.filter(k => k.isActive).length))
+            .catch(() => {})
+
+        referralApi.getStats()
+            .then(setReferralStats)
             .catch(() => {})
     }, [])
 
@@ -197,7 +227,22 @@ export default function DashboardOverview({ lang }: Props) {
         }
     }
 
+    const handleCopyReferral = async () => {
+        if (!referralStats?.referralLink) return
+        try {
+            await navigator.clipboard.writeText(referralStats.referralLink)
+            setRefCopied(true)
+            setTimeout(() => setRefCopied(false), 2500)
+        } catch {
+            // браузер заблокировал — ничего не делаем, ссылку можно выделить вручную
+        }
+    }
+
     const fmt = (v: number | null) => v === null ? '—' : String(v)
+
+    const bonusDays      = referralStats?.bonusDaysLeft  ?? 0
+    const totalReferrals = referralStats?.totalReferrals ?? 0
+    const paidReferrals  = referralStats?.paidReferrals  ?? 0
 
     return (
         <div className={s.page}>
@@ -354,6 +399,145 @@ export default function DashboardOverview({ lang }: Props) {
                     </div>
                 </div>
             )}
+
+            {/* ─── Реферальная программа ─── */}
+            <div style={{
+                background: 'var(--c-surface)',
+                border: '1.5px solid var(--c-border)',
+                borderRadius: 16,
+                padding: '22px 24px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 18,
+            }}>
+                {/* Заголовок блока */}
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                    <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                            <span style={{ fontSize: 18 }}>👥</span>
+                            <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--c-ink)' }}>{l.refTitle}</span>
+                        </div>
+                        <span style={{ fontSize: 13, color: 'var(--c-ink-3)' }}>{l.refPerRef}</span>
+                    </div>
+                    {bonusDays > 0 && (
+                        <div style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            background: 'rgba(16,185,129,.08)',
+                            border: '1.5px solid rgba(16,185,129,.25)',
+                            borderRadius: 12,
+                            padding: '8px 16px',
+                            minWidth: 72,
+                            textAlign: 'center',
+                            flexShrink: 0,
+                        }}>
+                            <span style={{ fontFamily: 'var(--font-head)', fontSize: 26, fontWeight: 900, color: 'var(--c-green)', lineHeight: 1 }}>
+                                {bonusDays}
+                            </span>
+                            <span style={{ fontSize: 11, color: 'var(--c-green)', fontWeight: 600, marginTop: 2 }}>{l.refBonus}</span>
+                        </div>
+                    )}
+                </div>
+
+                {/* Мини-статистика */}
+                <div style={{ display: 'flex', gap: 12 }}>
+                    <div style={{
+                        flex: 1,
+                        background: 'var(--c-bg)',
+                        border: '1px solid var(--c-border)',
+                        borderRadius: 12,
+                        padding: '14px 16px',
+                        textAlign: 'center',
+                    }}>
+                        <div style={{ fontFamily: 'var(--font-head)', fontSize: 26, fontWeight: 900, color: 'var(--c-ink)', lineHeight: 1 }}>
+                            {totalReferrals}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--c-ink-3)', marginTop: 4, fontWeight: 500 }}>{l.refInvited}</div>
+                    </div>
+                    <div style={{
+                        flex: 1,
+                        background: 'var(--c-bg)',
+                        border: '1px solid var(--c-border)',
+                        borderRadius: 12,
+                        padding: '14px 16px',
+                        textAlign: 'center',
+                    }}>
+                        <div style={{ fontFamily: 'var(--font-head)', fontSize: 26, fontWeight: 900, color: paidReferrals > 0 ? 'var(--c-accent)' : 'var(--c-ink)', lineHeight: 1 }}>
+                            {paidReferrals}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--c-ink-3)', marginTop: 4, fontWeight: 500 }}>{l.refPaid}</div>
+                    </div>
+                    {bonusDays === 0 && (
+                        <div style={{
+                            flex: 1,
+                            background: 'var(--c-bg)',
+                            border: '1px solid var(--c-border)',
+                            borderRadius: 12,
+                            padding: '14px 16px',
+                            textAlign: 'center',
+                        }}>
+                            <div style={{ fontFamily: 'var(--font-head)', fontSize: 26, fontWeight: 900, color: 'var(--c-ink)', lineHeight: 1 }}>
+                                0
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--c-ink-3)', marginTop: 4, fontWeight: 500 }}>{l.refBonus}</div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Реферальная ссылка */}
+                <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--c-ink-3)', textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 8 }}>
+                        {l.refLinkLabel}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div style={{
+                            flex: 1,
+                            minWidth: 0,
+                            fontSize: 12.5,
+                            color: 'var(--c-ink-2)',
+                            background: 'var(--c-bg)',
+                            border: '1px solid var(--c-border)',
+                            borderRadius: 8,
+                            padding: '9px 12px',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            fontFamily: 'monospace',
+                            cursor: 'text',
+                            userSelect: 'all',
+                        } as React.CSSProperties}>
+                            {referralStats?.referralLink ?? '—'}
+                        </div>
+                        <button
+                            onClick={handleCopyReferral}
+                            disabled={!referralStats}
+                            style={{
+                                padding: '9px 18px',
+                                borderRadius: 8,
+                                border: refCopied ? '1.5px solid var(--c-green)' : '1.5px solid var(--c-border)',
+                                background: refCopied ? 'var(--c-green-soft)' : 'var(--c-surface)',
+                                fontSize: 13,
+                                fontWeight: 600,
+                                color: refCopied ? 'var(--c-green)' : 'var(--c-ink-2)',
+                                cursor: referralStats ? 'pointer' : 'default',
+                                fontFamily: 'var(--font-body)',
+                                transition: 'all .15s',
+                                whiteSpace: 'nowrap',
+                                flexShrink: 0,
+                            }}
+                        >
+                            {refCopied ? l.refCopied : l.refCopy}
+                        </button>
+                    </div>
+                    {bonusDays > 0 && (
+                        <div style={{ marginTop: 8, fontSize: 12, color: 'var(--c-green)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <span>🎁</span>
+                            <span>{l.refBonusHint}</span>
+                        </div>
+                    )}
+                </div>
+            </div>
 
             {/* ─── Шаги настройки ─── */}
             {stepsLeft > 0 && (

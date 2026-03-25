@@ -208,11 +208,17 @@ class SubscriptionService(
             val isTrial = user.subscriptionStatus == "TRIAL"
             user.telegramId?.let { tgId ->
                 runCatching {
-                    val date = expiry.expiresAt.toLocalDate()
+                    val date   = expiry.expiresAt.toLocalDate()
+                    val buffer = expiry.bonusDaysBuffer
+
+                    val bufferLine = if (buffer > 0)
+                        "\n\n🎁 У вас есть $buffer бонусных дней — они автоматически продлят доступ если платёж не пройдёт."
+                    else ""
+
                     val msg = if (isTrial)
-                        "⏰ Пробный период AIMLY истекает $date.\n\nОформите подписку, чтобы не потерять доступ:"
+                        "⏰ Пробный период AIMLY истекает $date.\n\nОформите подписку, чтобы не потерять доступ:$bufferLine"
                     else
-                        "⏰ Подписка AIMLY истекает $date.\n\nПродлите подписку, чтобы не прерывать мониторинг:"
+                        "⏰ Подписка AIMLY истекает $date.\n\nПродлите подписку, чтобы не прерывать мониторинг:$bufferLine"
 
                     val markup = InlineKeyboardMarkup(listOf(
                         InlineKeyboardRow(listOf(
@@ -227,59 +233,109 @@ class SubscriptionService(
                     expiry.notifiedRenewal = true
                     expiryRepository.save(expiry)
 
-                    log.info("[SUB] Уведомление об истечении: userId=${user.id} email=${user.email} дата=$date isTrial=$isTrial")
+                    log.info("[SUB] Уведомление об истечении: userId=${user.id} email=${user.email} дата=$date isTrial=$isTrial буфер=$buffer")
                 }.onFailure { log.warn("notify expiring userId=${user.id}: ${it.message}") }
             }
         }
     }
 
 
+    // ─── Главная логика буфера ────────────────────────────────────────────────
+    // Сценарий A (нормальный): Tribute продлил → renewed_subscription → expiresAt обновлён →
+    //   deactivateExpired() не видит эту запись (она не истекла) → буфер не тронут.
+    //
+    // Сценарий B (автоплатёж не прошёл): expiresAt < now, Tribute молчит →
+    //   deactivateExpired() видит запись → если bonusDaysBuffer > 0 →
+    //   продлеваем expiresAt на весь буфер, обнуляем буфер, уведомляем пользователя.
+    //   Если Tribute всё равно не продлит в эти дни — после истечения буфера
+    //   подписка деактивируется стандартно.
+    //
+    // Сценарий C (буфер истощён): expiresAt < now, буфер = 0 → деактивация как раньше.
+
     fun deactivateExpired() {
         expiryRepository.findExpired(LocalDateTime.now()).forEach { expiry ->
             val user     = expiry.user
             val wasTrial = user.subscriptionStatus == "TRIAL"
-            if (user.subscriptionStatus in setOf("ACTIVE", "TRIAL")) {
-                user.subscriptionStatus = "INACTIVE"
-                user.subscriptionPlan   = null
-                userRepository.save(user)
 
-                log.info("[SUB] Истекла: userId=${user.id} email=${user.email} был=${if (wasTrial) "TRIAL" else "ACTIVE"}")
+            if (user.subscriptionStatus !in setOf("ACTIVE", "TRIAL")) return@forEach
+
+            // Сценарий B: есть бонусный буфер — используем его вместо деактивации
+            if (expiry.bonusDaysBuffer > 0) {
+                val daysToAdd      = expiry.bonusDaysBuffer
+                val newExpiresAt   = LocalDateTime.now().plusDays(daysToAdd.toLong())
+                expiry.expiresAt       = newExpiresAt
+                expiry.bonusDaysBuffer = 0
+                expiry.notifiedRenewal = false
+                expiryRepository.save(expiry)
+
+                log.info(
+                    "[SUB] Буфер бонусных дней использован: userId=${user.id} email=${user.email} " +
+                            "дней=$daysToAdd новая_дата=$newExpiresAt"
+                )
 
                 user.telegramId?.let { tgId ->
                     runCatching {
-                        val msg = if (wasTrial)
-                            "Пробный период закончился.\n\n" +
-                                    "Вы попробовали AIMLY — теперь можно оформить полный доступ и продолжить получать лиды из Telegram.\n\n" +
-                                    "Тариф START — 4 990 ₽/мес:\n" +
-                                    "✔ Мониторинг чатов по ключевым словам\n" +
-                                    "✔ Лиды без ограничений\n" +
-                                    "✔ AI-поиск и фильтрация лидов\n" +
-                                    "✔ Персонализация под ваш бизнес"
-                        else
-                            "Подписка AIMLY закончилась.\n\n" +
-                                    "Мониторинг приостановлен. Чтобы снова получать лиды — продлите подписку.\n\n" +
-                                    "Тариф START — 4 990 ₽/мес:\n" +
-                                    "✔ Мониторинг чатов по ключевым словам\n" +
-                                    "✔ Лиды без ограничений\n" +
-                                    "✔ AI-поиск и фильтрация лидов\n" +
-                                    "✔ Персонализация под ваш бизнес"
-
                         val markup = InlineKeyboardMarkup(listOf(
                             InlineKeyboardRow(listOf(
                                 InlineKeyboardButton.builder()
-                                    .text("💳 Оформить подписку")
+                                    .text("💳 Продлить подписку")
                                     .url(BotPaymentHandler.TRIBUTE_BOT_URL)
                                     .build()
                             ))
                         ))
-
-                        bot.sendText(tgId, msg, markup)
-                    }.onFailure { log.warn("notify expired userId=${user.id}: ${it.message}") }
+                        bot.sendText(
+                            tgId,
+                            "🎁 Автоплатёж не прошёл, но у вас были бонусные дни!\n\n" +
+                                    "Мы автоматически продлили доступ на $daysToAdd дн.\n" +
+                                    "📅 Доступ до: ${newExpiresAt.toLocalDate()}\n\n" +
+                                    "Пожалуйста, обновите способ оплаты, чтобы не потерять доступ:",
+                            markup,
+                        )
+                    }.onFailure { log.warn("notify buffer used userId=${user.id}: ${it.message}") }
                 }
+                return@forEach
+            }
+
+            // Сценарий C: буфер пуст — стандартная деактивация
+            user.subscriptionStatus = "INACTIVE"
+            user.subscriptionPlan   = null
+            userRepository.save(user)
+
+            log.info("[SUB] Истекла: userId=${user.id} email=${user.email} был=${if (wasTrial) "TRIAL" else "ACTIVE"}")
+
+            user.telegramId?.let { tgId ->
+                runCatching {
+                    val msg = if (wasTrial)
+                        "Пробный период закончился.\n\n" +
+                                "Вы попробовали AIMLY — теперь можно оформить полный доступ и продолжить получать лиды из Telegram.\n\n" +
+                                "Тариф START — 4 990 ₽/мес:\n" +
+                                "✔ Мониторинг чатов по ключевым словам\n" +
+                                "✔ Лиды без ограничений\n" +
+                                "✔ AI-поиск и фильтрация лидов\n" +
+                                "✔ Персонализация под ваш бизнес"
+                    else
+                        "Подписка AIMLY закончилась.\n\n" +
+                                "Мониторинг приостановлен. Чтобы снова получать лиды — продлите подписку.\n\n" +
+                                "Тариф START — 4 990 ₽/мес:\n" +
+                                "✔ Мониторинг чатов по ключевым словам\n" +
+                                "✔ Лиды без ограничений\n" +
+                                "✔ AI-поиск и фильтрация лидов\n" +
+                                "✔ Персонализация под ваш бизнес"
+
+                    val markup = InlineKeyboardMarkup(listOf(
+                        InlineKeyboardRow(listOf(
+                            InlineKeyboardButton.builder()
+                                .text("💳 Оформить подписку")
+                                .url(BotPaymentHandler.TRIBUTE_BOT_URL)
+                                .build()
+                        ))
+                    ))
+
+                    bot.sendText(tgId, msg, markup)
+                }.onFailure { log.warn("notify expired userId=${user.id}: ${it.message}") }
             }
         }
     }
-
 
 
     private fun buildGrantMessage(plan: String, expiresAt: LocalDateTime) = when (plan) {

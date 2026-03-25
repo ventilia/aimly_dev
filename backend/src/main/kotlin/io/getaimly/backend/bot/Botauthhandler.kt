@@ -9,6 +9,7 @@ import io.getaimly.backend.auth.UnauthorizedException
 import io.getaimly.backend.auth.dto.LoginRequest
 import io.getaimly.backend.lead.LeadRepository
 import io.getaimly.backend.lead.LeadStatus
+import io.getaimly.backend.referral.ReferralService
 import io.getaimly.backend.user.UserRepository
 import org.slf4j.LoggerFactory
 import org.telegram.telegrambots.meta.api.objects.User
@@ -22,6 +23,7 @@ class BotAuthHandler(
     private val leadRepository: LeadRepository,
     private val authService: AuthService,
     private val paymentHandler: BotPaymentHandler,
+    private val referralService: ReferralService,
 ) {
 
     private val log = LoggerFactory.getLogger(BotAuthHandler::class.java)
@@ -30,6 +32,7 @@ class BotAuthHandler(
         const val SITE_URL       = "https://getaimly.io"
         const val SITE_DASHBOARD = "$SITE_URL/dashboard"
         private const val PAY_PREFIX = "pay_"
+        private const val REF_PREFIX = "ref_"
     }
 
 
@@ -55,6 +58,53 @@ class BotAuthHandler(
     private fun handleLinkToken(chatId: Long, from: User, token: String) {
         val tgUser = "${from.firstName} (@${from.userName ?: "—"}, tgId=${from.id})"
 
+        // ── Реферальная ссылка: /start ref_XXXXXX ─────────────────────────────
+        if (token.startsWith(REF_PREFIX)) {
+            val refCode  = token.removePrefix(REF_PREFIX)
+            val existing = userRepository.findByTelegramId(from.id).orElse(null)
+
+            log.info("[BOT][AUTH] Переход по реферальной ссылке: $tgUser code=$refCode")
+
+            // Проверяем что код существует
+            val codeEntity = referralService.resolveReferralCode(refCode)
+            if (codeEntity == null) {
+                log.warn("[BOT][AUTH] Реферальный код не найден: $tgUser code=$refCode")
+                // Не сообщаем пользователю об ошибке кода — просто показываем обычный экран
+                if (existing != null) showMainMenu(chatId, existing.firstName)
+                else showWelcome(chatId, from.firstName)
+                return
+            }
+
+            if (existing != null) {
+                // Пользователь уже зарегистрирован — пробуем зачесть реферала
+                runCatching { referralService.registerRefereeIfNew(refCode, existing) }
+                    .onFailure { log.warn("[BOT][AUTH] Ошибка регистрации рефери: ${it.message}") }
+                showMainMenu(chatId, existing.firstName)
+            } else {
+                // Новый пользователь — сохраняем код в сессии, показываем приветствие с входом
+                // Код применится после успешного логина в handleWaitingPassword
+                sessions[chatId] = UserSession(
+                    step                = BotStep.WAITING_EMAIL,
+                    msgId               = 0,
+                    pendingReferralCode = refCode,
+                )
+                log.info("[BOT][AUTH] Реферальный код сохранён в сессии: $tgUser code=$refCode")
+                sender.sendText(
+                    chatId,
+                    "👋 Привет, ${from.firstName ?: "там"}!\n\n" +
+                            "Вы перешли по реферальной ссылке AIMLY.\n\n" +
+                            "*AIMLY* — сервис поиска лидов в Telegram-чатах по ключевым словам.\n\n" +
+                            "Войдите или зарегистрируйтесь на сайте, а затем авторизуйтесь здесь:\n" +
+                            "🌐 $SITE_URL\n\n" +
+                            "Введите email от аккаунта AIMLY:",
+                    markup        = keyboard(row(btn("❌ Отмена", "auth:cancel"))),
+                    parseMarkdown = true,
+                )
+            }
+            return
+        }
+
+        // ── pay_ токен ────────────────────────────────────────────────────────
         if (token.startsWith(PAY_PREFIX)) {
             val realToken = token.removePrefix(PAY_PREFIX)
             log.info("[BOT][AUTH] Попытка привязки через pay_token: $tgUser")
@@ -89,6 +139,7 @@ class BotAuthHandler(
             return
         }
 
+        // ── pay (без токена) ──────────────────────────────────────────────────
         if (token == "pay") {
             val existing = userRepository.findByTelegramId(from.id).orElse(null)
             if (existing != null) {
@@ -110,7 +161,7 @@ class BotAuthHandler(
             return
         }
 
-        // Обычная привязка через link token
+        // ── Обычная привязка через link token ────────────────────────────────
         log.info("[BOT][AUTH] Попытка привязки Telegram: $tgUser")
         val ok = authService.linkTelegram(token, from.id, from.userName)
         if (ok) {
@@ -205,7 +256,13 @@ class BotAuthHandler(
 
     fun startLoginFlow(chatId: Long, msgId: Int) {
         log.info("[BOT][AUTH] Начало входа (форма логина): chatId=$chatId")
-        sessions[chatId] = UserSession(step = BotStep.WAITING_EMAIL, msgId = msgId)
+        // Сохраняем pendingReferralCode если он уже есть в сессии (например, пришли по ref_ ссылке)
+        val existingRefCode = sessions[chatId]?.pendingReferralCode
+        sessions[chatId] = UserSession(
+            step                = BotStep.WAITING_EMAIL,
+            msgId               = msgId,
+            pendingReferralCode = existingRefCode,
+        )
         sender.editText(
             chatId, msgId,
             "🔐 *Вход в аккаунт*\n\nВведите email от вашего аккаунта getaimly.io:",
@@ -251,6 +308,18 @@ class BotAuthHandler(
                     val name = result.auth.firstName ?: email.split("@").first()
                     log.info("[BOT][AUTH] ✅ Успешный вход: $tgUser userId=${result.auth.userId} email=$email план=${result.auth.subscriptionPlan} статус=${result.auth.subscriptionStatus}")
 
+                    // ── Применяем реферальный код если был сохранён ──────────
+                    val refCode = session.pendingReferralCode
+                    if (refCode != null) {
+                        val user = userRepository.findByTelegramId(from.id).orElse(null)
+                        if (user != null) {
+                            runCatching { referralService.registerRefereeIfNew(refCode, user) }
+                                .onSuccess { log.info("[REFERRAL] Рефери зарегистрирован после входа: userId=${user.id} code=$refCode") }
+                                .onFailure { log.warn("[REFERRAL] Ошибка регистрации рефери после входа: ${it.message}") }
+                        }
+                    }
+                    // ─────────────────────────────────────────────────────────
+
                     sender.sendText(chatId, "✅ Добро пожаловать, $name!\n\nТеперь лиды будут приходить сюда.")
 
                     when (session.pendingAction) {
@@ -263,6 +332,8 @@ class BotAuthHandler(
                 }
                 is LoginResult.PendingVerification -> {
                     log.warn("[BOT][AUTH] Email не подтверждён: $tgUser email=\"$email\"")
+                    // Сохраняем сессию обратно чтобы не потерять pendingReferralCode
+                    sessions[chatId] = session.copy(step = BotStep.WAITING_EMAIL, email = null)
                     sender.sendText(
                         chatId,
                         "📧 Email не подтверждён.\n\nПроверьте почту $email и перейдите по ссылке.",
@@ -288,6 +359,8 @@ class BotAuthHandler(
                 else                        -> "🔴 Ошибка входа. Попробуйте позже."
             }
             val pendingAction = session.pendingAction
+            // Восстанавливаем сессию чтобы не потерять pendingReferralCode при повторной попытке
+            sessions[chatId] = session.copy(step = BotStep.WAITING_EMAIL, email = null)
             sender.sendText(
                 chatId, msg,
                 markup = keyboard(row(

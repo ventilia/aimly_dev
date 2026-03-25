@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.getaimly.backend.bot.AimlyBot
+import io.getaimly.backend.referral.ReferralService
 import io.getaimly.backend.user.UserRepository
 import jakarta.persistence.*
 import jakarta.servlet.http.HttpServletRequest
@@ -86,6 +87,7 @@ class TributeWebhookController(
     private val objectMapper:     ObjectMapper,
     private val bot:              AimlyBot,
     private val cfg:              TributeProperties,
+    private val referralService:  ReferralService,   // ← новый
 ) {
     private val log = LoggerFactory.getLogger(TributeWebhookController::class.java)
 
@@ -222,12 +224,27 @@ class TributeWebhookController(
         user.updatedAt          = LocalDateTime.now()
         userRepository.save(user)
 
+        // Сохраняем expiresAt от Tribute. Буфер bonusDaysBuffer не трогаем — он
+        // мог уже содержать бонусные дни от предыдущих рефералов.
         val expiry = expiryRepository.findByUserId(user.id)
             ?.apply { this.expiresAt = expiresAt; this.notifiedRenewal = false }
             ?: SubscriptionExpiry(user = user, expiresAt = expiresAt)
         expiryRepository.save(expiry)
 
         log.info("[SUB] Оплачена (Tribute new): userId=${user.id} email=${user.email} plan=$plan до=$expiresAt tgId=$tgId")
+
+        // ── Реферальный бонус ─────────────────────────────────────────────────
+        // Если этот пользователь пришёл по чьей-то реферальной ссылке —
+        // начисляем реферреру +5 дней в bonusDaysBuffer. Идемпотентно.
+        runCatching {
+            val bonusGranted = referralService.grantBonusIfEligible(user)
+            if (bonusGranted) {
+                log.info("[REFERRAL] Бонус реферреру начислен за нового подписчика userId=${user.id}")
+            }
+        }.onFailure { e ->
+            log.warn("[REFERRAL] Ошибка начисления бонуса реферреру для userId=${user.id}: ${e.message}")
+        }
+        // ─────────────────────────────────────────────────────────────────────
 
         runCatching {
             bot.sendText(
@@ -261,6 +278,9 @@ class TributeWebhookController(
         user.updatedAt = LocalDateTime.now()
         userRepository.save(user)
 
+        // Обновляем только expiresAt — bonusDaysBuffer не трогаем!
+        // Буфер останется нетронутым и будет использован только если
+        // следующий автоплатёж не пройдёт.
         val expiry = expiryRepository.findByUserId(user.id)
             ?.apply { this.expiresAt = expiresAt; this.notifiedRenewal = false }
             ?: SubscriptionExpiry(user = user, expiresAt = expiresAt)

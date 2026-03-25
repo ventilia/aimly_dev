@@ -8,6 +8,7 @@ import io.getaimly.backend.lead.KeywordRepository
 import io.getaimly.backend.lead.LeadRepository
 import io.getaimly.backend.lead.LeadService
 import io.getaimly.backend.lead.LeadStatus
+import io.getaimly.backend.referral.ReferralService
 import io.getaimly.backend.subscription.SubscriptionExpiryRepository
 import io.getaimly.backend.user.UserRepository
 import jakarta.annotation.PostConstruct
@@ -41,6 +42,7 @@ class AimlyBot(
     private val expiryRepository: SubscriptionExpiryRepository,
     private val aiService: AiService,
     private val chatSearchService: ChatSearchService,
+    private val referralService: ReferralService,          // ← новый
 ) : SpringLongPollingBot, LongPollingSingleThreadUpdateConsumer {
 
     private val log            = LoggerFactory.getLogger(AimlyBot::class.java)
@@ -57,12 +59,13 @@ class AimlyBot(
     )
 
     private val authHandler = BotAuthHandler(
-        sender         = sender,
-        sessions       = sessions,
-        userRepository = userRepository,
-        leadRepository = leadRepository,
-        authService    = authService,
-        paymentHandler = paymentHandler,
+        sender          = sender,
+        sessions        = sessions,
+        userRepository  = userRepository,
+        leadRepository  = leadRepository,
+        authService     = authService,
+        paymentHandler  = paymentHandler,
+        referralService = referralService,   // ← новый
     )
 
     private val leadsHandler = BotLeadsHandler(
@@ -100,6 +103,7 @@ class AimlyBot(
         expiryRepository       = expiryRepository,
         authService            = authService,
         leadService            = leadService,
+        referralService        = referralService,   // ← новый
     )
 
     private val chatSearchHandler = BotChatSearchHandler(
@@ -110,6 +114,13 @@ class AimlyBot(
         keywordRepository      = keywordRepository,
         leadService            = leadService,
         chatSearchService      = chatSearchService,
+    )
+
+    private val referralHandler = BotReferralHandler(   // ← новый handler
+        sender          = sender,
+        userRepository  = userRepository,
+        referralService = referralService,
+        expiryRepository = expiryRepository,
     )
 
 
@@ -282,6 +293,11 @@ class AimlyBot(
             }
 
             data == "payment:plans" -> paymentHandler.showPlans(chatId, msgId, from.id)
+
+            // ── Реферальная программа ─────────────────────────────────────────
+            data == "referral:info" -> referralHandler.showReferral(chatId, msgId, from.id)
+            // ──────────────────────────────────────────────────────────────────
+
             data == "leads:new"      -> leadsHandler.showLeadsList(chatId, msgId, from.id, 0, "NEW")
             data == "leads:all"      -> leadsHandler.showLeadsList(chatId, msgId, from.id, 0, null)
             data == "leads:readall"  -> leadsHandler.markAllRead(chatId, msgId, from.id)

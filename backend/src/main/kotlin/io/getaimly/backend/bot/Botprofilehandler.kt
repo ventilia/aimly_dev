@@ -6,6 +6,7 @@ import io.getaimly.backend.lead.KeywordRepository
 import io.getaimly.backend.lead.LeadRepository
 import io.getaimly.backend.lead.LeadService
 import io.getaimly.backend.lead.LeadStatus
+import io.getaimly.backend.referral.ReferralService
 import io.getaimly.backend.subscription.SubscriptionExpiryRepository
 import io.getaimly.backend.user.UserRepository
 import org.slf4j.LoggerFactory
@@ -24,6 +25,7 @@ class BotProfileHandler(
     private val expiryRepository: SubscriptionExpiryRepository,
     private val authService: AuthService,
     private val leadService: LeadService,
+    private val referralService: ReferralService,
 ) {
 
     private val log = LoggerFactory.getLogger(BotProfileHandler::class.java)
@@ -44,6 +46,9 @@ class BotProfileHandler(
         val expiry     = expiryRepository.findByUserId(user.id)
         val since      = user.createdAt?.toLocalDate()?.toString() ?: "—"
 
+        // Реферальная статистика для краткого отображения в профиле
+        val refStats   = referralService.getStats(user)
+
         log.info("[BOT][PROFILE] Просмотр профиля: userId=${user.id} email=${user.email} план=${user.subscriptionPlan} статус=${user.subscriptionStatus} чатов=$chatCount ключ_слов=$kwCount всего_лидов=$totalLeads новых=$newLeads")
 
         val plan          = user.subscriptionPlan
@@ -51,11 +56,16 @@ class BotProfileHandler(
 
         val subLine = when {
             user.subscriptionStatus == "ACTIVE" -> {
-                val till = expiry?.expiresAt?.toLocalDate()?.toString() ?: "—"
-                "✅ ${user.subscriptionPlan ?: "ACTIVE"} — до $till"
+                val till   = expiry?.expiresAt?.toLocalDate()?.toString() ?: "—"
+                val buffer = expiry?.bonusDaysBuffer ?: 0
+                val bufPart = if (buffer > 0) " \\(\\+$buffer бонусных дн\\.\\)" else ""
+                "✅ ${user.subscriptionPlan ?: "ACTIVE"} — до $till$bufPart"
             }
-            user.subscriptionStatus == "TRIAL" -> "🔵 Пробный период"
-            else                                -> "❌ Нет активной подписки"
+            user.subscriptionStatus == "TRIAL" -> {
+                val till = expiry?.expiresAt?.toLocalDate()?.toString() ?: "—"
+                "🔵 Пробный период до $till"
+            }
+            else -> "❌ Нет активной подписки"
         }
 
         val contextLine = when {
@@ -64,12 +74,17 @@ class BotProfileHandler(
             else                                  -> "\n🎯 *Бизнес-контекст AI:* не задан"
         }
 
+        // Реферальная строка — всегда показываем кратко
+        val refLine = "\n👥 *Рефералы:* ${refStats.paidReferrals} оплатили " +
+                "\\(бонус: ${refStats.bonusDaysLeft} дн\\.\\)"
+
         val text = "👤 *Профиль*\n\n" +
                 "📧 ${user.email.md()}\n" +
                 "👤 ${(user.firstName ?: "—").md()}\n" +
                 "📱 Telegram: ✅ привязан\n" +
                 "💳 Подписка: ${subLine.md()}" +
-                contextLine + "\n\n" +
+                contextLine +
+                refLine + "\n\n" +
                 "📊 *Статистика:*\n" +
                 "💬 Чатов: $chatCount\n" +
                 "🔍 Ключевых слов: $kwCount\n" +
@@ -89,6 +104,9 @@ class BotProfileHandler(
                 "🎯 Настроить AI-персонализацию",
             "profile:edit_context",
         )))
+
+        // Реферальная программа — отдельная кнопка
+        rows.add(row(btn("👥 Реферальная программа", "referral:info")))
 
         rows.add(row(btn("🔓 Отвязать Telegram", "profile:unlink_tg")))
         rows.add(row(btn("◀️ Главное меню",       "menu:back")))
