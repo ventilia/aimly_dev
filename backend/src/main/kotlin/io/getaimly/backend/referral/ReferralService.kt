@@ -4,6 +4,7 @@ import io.getaimly.backend.subscription.SubscriptionExpiryRepository
 import io.getaimly.backend.user.User
 import io.getaimly.backend.user.UserRepository
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
@@ -11,9 +12,9 @@ import java.time.LocalDateTime
 data class ReferralStatsDto(
     val code:           String,
     val referralLink:   String,
-    val totalReferrals: Long,  // Всего перешли по ссылке
-    val paidReferrals:  Long,  // Из них оплатили (бонус начислен)
-    val bonusDaysLeft:  Int,   // Накопленный буфер бонусных дней
+    val totalReferrals: Long,
+    val paidReferrals:  Long,
+    val bonusDaysLeft:  Int,
 )
 
 @Service
@@ -22,12 +23,13 @@ class ReferralService(
     private val referralActivationRepository: ReferralActivationRepository,
     private val expiryRepository:             SubscriptionExpiryRepository,
     private val userRepository:               UserRepository,
+    // ✅ Берём из application.properties — так же как в AuthController и AimlyBot
+    @Value("\${telegram.bot.username}") private val botUsername: String,
 ) {
     private val log = LoggerFactory.getLogger(ReferralService::class.java)
 
     companion object {
         const val BONUS_DAYS_PER_REFERRAL = 5
-        const val BOT_USERNAME            = "aimly_bot" // совпадает с telegram.bot.username
     }
 
     // ─── Получить или создать реферальный код пользователя ───────────────────
@@ -58,20 +60,12 @@ class ReferralService(
     }
 
     // ─── Зафиксировать переход по реферальной ссылке ─────────────────────────
-    // Вызывается когда пользователь ввёл /start ref_CODE в боте.
-    // Сохраняем связь «рефери → реферрер» только если:
-    //   1. Код существует
-    //   2. Пользователь ещё не зарегистрирован (нет userId), либо только что зарегистрирован
-    //      и у него ещё нет записи активации
-    // refereeUser — пользователь, перешедший по ссылке (может быть null если ещё не зарегистрирован)
-    // Возвращает код реферрера для сохранения в сессии
 
     fun resolveReferralCode(code: String): ReferralCode? =
         referralCodeRepository.findByCode(code)
 
     @Transactional
     fun registerRefereeIfNew(referrerCode: String, referee: User) {
-        // Не засчитываем самого себя
         val refCodeEntity = referralCodeRepository.findByCode(referrerCode) ?: run {
             log.warn("[REFERRAL] Код не найден: code=$referrerCode refereeId=${referee.id}")
             return
@@ -81,7 +75,6 @@ class ReferralService(
             return
         }
 
-        // Уже зарегистрирован как рефери (по другой или той же ссылке)
         if (referralActivationRepository.findByRefereeId(referee.id) != null) {
             log.debug("[REFERRAL] Пользователь уже является рефери: refereeId=${referee.id}")
             return
@@ -96,8 +89,6 @@ class ReferralService(
     }
 
     // ─── Начислить бонус реферреру при первой оплате рефери ─────────────────
-    // Вызывается из TributeWebhookController при new_subscription.
-    // Идемпотентно: если bonusGranted=true — ничего не делает.
 
     @Transactional
     fun grantBonusIfEligible(referee: User): Boolean {
@@ -114,10 +105,6 @@ class ReferralService(
             expiry.bonusDaysBuffer += BONUS_DAYS_PER_REFERRAL
             expiryRepository.save(expiry)
         }
-        // Если у реферрера нет записи в expiry (нет подписки) — буфер будет добавлен
-        // когда он оформит подписку. Для этого сохраняем факт в activation и начислим
-        // буфер лениво при создании expiry. Пока просто логируем — это edge-case,
-        // обычно реферрер уже является подписчиком.
 
         activation.bonusGranted   = true
         activation.bonusGrantedAt = LocalDateTime.now()
@@ -133,15 +120,15 @@ class ReferralService(
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
-    fun buildLink(code: String): String = "https://t.me/$BOT_USERNAME?start=ref_$code"
+    // ✅ botUsername теперь из @Value, не захардкожен
+    fun buildLink(code: String): String = "https://t.me/$botUsername?start=ref_$code"
 
     private fun generateUniqueCode(): String {
-        val chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // без O,0,I,1 — визуально похожи
+        val chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
         repeat(20) {
             val candidate = (1..6).map { chars.random() }.joinToString("")
             if (!referralCodeRepository.existsByCode(candidate)) return candidate
         }
-        // Крайне маловероятно, но на всякий случай увеличиваем длину
         return (1..10).map { chars.random() }.joinToString("")
     }
 }
