@@ -5,12 +5,13 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="a461964d-f6a3-4e0b-a3fa-4fab913d5a3e" name="Changes" comment="проверка тг статс">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/.env" beforeDir="false" afterPath="$PROJECT_DIR$/backend/.env" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/Botchatsearchhandler.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/Botchatsearchhandler.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/Botsender.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/Botsender.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/.env" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/.env" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/userbot/.env" beforeDir="false" afterPath="$PROJECT_DIR$/userbot/.env" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/config/SecurityConfig.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/config/SecurityConfig.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/src/App.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/App.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/src/components/AuthModal.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/components/AuthModal.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/src/dashboard/ChatsPage.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/dashboard/ChatsPage.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/src/dashboard/KeywordsPage.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/dashboard/KeywordsPage.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/src/dashboard/LeadsPage.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/dashboard/LeadsPage.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/src/hooks/useAuth.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/hooks/useAuth.ts" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -144,6 +145,7 @@
       <workItem from="1773333237414" duration="10981000" />
       <workItem from="1773438883580" duration="8063000" />
       <workItem from="1773485112417" duration="7420000" />
+      <workItem from="1774457194471" duration="311000" />
     </task>
     <task id="LOCAL-00001" summary="Fix version">
       <option name="closed" value="true" />
@@ -407,7 +409,7 @@
                   <entry key="branch">
                     <value>
                       <list>
-                        <option value="master" />
+                        <option value="origin/master" />
                       </list>
                     </value>
                   </entry>

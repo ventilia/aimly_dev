@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { chatsApi, keywordsApi, type ChatSubscription } from '../api/leads.ts'
 import { authApi } from '../api/auth'
 import { useAuthContext } from '../context/AuthContext'
-import { logEvent } from '../analytics/userLogger'
 import s from './Chatspage.module.css'
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
@@ -335,14 +334,15 @@ export default function ChatsPage() {
     const [loadingKeywords,     setLoadingKeywords]     = useState(false)
     const [searchingByKeywords, setSearchingByKeywords] = useState(false)
 
+    // Trial bot
     const [trialBotLoading, setTrialBotLoading] = useState(false)
 
     const plan  = user?.subscriptionPlan   ?? null
     const st    = user?.subscriptionStatus ?? null
     const hasAi = plan === 'START' || plan === 'BUSINESS' || st === 'TRIAL'
 
+    // Открыть бота для получения trial-периода
     const handleTrialBotOpen = async () => {
-        logEvent('BUTTON_CLICK', { label: 'Запустить бота бесплатно (Чаты)', page: '/dashboard/chats' })
         setTrialBotLoading(true)
         try {
             const res = await authApi.getTelegramLink()
@@ -400,24 +400,19 @@ export default function ChatsPage() {
     const add = async () => {
         const link = input.trim()
         if (!link) return
-        logEvent('CHAT_ADD_START', { label: 'Ручное добавление чата', meta: { link: link.slice(0, 80) } })
         setAdding(true); setError('')
         try {
             await chatsApi.add(link)
-            logEvent('CHAT_ADD_SUCCESS', { label: 'Чат добавлен вручную' })
             setInput('')
             await fetchChats()
             setTimeout(() => fetchChats(), 5_000)
             setTimeout(() => fetchChats(), 15_000)
         } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : 'Не удалось добавить чат'
-            logEvent('CHAT_ADD_FAIL', { label: msg })
-            setError(msg)
+            setError(e instanceof Error ? e.message : 'Не удалось добавить чат')
         } finally { setAdding(false) }
     }
 
     const remove = async (id: number) => {
-        logEvent('CHAT_DELETE', { label: 'Удаление чата', meta: { chatId: String(id) } })
         setRemoving(id)
         try {
             await chatsApi.remove(id)
@@ -428,10 +423,6 @@ export default function ChatsPage() {
     }
 
     const runSearch = async (query: string, pt: PeerTypeFilter = peerType) => {
-        logEvent('CHAT_SEARCH_START', {
-            label: 'AI-поиск чатов',
-            meta: { query: query.slice(0, 80), peerType: pt },
-        })
         setSearching(true)
         setSearchError('')
         setSearchResults(null)
@@ -449,14 +440,8 @@ export default function ChatsPage() {
             setSearchResults(resp.results)
             setSearchQueries(resp.queries)
             if (resp.results.length > 0) setSearchOpen(true)
-            logEvent('CHAT_SEARCH_SUCCESS', {
-                label: `Найдено ${resp.results.length} чатов`,
-                meta: { count: String(resp.results.length) },
-            })
         } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : 'Ошибка поиска'
-            logEvent('FORM_ERROR', { label: 'AI-поиск чатов', meta: { error: msg } })
-            setSearchError(msg)
+            setSearchError(e instanceof Error ? e.message : 'Ошибка поиска')
         } finally { setSearching(false) }
     }
 
@@ -464,7 +449,6 @@ export default function ChatsPage() {
 
     const handleSearchByKeywords = async () => {
         if (userKeywords.length === 0) return
-        logEvent('BUTTON_CLICK', { label: 'Найти чаты по ключевым словам' })
         setSearchingByKeywords(true)
         await runSearch(userKeywords.slice(0, 5).join(', '), peerType)
         setSearchingByKeywords(false)
@@ -472,36 +456,27 @@ export default function ChatsPage() {
 
     const handleAddFromSearch = async (link: string) => {
         if (addedLinks.has(link) || addingLink === link) return
-        logEvent('CHAT_ADD_START', { label: 'Добавление чата из AI-поиска', meta: { link: link.slice(0, 80) } })
         setAddingLink(link); setError('')
         try {
             await chatsApi.add(link)
             setAddedLinks(prev => new Set([...prev, link]))
-            logEvent('CHAT_ADD_SUCCESS', { label: 'Чат добавлен из AI-поиска' })
             await fetchChats()
             setTimeout(() => fetchChats(), 5_000)
             setTimeout(() => fetchChats(), 15_000)
         } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : 'Не удалось добавить чат'
-            logEvent('CHAT_ADD_FAIL', { label: msg })
-            setError(msg)
+            setError(e instanceof Error ? e.message : 'Не удалось добавить чат')
         } finally { setAddingLink(null) }
     }
 
     const handleDismiss    = (link: string) => setDismissedLinks(prev => new Set([...prev, link]))
-    const handleDismissAll = () => {
-        logEvent('BUTTON_CLICK', { label: 'Отклонить все чаты из AI-поиска' })
-        if (searchResults) setDismissedLinks(new Set(searchResults.map(r => r.link)))
-    }
+    const handleDismissAll = () => { if (searchResults) setDismissedLinks(new Set(searchResults.map(r => r.link))) }
     const handleAddAll     = async () => {
         if (!searchResults) return
-        logEvent('BUTTON_CLICK', { label: 'Добавить все чаты из AI-поиска' })
         for (const r of searchResults.filter(r => !addedLinks.has(r.link) && !dismissedLinks.has(r.link) && r.link))
             await handleAddFromSearch(r.link)
     }
 
     const handleClearResults = () => {
-        logEvent('BUTTON_CLICK', { label: 'Сбросить результаты AI-поиска чатов' })
         setSearchResults(null); setSearchQueries([])
         setDismissedLinks(new Set()); setAddedLinks(new Set())
         setSearchError(''); setSearchOpen(false)
@@ -532,18 +507,12 @@ export default function ChatsPage() {
                 )}
             </div>
 
-            {/* ─── AI-поиск чатов ────────────────────── */}
+            {/* ─── AI-поиск чатов ────────────────────────── */}
             <div className={s.searchBlock}>
                 <div
                     className={s.searchToggleBtn}
                     style={{ cursor: canToggle ? 'pointer' : 'default' }}
-                    onClick={() => {
-                        if (canToggle) {
-                            const next = !searchOpen
-                            logEvent('CLICK', { label: next ? 'Раскрыть AI-поиск чатов' : 'Свернуть AI-поиск чатов' })
-                            setSearchOpen(next)
-                        }
-                    }}
+                    onClick={() => canToggle && setSearchOpen(v => !v)}
                     role={canToggle ? 'button' : undefined}
                     aria-expanded={canToggle ? searchOpen : undefined}
                 >
@@ -620,10 +589,7 @@ export default function ChatsPage() {
                                     <span style={{ fontSize: 12, color: 'var(--c-ink-3)', flexShrink: 0 }}>Искать:</span>
                                     <PeerTypeSelector
                                         value={peerType}
-                                        onChange={v => {
-                                            logEvent('CLICK', { label: `Фильтр типа чата: ${v}` })
-                                            setPeerType(v)
-                                        }}
+                                        onChange={setPeerType}
                                         disabled={searching || searchingByKeywords}
                                     />
                                 </div>
@@ -752,10 +718,7 @@ export default function ChatsPage() {
                                         {trialBotLoading ? 'Открываем...' : '🚀 Запустить бота бесплатно'}
                                     </button>
                                 ) : (
-                                    <a href="/checkout" className={s.searchLockedBtn}
-                                       onClick={() => logEvent('SUBSCRIPTION_UPGRADE_CLICK', { label: 'Подключить (заглушка чатов)', page: '/dashboard/chats' })}>
-                                        Подключить →
-                                    </a>
+                                    <a href="/checkout" className={s.searchLockedBtn}>Подключить →</a>
                                 )}
                             </div>
                         )}

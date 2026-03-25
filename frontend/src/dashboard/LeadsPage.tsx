@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { leadsApi, type Lead, type LeadPage } from '../api/leads'
 import { LEADS_COUNT_CHANGED } from './DashboardLayout'
-import { logEvent } from '../analytics/userLogger'
 import s from './Leadspage.module.css'
 
 const STATUS_COLOR: Record<string, { bg: string; text: string }> = {
@@ -126,14 +125,7 @@ export default function LeadsPage() {
 
     useEffect(() => { load() }, [load])
 
-    // Логируем просмотр лидов при первом рендере
-    useEffect(() => {
-        logEvent('LEADS_VIEW', { label: 'Страница лидов открыта' })
-    }, [])
-
     const changeFilter = (value: string) => {
-        const label = FILTERS.find(f => f.value === value)?.label ?? value
-        logEvent('CLICK', { label: `Фильтр лидов: ${label}`, page: '/dashboard/leads' })
         setFilter(value)
         setPage(0)
     }
@@ -143,10 +135,8 @@ export default function LeadsPage() {
             const next = new Set(prev)
             if (next.has(id)) {
                 next.delete(id)
-                logEvent('CLICK', { label: 'Свернуть детали лида', meta: { leadId: String(id) } })
             } else {
                 next.add(id)
-                logEvent('CLICK', { label: 'Раскрыть детали лида', meta: { leadId: String(id) } })
             }
             return next
         })
@@ -174,10 +164,6 @@ export default function LeadsPage() {
     const setStatus = async (lead: Lead, status: string) => {
         if (lead.status === status) return
         const previousStatus = lead.status
-        logEvent('BUTTON_CLICK', {
-            label: `Статус лида: ${previousStatus} → ${status}`,
-            meta: { leadId: String(lead.id), from: previousStatus, to: status },
-        })
         setUpdating(prev => new Set(prev).add(lead.id))
         try {
             const updated = await leadsApi.updateStatus(lead.id, status)
@@ -191,7 +177,6 @@ export default function LeadsPage() {
 
     const handleMarkAllRead = async () => {
         if (markingAll) return
-        logEvent('BUTTON_CLICK', { label: 'Прочитать все лиды', page: '/dashboard/leads' })
         setMarkingAll(true)
         try {
             await leadsApi.markAllRead()
@@ -211,10 +196,6 @@ export default function LeadsPage() {
     }
 
     const handleOpen = (lead: Lead) => {
-        logEvent('LINK_CLICK', {
-            label: 'Открыть лид в Telegram',
-            meta: { leadId: String(lead.id), chat: (lead.chatTitle ?? lead.chatLink ?? '').slice(0, 60) },
-        })
         if (lead.status === 'NEW') {
             void setStatus(lead, 'VIEWED')
         }
@@ -643,10 +624,7 @@ export default function LeadsPage() {
                     {data && data.totalPages > 1 && (
                         <div className={s.pagination}>
                             {page > 0 && (
-                                <button className={s.pageBtn} onClick={() => {
-                                    logEvent('CLICK', { label: 'Лиды — предыдущая страница', meta: { page: String(page) } })
-                                    setPage(p => p - 1)
-                                }}>
+                                <button className={s.pageBtn} onClick={() => setPage(p => p - 1)}>
                                     Назад
                                 </button>
                             )}
@@ -654,10 +632,7 @@ export default function LeadsPage() {
                                 {page + 1} / {data.totalPages}
                             </span>
                             {page < data.totalPages - 1 && (
-                                <button className={s.pageBtn} onClick={() => {
-                                    logEvent('CLICK', { label: 'Лиды — следующая страница', meta: { page: String(page + 2) } })
-                                    setPage(p => p + 1)
-                                }}>
+                                <button className={s.pageBtn} onClick={() => setPage(p => p + 1)}>
                                     Вперёд
                                 </button>
                             )}

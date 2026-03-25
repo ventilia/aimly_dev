@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import type { Lang } from './i18n/translations'
 import { AuthProvider } from './context/AuthContext.tsx'
 import { useScrollFade } from './hooks/useScrollFade'
-import { usePageTracking } from './hooks/UsePageTracking.ts'
 import Header from './components/Header'
 import Hero from './components/Hero'
 import {
@@ -50,50 +49,39 @@ function Home({ lang, setLang }: { lang: Lang; setLang: (l: Lang) => void }) {
     )
 }
 
-/** Внутренний компонент — уже внутри <BrowserRouter>, может использовать usePageTracking */
-function AppRoutes({ lang, setLang }: { lang: Lang; setLang: (l: Lang) => void }) {
-    // Автоматически логирует PAGE_VIEW / PAGE_LEAVE при каждой смене маршрута
-    usePageTracking()
-
-    const pp = { lang, setLang }
-
-    return (
-        <Routes>
-            <Route path="/"              element={<Home lang={lang} setLang={setLang} />} />
-            <Route path="/about"         element={<About    {...pp} />} />
-            <Route path="/blog"          element={<Blog     {...pp} />} />
-            <Route path="/contacts"      element={<Contacts {...pp} />} />
-            <Route path="/privacy"       element={<Privacy  {...pp} />} />
-            <Route path="/terms"         element={<Terms    {...pp} />} />
-            <Route path="/refund"        element={<Refund   {...pp} />} />
-            <Route path="/checkout"      element={<Checkout {...pp} />} />
-            {}
-            <Route path="/oauth/callback" element={<OAuthCallback />} />
-
-            <Route element={<ProtectedRoute />}>
-                <Route path="/dashboard" element={<DashboardLayout lang={lang} onLang={setLang} />}>
-                    <Route index           element={<DashboardOverview lang={lang} />} />
-                    <Route path="leads"    element={<LeadsPage />} />
-                    <Route path="chats"    element={<ChatsPage />} />
-                    <Route path="keywords" element={<KeywordsPage />} />
-                    <Route path="profile"  element={<ProfilePage lang={lang} />} />
-                </Route>
-            </Route>
-
-            <Route element={<AdminRoute />}>
-                <Route path="/admin" element={<AdminPanel {...pp} />} />
-            </Route>
-        </Routes>
-    )
-}
-
 export default function App() {
     const [lang, setLang] = useState<Lang>('ru')
+    const pp = { lang, setLang }
 
     return (
         <AuthProvider>
             <BrowserRouter>
-                <AppRoutes lang={lang} setLang={setLang} />
+                <Routes>
+                    <Route path="/"              element={<Home lang={lang} setLang={setLang} />} />
+                    <Route path="/about"         element={<About    {...pp} />} />
+                    <Route path="/blog"          element={<Blog     {...pp} />} />
+                    <Route path="/contacts"      element={<Contacts {...pp} />} />
+                    <Route path="/privacy"       element={<Privacy  {...pp} />} />
+                    <Route path="/terms"         element={<Terms    {...pp} />} />
+                    <Route path="/refund"        element={<Refund   {...pp} />} />
+                    <Route path="/checkout"      element={<Checkout {...pp} />} />
+                    {}
+                    <Route path="/oauth/callback" element={<OAuthCallback />} />
+
+                    <Route element={<ProtectedRoute />}>
+                        <Route path="/dashboard" element={<DashboardLayout lang={lang} onLang={setLang} />}>
+                            <Route index           element={<DashboardOverview lang={lang} />} />
+                            <Route path="leads"    element={<LeadsPage />} />
+                            <Route path="chats"    element={<ChatsPage />} />
+                            <Route path="keywords" element={<KeywordsPage />} />
+                            <Route path="profile"  element={<ProfilePage lang={lang} />} />
+                        </Route>
+                    </Route>
+
+                    <Route element={<AdminRoute />}>
+                        <Route path="/admin" element={<AdminPanel {...pp} />} />
+                    </Route>
+                </Routes>
             </BrowserRouter>
         </AuthProvider>
     )

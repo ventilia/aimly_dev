@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import type { Lang } from '../i18n/translations'
 import { authApi } from '../api/auth'
 import { useAuthContext } from '../context/AuthContext'
-import { logEvent } from '../analytics/userLogger'
 import s from './AuthModal.module.css'
 
 
@@ -106,18 +105,22 @@ const txt = {
         googleBtn:        'Войти через Google',
         unverifiedHint:   'Мы отправили новый код на ваш email. Подтвердите почту.',
         forgotPassword:   'Забыли пароль?',
+        // Шаг 1: запрос сброса
         forgotTitle:      'Восстановление пароля',
         forgotHint:       'Введите email от вашего аккаунта, и мы отправим код для сброса пароля.',
         forgotBtn:        'Отправить код',
         forgotSuccess:    'Код отправлен. Проверьте почту',
         forgotTgHint:     'Также отправили код в Telegram, если он привязан к аккаунту.',
+        // Шаг 2: ввод кода сброса
         resetCodeTitle:   'Введите код',
         resetCodeHint:    'Отправили код сброса пароля на',
         resetCodeNote:    'Также проверьте Telegram, если он привязан к аккаунту.',
+        // Шаг 3: новый пароль
         newPasswordTitle: 'Новый пароль',
         newPassword:      'Новый пароль',
         confirmNewPass:   'Подтвердите новый пароль',
         setPasswordBtn:   'Сохранить пароль',
+        // Успех
         resetSuccessTitle: 'Пароль изменён!',
         resetSuccessText:  'Вы вошли в аккаунт. Переходим…',
     },
@@ -151,18 +154,22 @@ const txt = {
         googleBtn:        'Continue with Google',
         unverifiedHint:   'We sent a new code to your email. Please verify.',
         forgotPassword:   'Forgot password?',
+        // Step 1: request reset
         forgotTitle:      'Reset password',
         forgotHint:       'Enter your account email and we\'ll send you a reset code.',
         forgotBtn:        'Send code',
         forgotSuccess:    'Code sent. Check your email',
         forgotTgHint:     'Also sent to Telegram if it\'s linked to your account.',
+        // Step 2: enter reset code
         resetCodeTitle:   'Enter the code',
         resetCodeHint:    'We sent a reset code to',
         resetCodeNote:    'Also check Telegram if it\'s linked to your account.',
+        // Step 3: new password
         newPasswordTitle: 'New password',
         newPassword:      'New password',
         confirmNewPass:   'Confirm new password',
         setPasswordBtn:   'Save password',
+        // Success
         resetSuccessTitle: 'Password changed!',
         resetSuccessText:  'You are now signed in. Continuing…',
     },
@@ -175,6 +182,7 @@ type TabMode = 'login' | 'register'
 interface Props {
     lang:        Lang
     onClose:     () => void
+
     onSuccess?:  () => void
     initialTab?: TabMode
 }
@@ -244,16 +252,19 @@ export default function AuthModal({
     const [tab,  setTab]  = useState<TabMode>(initialTab)
     const [step, setStep] = useState<Step>('form')
 
+    // --- Поля формы входа/регистрации ---
     const [email,           setEmail]           = useState('')
     const [password,        setPassword]        = useState('')
     const [confirmPassword, setConfirmPassword] = useState('')
     const [firstName,       setFirstName]       = useState('')
     const [emailUsed,       setEmailUsed]       = useState('')
 
+    // --- Поля верификации email ---
     const [code,        setCode]        = useState('')
     const [resendTimer, setResendTimer] = useState(0)
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+    // --- Поля сброса пароля ---
     const [forgotEmail,      setForgotEmail]      = useState('')
     const [resetCode,        setResetCode]        = useState('')
     const [newPassword,      setNewPassword]      = useState('')
@@ -261,6 +272,7 @@ export default function AuthModal({
     const [resetResendTimer, setResetResendTimer] = useState(0)
     const resetTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+    // --- Состояние загрузки/ошибок ---
     const [loading,        setLoading]        = useState(false)
     const [error,          setError]          = useState<string | null>(null)
     const [codeError,      setCodeError]      = useState<string | null>(null)
@@ -272,20 +284,12 @@ export default function AuthModal({
     const resetCodeInputRef = useRef<HTMLInputElement>(null)
     const forgotEmailRef    = useRef<HTMLInputElement>(null)
 
-    // ── Логируем открытие модалки ────────────────────────────────────────────
-    useEffect(() => {
-        logEvent('MODAL_OPEN', { label: `AuthModal — ${initialTab === 'login' ? 'Вход' : 'Регистрация'}` })
-    }, [initialTab])
+
 
     useEffect(() => { setTab(initialTab) }, [initialTab])
 
     useEffect(() => {
-        const fn = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
-                logEvent('MODAL_CLOSE', { label: 'AuthModal — Escape' })
-                onClose()
-            }
-        }
+        const fn = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
         document.addEventListener('keydown', fn)
         return () => document.removeEventListener('keydown', fn)
     }, [onClose])
@@ -352,7 +356,6 @@ export default function AuthModal({
     }
 
     const switchTab = (next: TabMode) => {
-        logEvent('CLICK', { label: next === 'login' ? 'Таб: Войти' : 'Таб: Регистрация' })
         setTab(next); setError(null); setPassword(''); setConfirmPassword('')
     }
 
@@ -360,27 +363,20 @@ export default function AuthModal({
         if (onSuccess) { onSuccess() } else { onClose(); navigate('/dashboard') }
     }
 
-    // ── Обработчики форм ─────────────────────────────────────────────────────
+
 
     const handleLogin = async () => {
         setError(null)
         if (!email.trim() || !password) { setError('Заполните все поля'); return }
-        logEvent('LOGIN_ATTEMPT', { label: 'Форма входа' })
         setLoading(true)
         try {
             const res = await authApi.login(email.trim(), password)
             if (res.pendingVerification) {
                 setEmailUsed(res.email); setStep('code'); startResendTimer(60); return
             }
-            if (res.auth) {
-                logEvent('LOGIN_SUCCESS', { label: 'Email/пароль' })
-                saveSession(res.auth)
-                goToDashboard()
-            }
+            if (res.auth) { saveSession(res.auth); goToDashboard() }
         } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : 'Ошибка входа'
-            logEvent('LOGIN_FAIL', { label: msg })
-            setError(msg)
+            setError(e instanceof Error ? e.message : 'Ошибка входа')
         } finally { setLoading(false) }
     }
 
@@ -391,7 +387,6 @@ export default function AuthModal({
         }
         if (password !== confirmPassword) { setError(l.passwordsNoMatch); return }
         if (password.length < 8) { setError(l.passwordHint); return }
-        logEvent('REGISTER_ATTEMPT', { label: 'Форма регистрации' })
         setLoading(true)
         try {
             const res = await authApi.register({
@@ -401,38 +396,31 @@ export default function AuthModal({
                 firstName:      firstName.trim() || undefined,
             })
             if (res.token !== null || res.userId !== null) {
-                logEvent('REGISTER_SUCCESS', { label: 'Email/пароль — ожидает верификации' })
                 setEmailUsed(email.trim()); setStep('code'); startResendTimer(60)
             } else {
                 setError(res.message)
             }
         } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : 'Ошибка регистрации'
-            logEvent('FORM_ERROR', { label: 'Регистрация', meta: { error: msg } })
-            setError(msg)
+            setError(e instanceof Error ? e.message : 'Ошибка регистрации')
         } finally { setLoading(false) }
     }
 
     const handleVerify = async () => {
         setCodeError(null)
         if (code.length !== 6) { setCodeError('Введите 6-значный код'); return }
-        logEvent('EMAIL_VERIFY_SUBMIT', { label: 'Подтверждение кода из письма' })
         setLoading(true)
         try {
             const res = await authApi.verifyEmail(code)
             saveSession(res)
             setStep('success')
         } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : 'Неверный код'
-            logEvent('FORM_ERROR', { label: 'Верификация email', meta: { error: msg } })
-            setCodeError(msg)
+            setCodeError(e instanceof Error ? e.message : 'Неверный код')
         } finally { setLoading(false) }
     }
 
     const handleResend = async () => {
         if (resendTimer > 0) return
         setCodeError(null); setLoading(true)
-        logEvent('BUTTON_CLICK', { label: 'Отправить код повторно' })
         try {
             await authApi.resendCode(); setCode(''); startResendTimer(60)
         } catch (e: unknown) {
@@ -441,13 +429,13 @@ export default function AuthModal({
     }
 
     const handleGoogle = () => {
-        logEvent('GOOGLE_AUTH_CLICK', { label: 'Войти через Google' })
         if (onSuccess) sessionStorage.setItem('oauth_after_checkout', '1')
         sessionStorage.setItem('oauth_return_to', '/dashboard')
         window.location.href = buildGoogleOAuthUrl()
     }
 
-    // ── Сброс пароля ─────────────────────────────────────────────────────────
+
+    // ─── Обработчики сброса пароля ─────────────────────────────────────────────
 
     const handleForgotPassword = async () => {
         setForgotError(null)
@@ -456,7 +444,6 @@ export default function AuthModal({
         if (!trimmedEmail.includes('@') || !trimmedEmail.includes('.')) {
             setForgotError('Некорректный email'); return
         }
-        logEvent('FORGOT_PASSWORD_SUBMIT', { label: 'Запрос сброса пароля' })
         setLoading(true)
         try {
             await authApi.forgotPassword(trimmedEmail)
@@ -464,23 +451,20 @@ export default function AuthModal({
             setStep('reset-code')
             startResetResendTimer(60)
         } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : 'Ошибка. Попробуйте позже'
-            logEvent('FORM_ERROR', { label: 'Сброс пароля', meta: { error: msg } })
-            setForgotError(msg)
+            setForgotError(e instanceof Error ? e.message : 'Ошибка. Попробуйте позже')
         } finally { setLoading(false) }
     }
 
     const handleVerifyResetCode = async () => {
         setResetCodeError(null)
         if (resetCode.length !== 6) { setResetCodeError('Введите 6-значный код'); return }
-        logEvent('BUTTON_CLICK', { label: 'Подтвердить код сброса пароля' })
+        // Просто переходим к следующему шагу — код проверим при смене пароля
         setStep('new-password')
     }
 
     const handleResendResetCode = async () => {
         if (resetResendTimer > 0) return
         setResetCodeError(null); setLoading(true)
-        logEvent('BUTTON_CLICK', { label: 'Отправить код сброса повторно' })
         try {
             await authApi.forgotPassword(emailUsed)
             setResetCode('')
@@ -495,7 +479,6 @@ export default function AuthModal({
         if (!newPassword) { setNewPassError('Введите новый пароль'); return }
         if (newPassword.length < 8) { setNewPassError(l.passwordHint); return }
         if (newPassword !== confirmNewPass) { setNewPassError(l.passwordsNoMatch); return }
-        logEvent('RESET_PASSWORD_SUBMIT', { label: 'Сохранить новый пароль' })
         setLoading(true)
         try {
             const res = await authApi.resetPassword({
@@ -506,8 +489,8 @@ export default function AuthModal({
             saveSession(res)
             setStep('reset-success')
         } catch (e: unknown) {
+            // Если код неверный — возвращаем пользователя к вводу кода
             const msg = e instanceof Error ? e.message : 'Ошибка. Попробуйте ещё раз'
-            logEvent('FORM_ERROR', { label: 'Новый пароль', meta: { error: msg } })
             if (msg.toLowerCase().includes('код') || msg.toLowerCase().includes('code')) {
                 setStep('reset-code')
                 setResetCodeError(msg)
@@ -518,7 +501,8 @@ export default function AuthModal({
     }
 
 
-    // ── Рендер шагов ─────────────────────────────────────────────────────────
+
+    // ─── Рендер шагов ─────────────────────────────────────────────────────────────
 
     if (step === 'reset-success') {
         return (
@@ -558,19 +542,11 @@ export default function AuthModal({
 
     if (step === 'code') {
         return (
-            <div className={s.overlay} onMouseDown={e => {
-                if (e.target === e.currentTarget) {
-                    logEvent('MODAL_CLOSE', { label: 'AuthModal — клик вне (шаг code)' })
-                    onClose()
-                }
-            }}>
+            <div className={s.overlay} onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
                 <div className={s.modal} role="dialog" aria-modal="true">
                     <div className={s.header}>
                         <span className={s.title}>{l.codeTitle}</span>
-                        <button className={s.closeBtn} onClick={() => {
-                            logEvent('MODAL_CLOSE', { label: 'AuthModal — кнопка закрыть (шаг code)' })
-                            onClose()
-                        }} aria-label={l.close}>
+                        <button className={s.closeBtn} onClick={onClose} aria-label={l.close}>
                             <CloseIcon />
                         </button>
                     </div>
@@ -637,16 +613,11 @@ export default function AuthModal({
     }
 
 
-    // ── Шаг 1: запрос кода сброса ────────────────────────────────────────────
+    // ─── Шаг 1: запрос кода сброса ────────────────────────────────────────────────
 
     if (step === 'forgot') {
         return (
-            <div className={s.overlay} onMouseDown={e => {
-                if (e.target === e.currentTarget) {
-                    logEvent('MODAL_CLOSE', { label: 'AuthModal — клик вне (шаг forgot)' })
-                    onClose()
-                }
-            }}>
+            <div className={s.overlay} onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
                 <div className={s.modal} role="dialog" aria-modal="true">
                     <div className={s.header}>
                         <button
@@ -657,10 +628,7 @@ export default function AuthModal({
                             <BackIcon />
                         </button>
                         <span className={s.title}>{l.forgotTitle}</span>
-                        <button className={s.closeBtn} onClick={() => {
-                            logEvent('MODAL_CLOSE', { label: 'AuthModal — кнопка закрыть (шаг forgot)' })
-                            onClose()
-                        }} aria-label={l.close}>
+                        <button className={s.closeBtn} onClick={onClose} aria-label={l.close}>
                             <CloseIcon />
                         </button>
                     </div>
@@ -699,16 +667,11 @@ export default function AuthModal({
     }
 
 
-    // ── Шаг 2: ввод кода сброса ──────────────────────────────────────────────
+    // ─── Шаг 2: ввод кода сброса ─────────────────────────────────────────────────
 
     if (step === 'reset-code') {
         return (
-            <div className={s.overlay} onMouseDown={e => {
-                if (e.target === e.currentTarget) {
-                    logEvent('MODAL_CLOSE', { label: 'AuthModal — клик вне (шаг reset-code)' })
-                    onClose()
-                }
-            }}>
+            <div className={s.overlay} onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
                 <div className={s.modal} role="dialog" aria-modal="true">
                     <div className={s.header}>
                         <button
@@ -719,10 +682,7 @@ export default function AuthModal({
                             <BackIcon />
                         </button>
                         <span className={s.title}>{l.resetCodeTitle}</span>
-                        <button className={s.closeBtn} onClick={() => {
-                            logEvent('MODAL_CLOSE', { label: 'AuthModal — кнопка закрыть (шаг reset-code)' })
-                            onClose()
-                        }} aria-label={l.close}>
+                        <button className={s.closeBtn} onClick={onClose} aria-label={l.close}>
                             <CloseIcon />
                         </button>
                     </div>
@@ -789,17 +749,12 @@ export default function AuthModal({
     }
 
 
-    // ── Шаг 3: новый пароль ──────────────────────────────────────────────────
+    // ─── Шаг 3: новый пароль ─────────────────────────────────────────────────────
 
     if (step === 'new-password') {
         const newPassMismatch = !!confirmNewPass && confirmNewPass !== newPassword
         return (
-            <div className={s.overlay} onMouseDown={e => {
-                if (e.target === e.currentTarget) {
-                    logEvent('MODAL_CLOSE', { label: 'AuthModal — клик вне (шаг new-password)' })
-                    onClose()
-                }
-            }}>
+            <div className={s.overlay} onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
                 <div className={s.modal} role="dialog" aria-modal="true">
                     <div className={s.header}>
                         <button
@@ -810,10 +765,7 @@ export default function AuthModal({
                             <BackIcon />
                         </button>
                         <span className={s.title}>{l.newPasswordTitle}</span>
-                        <button className={s.closeBtn} onClick={() => {
-                            logEvent('MODAL_CLOSE', { label: 'AuthModal — кнопка закрыть (шаг new-password)' })
-                            onClose()
-                        }} aria-label={l.close}>
+                        <button className={s.closeBtn} onClick={onClose} aria-label={l.close}>
                             <CloseIcon />
                         </button>
                     </div>
@@ -862,24 +814,16 @@ export default function AuthModal({
 
 
 
-    // ── Основная форма (login / register) ────────────────────────────────────
+    // ─── Основная форма (login / register) ────────────────────────────────────────
 
     const confirmMismatch = !!confirmPassword && confirmPassword !== password
 
     return (
-        <div className={s.overlay} onMouseDown={e => {
-            if (e.target === e.currentTarget) {
-                logEvent('MODAL_CLOSE', { label: 'AuthModal — клик вне (основная форма)' })
-                onClose()
-            }
-        }}>
+        <div className={s.overlay} onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
             <div className={s.modal} role="dialog" aria-modal="true">
                 <div className={s.header}>
                     <span className={s.title}>{tab === 'login' ? l.login : l.register}</span>
-                    <button className={s.closeBtn} onClick={() => {
-                        logEvent('MODAL_CLOSE', { label: `AuthModal — кнопка закрыть (${tab})` })
-                        onClose()
-                    }} aria-label={l.close}>
+                    <button className={s.closeBtn} onClick={onClose} aria-label={l.close}>
                         <CloseIcon />
                     </button>
                 </div>
@@ -953,13 +897,13 @@ export default function AuthModal({
                                 hideLabel={l.hidePass}
                             />
 
+                            {/* Ссылка "Забыли пароль?" — только на табе входа */}
                             {tab === 'login' && (
                                 <div className={s.forgotRow}>
                                     <button
                                         type="button"
                                         className={s.forgotLink}
                                         onClick={() => {
-                                            logEvent('BUTTON_CLICK', { label: 'Забыли пароль?' })
                                             setForgotEmail(email.trim())
                                             setForgotError(null)
                                             setStep('forgot')

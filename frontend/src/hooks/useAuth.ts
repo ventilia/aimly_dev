@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { authApi, type AuthResponse } from '../api/auth'
-import { setLoggerUserContext, clearLoggerUserContext, logEvent } from '../analytics/userLogger'
 
 
 
@@ -37,13 +36,13 @@ export function useAuth() {
             const event = e.data
 
             if (event.type === 'LOGIN') {
+
                 setState({ user: event.user, loading: false })
-                setLoggerUserContext({ userId: event.user.id, userEmail: event.user.email })
             }
 
             if (event.type === 'LOGOUT') {
+
                 setState({ user: null, loading: false })
-                clearLoggerUserContext()
             }
         }
 
@@ -58,31 +57,27 @@ export function useAuth() {
         authApi.me()
             .then(user => {
                 setState({ user, loading: false })
-                setLoggerUserContext({ userId: user.id, userEmail: user.email })
             })
             .catch(() => {
+
                 setState({ user: null, loading: false })
-                clearLoggerUserContext()
             })
     }, [])
 
 
     const saveSession = useCallback((response: AuthResponse) => {
         setState({ user: response, loading: false })
-        setLoggerUserContext({ userId: response.id, userEmail: response.email })
         channelRef.current?.postMessage({ type: 'LOGIN', user: response } satisfies SessionEvent)
     }, [])
 
 
     const logout = useCallback(async () => {
-        logEvent('LOGOUT', { label: 'Выход из аккаунта' })
         try {
             await authApi.logout()
         } catch {
-            // ignore
+
         }
         setState({ user: null, loading: false })
-        clearLoggerUserContext()
         channelRef.current?.postMessage({ type: 'LOGOUT' } satisfies SessionEvent)
     }, [])
 
@@ -91,9 +86,9 @@ export function useAuth() {
         try {
             const user = await authApi.me()
             setState(prev => ({ ...prev, user }))
-            setLoggerUserContext({ userId: user.id, userEmail: user.email })
+
         } catch {
-            // ignore
+            // dkdkd
         }
     }, [])
 
