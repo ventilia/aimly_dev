@@ -44,6 +44,9 @@ data class SetExpiryRequest(
 
 private val VALID_PLANS = setOf("START", "BUSINESS", "TRIAL")
 
+// Длительность пробного периода в днях
+private const val TRIAL_DAYS = 7L
+
 
 @Service
 class SubscriptionService(
@@ -100,7 +103,7 @@ class SubscriptionService(
             return
         }
 
-        val expiresAt = LocalDateTime.now().plusDays(5)
+        val expiresAt = LocalDateTime.now().plusDays(TRIAL_DAYS)
 
         user.trialUsed          = true
         user.subscriptionStatus = "TRIAL"
@@ -112,7 +115,7 @@ class SubscriptionService(
             ?: SubscriptionExpiry(user = user, expiresAt = expiresAt)
         expiryRepository.save(expiry)
 
-        log.info("[SUB] Trial выдан: userId=${user.id} email=${user.email} до=$expiresAt")
+        log.info("[SUB] Trial выдан: userId=${user.id} email=${user.email} до=$expiresAt дней=$TRIAL_DAYS")
 
         user.telegramId?.let { tgId ->
             runCatching { bot.sendText(tgId, buildGrantMessage("TRIAL", expiresAt)) }
@@ -247,8 +250,6 @@ class SubscriptionService(
     // Сценарий B (автоплатёж не прошёл): expiresAt < now, Tribute молчит →
     //   deactivateExpired() видит запись → если bonusDaysBuffer > 0 →
     //   продлеваем expiresAt на весь буфер, обнуляем буфер, уведомляем пользователя.
-    //   Если Tribute всё равно не продлит в эти дни — после истечения буфера
-    //   подписка деактивируется стандартно.
     //
     // Сценарий C (буфер истощён): expiresAt < now, буфер = 0 → деактивация как раньше.
 
@@ -306,7 +307,7 @@ class SubscriptionService(
             user.telegramId?.let { tgId ->
                 runCatching {
                     val msg = if (wasTrial)
-                        "Пробный период закончился.\n\n" +
+                        "⏰ Пробный период AIMLY закончился.\n\n" +
                                 "Вы попробовали AIMLY — теперь можно оформить полный доступ и продолжить получать лиды из Telegram.\n\n" +
                                 "Тариф START — 4 990 ₽/мес:\n" +
                                 "✔ Мониторинг чатов по ключевым словам\n" +
@@ -314,7 +315,7 @@ class SubscriptionService(
                                 "✔ AI-поиск и фильтрация лидов\n" +
                                 "✔ Персонализация под ваш бизнес"
                     else
-                        "Подписка AIMLY закончилась.\n\n" +
+                        "⏰ Подписка AIMLY закончилась.\n\n" +
                                 "Мониторинг приостановлен. Чтобы снова получать лиды — продлите подписку.\n\n" +
                                 "Тариф START — 4 990 ₽/мес:\n" +
                                 "✔ Мониторинг чатов по ключевым словам\n" +
@@ -341,7 +342,7 @@ class SubscriptionService(
     private fun buildGrantMessage(plan: String, expiresAt: LocalDateTime) = when (plan) {
         "TRIAL" ->
             "🎉 Пробный период AIMLY активирован!\n" +
-                    "✅ 5 дней бесплатно — все функции включая AI\n" +
+                    "✅ $TRIAL_DAYS дней бесплатно — все функции включая AI\n" +
                     "✅ AI-семантический поиск лидов\n" +
                     "✅ AI-фильтрация контекста сообщений\n" +
                     "✅ Персонализация под ваш бизнес\n" +

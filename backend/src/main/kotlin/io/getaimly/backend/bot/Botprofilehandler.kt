@@ -46,20 +46,25 @@ class BotProfileHandler(
         val expiry     = expiryRepository.findByUserId(user.id)
         val since      = user.createdAt?.toLocalDate()?.toString() ?: "—"
 
-        // Реферальная статистика для краткого отображения в профиле
         val refStats   = referralService.getStats(user)
 
-        log.info("[BOT][PROFILE] Просмотр профиля: userId=${user.id} email=${user.email} план=${user.subscriptionPlan} статус=${user.subscriptionStatus} чатов=$chatCount ключ_слов=$kwCount всего_лидов=$totalLeads новых=$newLeads")
+        log.info(
+            "[BOT][PROFILE] Просмотр профиля: userId=${user.id} email=${user.email} " +
+                    "план=${user.subscriptionPlan} статус=${user.subscriptionStatus} " +
+                    "чатов=$chatCount ключ_слов=$kwCount всего_лидов=$totalLeads новых=$newLeads " +
+                    "рефералов_всего=${refStats.totalReferrals} оплатили=${refStats.paidReferrals} буфер=${refStats.bonusDaysLeft}"
+        )
 
         val plan          = user.subscriptionPlan
         val hasAiFeatures = plan == "MINIMUM" || plan == "START" || user.subscriptionStatus == "TRIAL"
 
+        // Строка подписки — без .md() на subLine, т.к. она уже содержит спец-символы
         val subLine = when {
             user.subscriptionStatus == "ACTIVE" -> {
                 val till   = expiry?.expiresAt?.toLocalDate()?.toString() ?: "—"
                 val buffer = expiry?.bonusDaysBuffer ?: 0
                 val bufPart = if (buffer > 0) " \\(\\+$buffer бонусных дн\\.\\)" else ""
-                "✅ ${user.subscriptionPlan ?: "ACTIVE"} — до $till$bufPart"
+                "✅ ${(user.subscriptionPlan ?: "ACTIVE").md()} — до $till$bufPart"
             }
             user.subscriptionStatus == "TRIAL" -> {
                 val till = expiry?.expiresAt?.toLocalDate()?.toString() ?: "—"
@@ -69,26 +74,33 @@ class BotProfileHandler(
         }
 
         val contextLine = when {
-            !hasAiFeatures                        -> "\n🎯 *Бизнес-контекст AI:* 🔒 недоступно"
-            !user.businessContext.isNullOrBlank() -> "\n🎯 *Бизнес-контекст AI:* ✅ задан"
-            else                                  -> "\n🎯 *Бизнес-контекст AI:* не задан"
+            !hasAiFeatures                        -> "\n🎯 *Бизнес\\-контекст AI:* 🔒 недоступно"
+            !user.businessContext.isNullOrBlank() -> "\n🎯 *Бизнес\\-контекст AI:* ✅ задан"
+            else                                  -> "\n🎯 *Бизнес\\-контекст AI:* не задан"
         }
 
-        // Реферальная строка — всегда показываем кратко
-        val refLine = "\n👥 *Рефералы:* ${refStats.paidReferrals} оплатили " +
-                "\\(бонус: ${refStats.bonusDaysLeft} дн\\.\\)"
+        // Реферальная строка — показываем кратко с понятным описанием
+        val refLine = when {
+            refStats.paidReferrals > 0 ->
+                "\n👥 *Рефералы:* ${refStats.paidReferrals} оплатили → " +
+                        "\\+${refStats.paidReferrals * io.getaimly.backend.referral.ReferralService.BONUS_DAYS_PER_REFERRAL} бонусных дн\\."
+            refStats.totalReferrals > 0 ->
+                "\n👥 *Рефералы:* ${refStats.totalReferrals} перешли, ещё не оплатили"
+            else ->
+                "\n👥 *Рефералы:* нет — пригласите друзей и получите \\+${io.getaimly.backend.referral.ReferralService.BONUS_DAYS_PER_REFERRAL} дней за каждого"
+        }
 
         val text = "👤 *Профиль*\n\n" +
                 "📧 ${user.email.md()}\n" +
                 "👤 ${(user.firstName ?: "—").md()}\n" +
                 "📱 Telegram: ✅ привязан\n" +
-                "💳 Подписка: ${subLine.md()}" +
+                "💳 Подписка: $subLine" +
                 contextLine +
                 refLine + "\n\n" +
                 "📊 *Статистика:*\n" +
                 "💬 Чатов: $chatCount\n" +
                 "🔍 Ключевых слов: $kwCount\n" +
-                "📋 Всего лидов: $totalLeads  (🔴 новых: $newLeads)\n" +
+                "📋 Всего лидов: $totalLeads  \\(🔴 новых: $newLeads\\)\n" +
                 "📅 Аккаунт создан: $since"
 
         val rows = mutableListOf<org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow>()
@@ -105,9 +117,7 @@ class BotProfileHandler(
             "profile:edit_context",
         )))
 
-        // Реферальная программа — отдельная кнопка
         rows.add(row(btn("👥 Реферальная программа", "referral:info")))
-
         rows.add(row(btn("🔓 Отвязать Telegram", "profile:unlink_tg")))
         rows.add(row(btn("◀️ Главное меню",       "menu:back")))
 
@@ -130,10 +140,10 @@ class BotProfileHandler(
             log.info("[BOT][PROFILE] AI-персонализация недоступна (нет плана): userId=${user.id} email=${user.email} план=$plan")
             sender.editText(
                 chatId, msgId,
-                "🔒 *AI-персонализация недоступна*\n\n" +
+                "🔒 *AI\\-персонализация недоступна*\n\n" +
                         "На тарифе *START* и выше вы можете задать описание своего бизнеса — " +
-                        "AI будет отбирать только тех клиентов, которые ищут именно то, что вы предлагаете.\n\n" +
-                        "💡 Пример: «Я frontend-разработчик на React, ищу клиентов с бюджетом от 50к»",
+                        "AI будет отбирать только тех клиентов, которые ищут именно то, что вы предлагаете\\.\n\n" +
+                        "💡 Пример: «Я frontend\\-разработчик на React, ищу клиентов с бюджетом от 50к»",
                 keyboard(
                     row(btn("💳 Оплатить подписку", "payment:plans")),
                     row(btn("◀️ Назад", "menu:profile")),
@@ -148,20 +158,20 @@ class BotProfileHandler(
 
         val currentContext = user.businessContext
         val currentLine = when {
-            currentContext.isNullOrBlank() -> "\n\n_Контекст пока не задан._"
+            currentContext.isNullOrBlank() -> "\n\n_Контекст пока не задан\\._"
             else -> "\n\n📌 *Текущий контекст:*\n_${currentContext.take(300).md()}${if (currentContext.length > 300) "…" else ""}_"
         }
 
         sessions[chatId] = UserSession(step = BotStep.WAITING_CONTEXT, msgId = msgId)
         sender.editText(
             chatId, msgId,
-            "🎯 *AI-персонализация*$currentLine\n\n" +
-                    "Опишите ваш бизнес, услуги и целевую аудиторию.\n" +
-                    "AI учитывает это при фильтрации лидов и при генерации ключевых слов.\n\n" +
-                    "✏️ Отправьте новый текст (до 2000 символов):\n\n" +
-                    "💡 _Пример: Я frontend-разработчик, специализируюсь на React и Next.js. " +
-                    "Ищу клиентов, которым нужна разработка или доработка веб-приложений. " +
-                    "Работаю с бюджетами от 50 000 ₽._",
+            "🎯 *AI\\-персонализация*$currentLine\n\n" +
+                    "Опишите ваш бизнес, услуги и целевую аудиторию\\.\n" +
+                    "AI учитывает это при фильтрации лидов и при генерации ключевых слов\\.\n\n" +
+                    "✏️ Отправьте новый текст \\(до 2000 символов\\):\n\n" +
+                    "💡 _Пример: Я frontend\\-разработчик, специализируюсь на React и Next\\.js\\. " +
+                    "Ищу клиентов, которым нужна разработка или доработка веб\\-приложений\\. " +
+                    "Работаю с бюджетами от 50 000 ₽\\._",
             keyboard(
                 row(btn("🗑 Очистить контекст", "profile:clear_context")),
                 row(btn("❌ Отмена",             "menu:profile")),
@@ -203,11 +213,11 @@ class BotProfileHandler(
                 log.info("[BOT][PROFILE] ✅ AI-контекст $action: userId=${userEntity.id} email=${userEntity.email}")
 
                 val confirmText = if (isSaved)
-                    "✅ *Бизнес-контекст сохранён!*\n\n" +
-                            "🤖 AI теперь учитывает ваш профиль при фильтрации лидов и генерации ключевых слов.\n\n" +
+                    "✅ *Бизнес\\-контекст сохранён\\!*\n\n" +
+                            "🤖 AI теперь учитывает ваш профиль при фильтрации лидов и генерации ключевых слов\\.\n\n" +
                             "📌 _Описание:_\n${trimmed.take(300).md()}${if (trimmed.length > 300) "…" else ""}"
                 else
-                    "✅ *Бизнес-контекст очищен.*\n\nAI будет работать без персонализации."
+                    "✅ *Бизнес\\-контекст очищен\\.*\n\nAI будет работать без персонализации\\."
 
                 if (savedMsgId != 0) {
                     sender.editText(
@@ -243,7 +253,7 @@ class BotProfileHandler(
                 log.info("[BOT][PROFILE] ✅ AI-контекст очищен: userId=${user.id} email=${user.email}")
                 sender.editText(
                     chatId, msgId,
-                    "✅ *Бизнес-контекст очищен.*\n\nAI будет работать без персонализации.",
+                    "✅ *Бизнес\\-контекст очищен\\.*\n\nAI будет работать без персонализации\\.",
                     keyboard(row(btn("◀️ К профилю", "menu:profile"))),
                     parseMarkdown = true,
                 )
@@ -264,7 +274,7 @@ class BotProfileHandler(
                     "После отвязки:\n" +
                     "• Мониторинг лидов остановится\n" +
                     "• Уведомления перестанут приходить\n\n" +
-                    "Аккаунт getaimly.io сохранится. Вы сможете привязать снова.",
+                    "Аккаунт getaimly\\.io сохранится\\. Вы сможете привязать снова\\.",
             keyboard(row(
                 btn("✅ Да, отвязать", "profile:unlink_tg:confirm"),
                 btn("❌ Отмена",        "menu:profile"),

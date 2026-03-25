@@ -23,13 +23,12 @@ class ReferralService(
     private val referralActivationRepository: ReferralActivationRepository,
     private val expiryRepository:             SubscriptionExpiryRepository,
     private val userRepository:               UserRepository,
-    // ✅ Берём из application.properties — так же как в AuthController и AimlyBot
     @Value("\${telegram.bot.username}") private val botUsername: String,
 ) {
     private val log = LoggerFactory.getLogger(ReferralService::class.java)
 
     companion object {
-        const val BONUS_DAYS_PER_REFERRAL = 5
+        const val BONUS_DAYS_PER_REFERRAL = 7
     }
 
     // ─── Получить или создать реферальный код пользователя ───────────────────
@@ -50,33 +49,49 @@ class ReferralService(
     fun getStats(user: User): ReferralStatsDto {
         val ref    = getOrCreateCode(user)
         val expiry = expiryRepository.findByUserId(user.id)
-        return ReferralStatsDto(
+        val stats = ReferralStatsDto(
             code           = ref.code,
             referralLink   = buildLink(ref.code),
             totalReferrals = referralActivationRepository.countByReferrerId(user.id),
             paidReferrals  = referralActivationRepository.countByReferrerIdAndBonusGrantedTrue(user.id),
             bonusDaysLeft  = expiry?.bonusDaysBuffer ?: 0,
         )
+        log.debug(
+            "[REFERRAL] Статистика: userId=${user.id} email=${user.email} " +
+                    "code=${ref.code} всего=${stats.totalReferrals} " +
+                    "оплатили=${stats.paidReferrals} буфер=${stats.bonusDaysLeft} дн."
+        )
+        return stats
     }
 
     // ─── Зафиксировать переход по реферальной ссылке ─────────────────────────
 
-    fun resolveReferralCode(code: String): ReferralCode? =
-        referralCodeRepository.findByCode(code)
+    fun resolveReferralCode(code: String): ReferralCode? {
+        val found = referralCodeRepository.findByCode(code)
+        if (found == null) {
+            log.warn("[REFERRAL] Код не найден при resolveReferralCode: code=$code")
+        }
+        return found
+    }
 
     @Transactional
     fun registerRefereeIfNew(referrerCode: String, referee: User) {
         val refCodeEntity = referralCodeRepository.findByCode(referrerCode) ?: run {
-            log.warn("[REFERRAL] Код не найден: code=$referrerCode refereeId=${referee.id}")
-            return
-        }
-        if (refCodeEntity.user.id == referee.id) {
-            log.debug("[REFERRAL] Пользователь пытается использовать собственный код: userId=${referee.id}")
+            log.warn("[REFERRAL] Код не найден при регистрации рефери: code=$referrerCode refereeId=${referee.id} email=${referee.email}")
             return
         }
 
-        if (referralActivationRepository.findByRefereeId(referee.id) != null) {
-            log.debug("[REFERRAL] Пользователь уже является рефери: refereeId=${referee.id}")
+        if (refCodeEntity.user.id == referee.id) {
+            log.info("[REFERRAL] Пользователь пытается использовать собственный код: userId=${referee.id} email=${referee.email}")
+            return
+        }
+
+        val existing = referralActivationRepository.findByRefereeId(referee.id)
+        if (existing != null) {
+            log.debug(
+                "[REFERRAL] Пользователь уже является рефери: refereeId=${referee.id} email=${referee.email} " +
+                        "referrerId=${existing.referrer.id} bonusGranted=${existing.bonusGranted}"
+            )
             return
         }
 
@@ -85,42 +100,63 @@ class ReferralService(
             referee  = referee,
         )
         referralActivationRepository.save(activation)
-        log.info("[REFERRAL] Активация зарегистрирована: referrerId=${refCodeEntity.user.id} refereeId=${referee.id} code=$referrerCode")
+        log.info(
+            "[REFERRAL] ✅ Активация зарегистрирована: " +
+                    "referrerId=${refCodeEntity.user.id} email=${refCodeEntity.user.email} " +
+                    "refereeId=${referee.id} refereeEmail=${referee.email} code=$referrerCode"
+        )
     }
 
     // ─── Начислить бонус реферреру при первой оплате рефери ─────────────────
 
     @Transactional
     fun grantBonusIfEligible(referee: User): Boolean {
-        val activation = referralActivationRepository.findByRefereeId(referee.id) ?: return false
+        val activation = referralActivationRepository.findByRefereeId(referee.id)
+        if (activation == null) {
+            log.debug("[REFERRAL] Нет активации для рефери: refereeId=${referee.id} email=${referee.email} — бонус не начисляется")
+            return false
+        }
+
         if (activation.bonusGranted) {
-            log.debug("[REFERRAL] Бонус уже начислен: refereeId=${referee.id} referrerId=${activation.referrer.id}")
+            log.debug(
+                "[REFERRAL] Бонус уже был начислен ранее: refereeId=${referee.id} " +
+                        "referrerId=${activation.referrer.id} bonusGrantedAt=${activation.bonusGrantedAt}"
+            )
             return false
         }
 
         val referrer = activation.referrer
         val expiry   = expiryRepository.findByUserId(referrer.id)
 
+        val bufferBefore = expiry?.bonusDaysBuffer ?: 0
+
         if (expiry != null) {
             expiry.bonusDaysBuffer += BONUS_DAYS_PER_REFERRAL
             expiryRepository.save(expiry)
+            log.info(
+                "[REFERRAL] ✅ Бонус начислен (буфер обновлён): " +
+                        "referrerId=${referrer.id} email=${referrer.email} " +
+                        "refereeId=${referee.id} refereeEmail=${referee.email} " +
+                        "+${BONUS_DAYS_PER_REFERRAL} дней (буфер: $bufferBefore → ${expiry.bonusDaysBuffer})"
+            )
+        } else {
+            log.warn(
+                "[REFERRAL] ⚠️ Бонус начислен, но у реферрера нет подписки (нет записи SubscriptionExpiry): " +
+                        "referrerId=${referrer.id} email=${referrer.email} " +
+                        "refereeId=${referee.id} refereeEmail=${referee.email} " +
+                        "+${BONUS_DAYS_PER_REFERRAL} дней — будут начислены при активации подписки"
+            )
         }
 
         activation.bonusGranted   = true
         activation.bonusGrantedAt = LocalDateTime.now()
         referralActivationRepository.save(activation)
 
-        log.info(
-            "[REFERRAL] ✅ Бонус начислен: referrerId=${referrer.id} email=${referrer.email} " +
-                    "refereeId=${referee.id} +${BONUS_DAYS_PER_REFERRAL} дней " +
-                    "буфер=${expiry?.bonusDaysBuffer ?: "н/д (нет подписки)"}"
-        )
         return true
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
-    // ✅ botUsername теперь из @Value, не захардкожен
     fun buildLink(code: String): String = "https://t.me/$botUsername?start=ref_$code"
 
     private fun generateUniqueCode(): String {
