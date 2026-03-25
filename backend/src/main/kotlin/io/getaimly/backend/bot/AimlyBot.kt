@@ -42,7 +42,7 @@ class AimlyBot(
     private val expiryRepository: SubscriptionExpiryRepository,
     private val aiService: AiService,
     private val chatSearchService: ChatSearchService,
-    private val referralService: ReferralService,
+    private val referralService: ReferralService,          // ← новый
 ) : SpringLongPollingBot, LongPollingSingleThreadUpdateConsumer {
 
     private val log            = LoggerFactory.getLogger(AimlyBot::class.java)
@@ -65,7 +65,7 @@ class AimlyBot(
         leadRepository  = leadRepository,
         authService     = authService,
         paymentHandler  = paymentHandler,
-        referralService = referralService,
+        referralService = referralService,   // ← новый
     )
 
     private val leadsHandler = BotLeadsHandler(
@@ -103,7 +103,7 @@ class AimlyBot(
         expiryRepository       = expiryRepository,
         authService            = authService,
         leadService            = leadService,
-        referralService        = referralService,
+        referralService        = referralService,   // ← новый
     )
 
     private val chatSearchHandler = BotChatSearchHandler(
@@ -116,7 +116,7 @@ class AimlyBot(
         chatSearchService      = chatSearchService,
     )
 
-    private val referralHandler = BotReferralHandler(
+    private val referralHandler = BotReferralHandler(   // ← новый handler
         sender          = sender,
         userRepository  = userRepository,
         referralService = referralService,
@@ -144,6 +144,7 @@ class AimlyBot(
         sender.sendText(chatId, text)
     }
 
+    // перегрузка
     fun sendText(chatId: Long, text: String, markup: InlineKeyboardMarkup?) {
         sender.sendText(chatId, text, markup)
     }
@@ -173,6 +174,7 @@ class AimlyBot(
         val tgUser     = "${from.firstName} (@${from.userName ?: "—"}, tgId=${from.id})"
         val startToken = if (text.startsWith("/start ")) text.removePrefix("/start ").trim() else null
 
+        // Не логируем пароль в открытом виде
         val session = sessions[chatId]
         if (session?.step == BotStep.WAITING_PASSWORD) {
             log.info("[BOT][MSG] $tgUser → [ПАРОЛЬ СКРЫТ]")
@@ -285,13 +287,16 @@ class AimlyBot(
             data == "menu:chats"    -> chatsHandler.showChats(chatId, msgId, from.id)
             data == "menu:keywords" -> keywordsHandler.showKeywords(chatId, msgId, from.id)
             data == "menu:profile"  -> profileHandler.showProfile(chatId, msgId, from)
-            data == "menu:help" -> {
+            data == "menu:help"     -> {
                 sender.editText(chatId, msgId, buildHelpText(), parseMarkdown = true)
+                sender.sendText(chatId, "Используйте /start для возврата в главное меню.")
             }
 
             data == "payment:plans" -> paymentHandler.showPlans(chatId, msgId, from.id)
 
+            // ── Реферальная программа ─────────────────────────────────────────
             data == "referral:info" -> referralHandler.showReferral(chatId, msgId, from.id)
+            // ──────────────────────────────────────────────────────────────────
 
             data == "leads:new"      -> leadsHandler.showLeadsList(chatId, msgId, from.id, 0, "NEW")
             data == "leads:all"      -> leadsHandler.showLeadsList(chatId, msgId, from.id, 0, null)
@@ -438,38 +443,14 @@ class AimlyBot(
     }
 
     private fun sendHelp(chatId: Long) =
-        sender.sendText(chatId, buildHelpText(), parseMarkdown = true)
+        sender.sendText(chatId, buildHelpText())
 
-    private fun buildHelpText(): String {
-        val bonusDays = io.getaimly.backend.referral.ReferralService.BONUS_DAYS_PER_REFERRAL
-        return "📖 *Помощь AIMLY*\n\n" +
-                "AIMLY — сервис поиска лидов в Telegram\\-чатах по ключевым словам\\.\n" +
-                "Бот даёт доступ ко всем функциям сервиса прямо из Telegram\\.\n\n" +
-
-                "─────────────────────\n" +
-                "🚀 *Быстрый старт:*\n\n" +
-                "1️⃣ Добавьте Telegram\\-чаты, где сидят ваши потенциальные клиенты\n" +
-                "   → кнопка «💬 Чаты» в главном меню\n\n" +
-                "2️⃣ Укажите ключевые слова — что ищут ваши клиенты\n" +
-                "   → кнопка «🔍 Ключевые слова»\n" +
-                "   → или используйте AI\\-генерацию по описанию вашего бизнеса\n\n" +
-                "3️⃣ Получайте уведомления — бот пришлёт лид когда совпадёт\n\n" +
-
-                "─────────────────────\n" +
-                "🤖 *AI\\-функции:*\n\n" +
-                "• *AI\\-поиск чатов* — находит релевантные чаты по описанию бизнеса\n" +
-                "• *AI\\-генерация ключевых слов* — предлагает слова исходя из вашего профиля\n" +
-                "• *AI\\-фильтрация* — отсеивает нерелевантные сообщения\n" +
-                "• *Бизнес\\-контекст* — настройте в профиле, чтобы AI лучше понимал вас\n\n" +
-
-                "─────────────────────\n" +
-                "👥 *Реферальная программа:*\n\n" +
-                "За каждого друга, который оплатит подписку — вы получаете *\\+$bonusDays дней бесплатно*\\.\n" +
-                "Бонусы суммируются и применяются автоматически\\.\n" +
-                "Ваша ссылка → «👤 Профиль» → «👥 Реферальная программа»\n\n" +
-
-                "─────────────────────\n" +
-                "📋 *Команды:*\n\n" +
+    private fun buildHelpText() =
+        "📖 Помощь AIMLY\n\n" +
+                "🤖 Бот повторяет весь функционал сайта \n" +
+                "Для максимального удобства рекомендуем использовать веб-версию:\n" +
+                "🌐 ${BotAuthHandler.SITE_URL}\n\n" +
+                "Команды:\n" +
                 "/start — главное меню\n" +
                 "/leads — список лидов\n" +
                 "/chats — управление чатами\n" +
@@ -477,13 +458,13 @@ class AimlyBot(
                 "/profile — профиль\n" +
                 "/pay — оплатить подписку\n" +
                 "/status — статус аккаунта\n" +
-                "/cancel — отменить текущее действие\n" +
+                "/cancel — отменить действие\n" +
                 "/help — эта справка\n\n" +
-
-                "─────────────────────\n" +
-                "💬 Поддержка: @aimly\\_support\n" +
-                "🌐 Сайт: ${BotAuthHandler.SITE_URL}"
-    }
+                "Как работает:\n" +
+                "1. Добавьте Telegram-чаты (вручную или через AI-поиск)\n" +
+                "2. Укажите ключевые слова («ищу дизайнера» и т.д.)\n" +
+                "3. При совпадении вы получите уведомление с лидом\n\n" +
+                "💬 Поддержка: @aimly_support"
 
     private fun buildTgDeepLink(link: String): String {
         val clean = link
