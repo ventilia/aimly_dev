@@ -1,3 +1,4 @@
+/// --- FILE: C:\Users\vent\aimly_dev\frontend\src\components\AuthModal.tsx --- ///
 import {useState, useEffect, useRef, useMemo} from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Lang } from '../i18n/translations'
@@ -5,7 +6,7 @@ import { authApi } from '../api/auth'
 import { useAuthContext } from '../context/AuthContext'
 import s from './AuthModal.module.css'
 
-
+// ─── SVG Icons ────────────────────────────────────────────────────────────────
 function EyeIcon() {
     return (
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
@@ -57,7 +58,7 @@ function GoogleIcon() {
     )
 }
 
-
+// ─── Google OAuth URL builder ─────────────────────────────────────────────────
 function buildGoogleOAuthUrl(): string {
     const clientId   = import.meta.env.VITE_GOOGLE_CLIENT_ID as string
     const origin     = window.location.origin
@@ -73,10 +74,13 @@ function buildGoogleOAuthUrl(): string {
     return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
 }
 
-// ── Хелперы для реферального кода ────────────────────────────────────────────
+// ─── Реферальный код: хелперы ─────────────────────────────────────────────────
 const REF_STORAGE_KEY = 'aimly_ref_code'
 
-/** Читаем ?ref= из URL и сохраняем в sessionStorage, чтобы не потерять при навигации */
+/**
+ * Читаем ?ref= из URL и сохраняем в sessionStorage.
+ * Возвращает код, если найден.
+ */
 function captureRefCode(): string | undefined {
     const params = new URLSearchParams(window.location.search)
     const fromUrl = params.get('ref') || undefined
@@ -87,7 +91,21 @@ function captureRefCode(): string | undefined {
     return sessionStorage.getItem(REF_STORAGE_KEY) || undefined
 }
 
+/**
+ * Возвращает реферальный код из sessionStorage (если есть).
+ */
+function getStoredRefCode(): string | undefined {
+    return sessionStorage.getItem(REF_STORAGE_KEY) || undefined
+}
 
+/**
+ * Очищает сохранённый реферальный код.
+ */
+function clearStoredRefCode(): void {
+    sessionStorage.removeItem(REF_STORAGE_KEY)
+}
+
+// ─── Локализация ──────────────────────────────────────────────────────────────
 const txt = {
     ru: {
         login:            'Войти',
@@ -189,14 +207,13 @@ const txt = {
     },
 } as const
 
-
+// ─── Типы ─────────────────────────────────────────────────────────────────────
 type Step    = 'form' | 'code' | 'success' | 'forgot' | 'reset-code' | 'new-password' | 'reset-success'
 type TabMode = 'login' | 'register'
 
 interface Props {
     lang:        Lang
     onClose:     () => void
-
     onSuccess?:  () => void
     initialTab?: TabMode
 }
@@ -214,8 +231,7 @@ interface PFProps {
     hideLabel:    string
 }
 
-
-
+// ─── PasswordField компонент ──────────────────────────────────────────────────
 function PasswordField({
                            label, value, onChange, onEnter,
                            hasError, errorText, hint,
@@ -251,8 +267,7 @@ function PasswordField({
     )
 }
 
-
-
+// ─── Основной компонент AuthModal ─────────────────────────────────────────────
 export default function AuthModal({
                                       lang,
                                       onClose,
@@ -266,23 +281,24 @@ export default function AuthModal({
     const [tab,  setTab]  = useState<TabMode>(initialTab)
     const [step, setStep] = useState<Step>('form')
 
-    // --- Реферальный код — читаем из URL или sessionStorage (не теряется при навигации) ---
+    // ─── Реферальный код: инициализация ───────────────────────────────────────
+    // Читаем код один раз при монтировании (из URL или sessionStorage)
     // eslint-disable-next-line react-hooks/exhaustive-deps
     const referralCode = useMemo(() => captureRefCode(), [])
 
-    // --- Поля формы входа/регистрации ---
+    // ─── Поля формы входа/регистрации ─────────────────────────────────────────
     const [email,           setEmail]           = useState('')
     const [password,        setPassword]        = useState('')
     const [confirmPassword, setConfirmPassword] = useState('')
     const [firstName,       setFirstName]       = useState('')
     const [emailUsed,       setEmailUsed]       = useState('')
 
-    // --- Поля верификации email ---
+    // ─── Поля верификации email ───────────────────────────────────────────────
     const [code,        setCode]        = useState('')
     const [resendTimer, setResendTimer] = useState(0)
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-    // --- Поля сброса пароля ---
+    // ─── Поля сброса пароля ───────────────────────────────────────────────────
     const [forgotEmail,      setForgotEmail]      = useState('')
     const [resetCode,        setResetCode]        = useState('')
     const [newPassword,      setNewPassword]      = useState('')
@@ -290,7 +306,7 @@ export default function AuthModal({
     const [resetResendTimer, setResetResendTimer] = useState(0)
     const resetTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-    // --- Состояние загрузки/ошибок ---
+    // ─── Состояние загрузки/ошибок ────────────────────────────────────────────
     const [loading,        setLoading]        = useState(false)
     const [error,          setError]          = useState<string | null>(null)
     const [codeError,      setCodeError]      = useState<string | null>(null)
@@ -302,8 +318,7 @@ export default function AuthModal({
     const resetCodeInputRef = useRef<HTMLInputElement>(null)
     const forgotEmailRef    = useRef<HTMLInputElement>(null)
 
-
-
+    // ─── Эффекты ──────────────────────────────────────────────────────────────
     useEffect(() => { setTab(initialTab) }, [initialTab])
 
     useEffect(() => {
@@ -331,8 +346,8 @@ export default function AuthModal({
     useEffect(() => {
         if (step === 'success') {
             const timer = setTimeout(() => {
-                // После успешной регистрации — очищаем сохранённый реф-код
-                sessionStorage.removeItem(REF_STORAGE_KEY)
+                // ✅ После успешной регистрации — очищаем сохранённый реф-код
+                clearStoredRefCode()
                 if (onSuccess) {
                     onSuccess()
                 } else {
@@ -351,8 +366,7 @@ export default function AuthModal({
         }
     }, [step, navigate, onClose, onSuccess])
 
-
-
+    // ─── Таймеры повторной отправки ───────────────────────────────────────────
     const startResendTimer = (seconds = 60) => {
         setResendTimer(seconds)
         if (timerRef.current) clearInterval(timerRef.current)
@@ -375,6 +389,7 @@ export default function AuthModal({
         }, 1000)
     }
 
+    // ─── Утилиты ──────────────────────────────────────────────────────────────
     const switchTab = (next: TabMode) => {
         setTab(next); setError(null); setPassword(''); setConfirmPassword('')
     }
@@ -383,8 +398,7 @@ export default function AuthModal({
         if (onSuccess) { onSuccess() } else { onClose(); navigate('/dashboard') }
     }
 
-
-
+    // ─── Обработчики: вход / регистрация ──────────────────────────────────────
     const handleLogin = async () => {
         setError(null)
         if (!email.trim() || !password) { setError('Заполните все поля'); return }
@@ -409,12 +423,13 @@ export default function AuthModal({
         if (password.length < 8) { setError(l.passwordHint); return }
         setLoading(true)
         try {
+            // ✅ Передаём реферальный код при регистрации
             const res = await authApi.register({
                 email:          email.trim(),
                 password,
                 confirmPassword,
                 firstName:      firstName.trim() || undefined,
-                referralCode,   // передаём реф-код из URL или sessionStorage
+                referralCode:   referralCode,
             })
             if (res.token !== null || res.userId !== null) {
                 setEmailUsed(email.trim()); setStep('code'); startResendTimer(60)
@@ -449,17 +464,21 @@ export default function AuthModal({
         } finally { setLoading(false) }
     }
 
+    // ─── Google OAuth: с сохранением реферального кода ────────────────────────
     const handleGoogle = () => {
         if (onSuccess) sessionStorage.setItem('oauth_after_checkout', '1')
         sessionStorage.setItem('oauth_return_to', '/dashboard')
-        // Сохраняем реф-код чтобы он не потерялся при редиректе через OAuth
-        if (referralCode) sessionStorage.setItem(REF_STORAGE_KEY, referralCode)
+
+        // ✅ Сохраняем реферальный код в sessionStorage перед редиректом
+        // Он будет прочитан в OAuthCallback.tsx и передан на бэкенд
+        if (referralCode) {
+            sessionStorage.setItem(REF_STORAGE_KEY, referralCode)
+        }
+
         window.location.href = buildGoogleOAuthUrl()
     }
 
-
-    // ─── Обработчики сброса пароля ─────────────────────────────────────────────
-
+    // ─── Обработчики сброса пароля ────────────────────────────────────────────
     const handleForgotPassword = async () => {
         setForgotError(null)
         const trimmedEmail = forgotEmail.trim()
@@ -521,10 +540,7 @@ export default function AuthModal({
         } finally { setLoading(false) }
     }
 
-
-
-    // ─── Рендер шагов ─────────────────────────────────────────────────────────────
-
+    // ─── Рендер: шаг "успешный сброс пароля" ──────────────────────────────────
     if (step === 'reset-success') {
         return (
             <div className={s.overlay}>
@@ -541,6 +557,7 @@ export default function AuthModal({
         )
     }
 
+    // ─── Рендер: шаг "успешная регистрация/верификация" ───────────────────────
     if (step === 'success') {
         return (
             <div className={s.overlay}>
@@ -560,7 +577,7 @@ export default function AuthModal({
         )
     }
 
-
+    // ─── Рендер: шаг "ввод кода верификации" ──────────────────────────────────
     if (step === 'code') {
         return (
             <div className={s.overlay} onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -577,7 +594,6 @@ export default function AuthModal({
                                 {l.codeHint}{' '}
                                 <span className={s.codeHintEmail}>{emailUsed}</span>
                             </p>
-
                             <p style={{
                                 fontSize:   12,
                                 color:      'var(--c-ink-3)',
@@ -587,7 +603,6 @@ export default function AuthModal({
                             }}>
                                 {l.spamNote}
                             </p>
-
                             <div className={s.codeInputWrap}>
                                 <input
                                     ref={codeInputRef}
@@ -606,9 +621,7 @@ export default function AuthModal({
                                     autoComplete="one-time-code"
                                 />
                             </div>
-
                             {codeError && <p className={s.errorBox}>{codeError}</p>}
-
                             <button
                                 className={`btn-primary ${s.submitBtn}`}
                                 onClick={handleVerify}
@@ -616,7 +629,6 @@ export default function AuthModal({
                             >
                                 {loading ? l.loading : l.verifyBtn}
                             </button>
-
                             <div className={s.resendRow}>
                                 {resendTimer > 0 ? (
                                     <span className={s.timer}>{l.resendIn} {resendTimer} {l.sec}</span>
@@ -633,9 +645,7 @@ export default function AuthModal({
         )
     }
 
-
-    // ─── Шаг 1: запрос кода сброса ────────────────────────────────────────────────
-
+    // ─── Рендер: шаг 1 сброса пароля (запрос кода) ────────────────────────────
     if (step === 'forgot') {
         return (
             <div className={s.overlay} onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -656,7 +666,6 @@ export default function AuthModal({
                     <div className={s.body}>
                         <div className={s.form}>
                             <p className={s.forgotHintText}>{l.forgotHint}</p>
-
                             <div className={s.field}>
                                 <label className={s.label}>{l.email}</label>
                                 <input
@@ -670,9 +679,7 @@ export default function AuthModal({
                                     autoComplete="email"
                                 />
                             </div>
-
                             {forgotError && <div className={s.errorBox}>{forgotError}</div>}
-
                             <button
                                 className={`btn-primary ${s.submitBtn}`}
                                 onClick={handleForgotPassword}
@@ -687,9 +694,7 @@ export default function AuthModal({
         )
     }
 
-
-    // ─── Шаг 2: ввод кода сброса ─────────────────────────────────────────────────
-
+    // ─── Рендер: шаг 2 сброса пароля (ввод кода) ──────────────────────────────
     if (step === 'reset-code') {
         return (
             <div className={s.overlay} onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -713,7 +718,6 @@ export default function AuthModal({
                                 {l.resetCodeHint}{' '}
                                 <span className={s.codeHintEmail}>{emailUsed}</span>
                             </p>
-
                             <p style={{
                                 fontSize:   12,
                                 color:      'var(--c-ink-3)',
@@ -723,7 +727,6 @@ export default function AuthModal({
                             }}>
                                 {l.resetCodeNote}
                             </p>
-
                             <div className={s.codeInputWrap}>
                                 <input
                                     ref={resetCodeInputRef}
@@ -742,9 +745,7 @@ export default function AuthModal({
                                     autoComplete="one-time-code"
                                 />
                             </div>
-
                             {resetCodeError && <p className={s.errorBox}>{resetCodeError}</p>}
-
                             <button
                                 className={`btn-primary ${s.submitBtn}`}
                                 onClick={handleVerifyResetCode}
@@ -752,7 +753,6 @@ export default function AuthModal({
                             >
                                 {loading ? l.loading : l.verifyBtn}
                             </button>
-
                             <div className={s.resendRow}>
                                 {resetResendTimer > 0 ? (
                                     <span className={s.timer}>{l.resendIn} {resetResendTimer} {l.sec}</span>
@@ -769,9 +769,7 @@ export default function AuthModal({
         )
     }
 
-
-    // ─── Шаг 3: новый пароль ─────────────────────────────────────────────────────
-
+    // ─── Рендер: шаг 3 сброса пароля (новый пароль) ───────────────────────────
     if (step === 'new-password') {
         const newPassMismatch = !!confirmNewPass && confirmNewPass !== newPassword
         return (
@@ -802,7 +800,6 @@ export default function AuthModal({
                                 showLabel={l.showPass}
                                 hideLabel={l.hidePass}
                             />
-
                             <PasswordField
                                 label={l.confirmNewPass}
                                 value={confirmNewPass}
@@ -814,11 +811,9 @@ export default function AuthModal({
                                 showLabel={l.showPass}
                                 hideLabel={l.hidePass}
                             />
-
                             {newPassError && !newPassMismatch && (
                                 <div className={s.errorBox}>{newPassError}</div>
                             )}
-
                             <button
                                 className={`btn-primary ${s.submitBtn}`}
                                 onClick={handleSetNewPassword}
@@ -833,10 +828,7 @@ export default function AuthModal({
         )
     }
 
-
-
-    // ─── Основная форма (login / register) ────────────────────────────────────────
-
+    // ─── Рендер: основная форма (вход / регистрация) ──────────────────────────
     const confirmMismatch = !!confirmPassword && confirmPassword !== password
 
     return (
@@ -850,6 +842,7 @@ export default function AuthModal({
                 </div>
 
                 <div className={s.body}>
+                    {/* Кнопка входа через Google */}
                     <button className={s.googleBtn} onClick={handleGoogle} disabled={loading} type="button">
                         <GoogleIcon />
                         {l.googleBtn}
@@ -859,6 +852,7 @@ export default function AuthModal({
                         <span>{l.orDivider}</span>
                     </div>
 
+                    {/* Табы: Вход / Регистрация */}
                     <div className={s.tabs} role="tablist">
                         <button
                             role="tab"
@@ -878,6 +872,7 @@ export default function AuthModal({
                         </button>
                     </div>
 
+                    {/* Форма */}
                     <div className={s.form}>
                         {tab === 'register' && (
                             <div className={s.field}>

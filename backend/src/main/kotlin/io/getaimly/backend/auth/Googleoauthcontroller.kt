@@ -1,7 +1,9 @@
+/// --- FILE: C:\Users\vent\aimly_dev\backend\src\main\kotlin\io\getaimly\backend\auth\Googleoauthcontroller.kt --- ///
 package io.getaimly.backend.auth
 
 import com.fasterxml.jackson.annotation.JsonProperty
 import io.getaimly.backend.auth.dto.AuthResponse
+import io.getaimly.backend.referral.ReferralService
 import io.getaimly.backend.security.JwtService
 import io.getaimly.backend.user.User
 import io.getaimly.backend.user.UserRepository
@@ -14,9 +16,9 @@ import org.springframework.web.bind.annotation.*
 import org.springframework.web.client.RestClient
 import java.time.LocalDateTime
 
-
 data class GoogleAuthRequest(
     @JsonProperty("id_token") val idToken: String,
+    @JsonProperty("referral_code") val referralCode: String? = null,  // ✅ Добавлено
 )
 
 data class GoogleTokenInfo(
@@ -28,18 +30,17 @@ data class GoogleTokenInfo(
     @JsonProperty("aud")            val aud:           String,
 )
 
-
 @RestController
 @RequestMapping("/api/v1/auth/oauth2")
 class GoogleOAuthController(
     private val userRepository: UserRepository,
     private val jwtService:     JwtService,
     private val authController: AuthController,
+    private val referralService: ReferralService,  // ✅ Добавлено
     @Value("\${google.client-id}") private val googleClientId: String,
 ) {
     private val log    = LoggerFactory.getLogger(GoogleOAuthController::class.java)
     private val client = RestClient.create()
-
 
     @PostMapping("/google")
     @Transactional
@@ -47,25 +48,19 @@ class GoogleOAuthController(
         @RequestBody request: GoogleAuthRequest,
         response: HttpServletResponse,
     ): ResponseEntity<AuthResponse> {
-
         val tokenInfo = verifyGoogleToken(request.idToken)
-
         if (tokenInfo.aud != googleClientId) {
             log.warn("google id_token выдан для другого приложения: ${tokenInfo.aud}")
             throw BadRequestException("Недействительный токен Google")
         }
-
         if (tokenInfo.emailVerified != "true") {
             throw BadRequestException("Email не подтверждён в Google")
         }
-
         val email = tokenInfo.email.lowercase()
 
-        // ищем пользователя по googleId или email, если не нашли — создаём
         val user = userRepository.findByGoogleId(tokenInfo.sub).orElse(null)
             ?: userRepository.findByEmail(email).orElse(null)
             ?: createGoogleUser(email, tokenInfo)
-
 
         if (user.googleId == null) {
             user.googleId      = tokenInfo.sub
@@ -80,15 +75,22 @@ class GoogleOAuthController(
             throw ForbiddenException("Аккаунт заблокирован")
         }
 
+        // ✅ Применяем реферальный код если передан
+        request.referralCode?.takeIf { it.isNotBlank() }?.let { refCode ->
+            runCatching {
+                referralService.registerRefereeIfNew(refCode, user)
+            }.onSuccess {
+                log.info("[REFERRAL] Рефери зарегистрирован при Google входе: userId=${user.id} code=$refCode")
+            }.onFailure {
+                log.warn("[REFERRAL] Ошибка регистрации рефери при Google входе: ${it.message}")
+            }
+        }
+
         val auth = buildGoogleAuthResponse(user)
-
-        // используем тот же метод что в AuthController — единые настройки куки
         authController.setAuthCookie(response, auth.token)
-
         log.info("вход через Google: userId=${user.id} email=$email")
-        return ResponseEntity.ok(auth.copy(token = ""))  // токен в куке, не в теле
+        return ResponseEntity.ok(auth.copy(token = ""))
     }
-
 
     private fun verifyGoogleToken(idToken: String): GoogleTokenInfo =
         try {
@@ -122,10 +124,9 @@ class GoogleOAuthController(
         email              = user.email,
         firstName          = user.firstName,
         emailVerified      = user.emailVerified,
-        trialUsed = user.trialUsed,
+        trialUsed          = user.trialUsed,
         telegramLinked     = user.telegramId != null,
         role               = user.role.name,
-
         subscriptionStatus = user.subscriptionStatus,
         subscriptionPlan   = user.subscriptionPlan,
     )

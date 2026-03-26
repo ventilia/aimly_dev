@@ -56,7 +56,7 @@ const txt = {
         refCopy:        'Скопировать',
         refCopied:      'Скопировано!',
         refBonusHint:   'Используются автоматически если автоплатёж не пройдёт',
-        refPerRef:      '+5 дней за каждого оплатившего',
+        refPerRef:      '+7 дней за каждого оплатившего',
     },
     en: {
         title:          'Overview',
@@ -107,7 +107,7 @@ const txt = {
         refCopy:        'Copy',
         refCopied:      'Copied!',
         refBonusHint:   'Used automatically if autopayment fails',
-        refPerRef:      '+5 days per paid referral',
+        refPerRef:      '+7 days per paid referral',
     },
 } as const
 
