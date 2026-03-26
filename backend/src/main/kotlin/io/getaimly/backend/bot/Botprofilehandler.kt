@@ -46,7 +46,6 @@ class BotProfileHandler(
         val expiry     = expiryRepository.findByUserId(user.id)
         val since      = user.createdAt?.toLocalDate()?.toString() ?: "—"
 
-        // Реферальная статистика для краткого отображения в профиле
         val refStats   = referralService.getStats(user)
 
         log.info("[BOT][PROFILE] Просмотр профиля: userId=${user.id} email=${user.email} план=${user.subscriptionPlan} статус=${user.subscriptionStatus} чатов=$chatCount ключ_слов=$kwCount всего_лидов=$totalLeads новых=$newLeads реф_всего=${refStats.totalReferrals} реф_оплатили=${refStats.paidReferrals} буфер=${refStats.bonusDaysLeft}")
@@ -74,14 +73,17 @@ class BotProfileHandler(
             else                                  -> "\n🎯 *Бизнес-контекст AI:* не задан"
         }
 
-        // Реферальная строка — кратко + подсказка про механику
+        // ✅ Улучшенная реферальная строка: явно +7 дней для обеих сторон
         val refLine = "\n👥 *Рефералы:* ${refStats.paidReferrals} оплатили " +
                 "\\(бонус: ${refStats.bonusDaysLeft} дн\\.\\)" +
-                "\n_💡 За каждого оплатившего друга — \\+7 дней бесплатно_"
+                "\n_💡 Пригласите друга → он оплатит → вы оба получаете \\+7 дней бесплатно_"
+
+        // ✅ Фикс: защита от пустой строки firstName
+        val displayName = user.firstName?.takeIf { it.isNotBlank() } ?: user.email.split("@").first()
 
         val text = "👤 *Профиль*\n\n" +
                 "📧 ${user.email.md()}\n" +
-                "👤 ${(user.firstName ?: "—").md()}\n" +
+                "👤 ${displayName.md()}\n" +
                 "📱 Telegram: ✅ привязан\n" +
                 "💳 Подписка: ${subLine.md()}" +
                 contextLine +
@@ -106,9 +108,7 @@ class BotProfileHandler(
             "profile:edit_context",
         )))
 
-        // Реферальная программа — отдельная кнопка
         rows.add(row(btn("👥 Реферальная программа", "referral:info")))
-
         rows.add(row(btn("🔓 Отвязать Telegram", "profile:unlink_tg")))
         rows.add(row(btn("◀️ Главное меню",       "menu:back")))
 
