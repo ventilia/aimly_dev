@@ -104,6 +104,7 @@
 }
 .backBtn:hover { border-color: var(--c-accent); color: var(--c-accent); }
 
+/* Текст кнопки «← Кабинет»: полный на десктопе, стрелка на мобильном */
 .backBtnFull  { display: inline; }
 .backBtnShort { display: none; }
 
@@ -135,6 +136,7 @@
 .burgerOpen span:nth-child(2) { opacity: 0; transform: scaleX(0); }
 .burgerOpen span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
 
+/* Оверлей под открытым sidebar на мобильном */
 .mobileOverlay {
     position:   fixed;
     inset:      0;
@@ -196,6 +198,7 @@
     font-weight: 600;
 }
 
+/* Горизонтальная мобильная навигация — не используется (заменена drawer) */
 .mobileNav {
     display: none;
 }
@@ -380,13 +383,6 @@
 .rowAdmin    { background: rgba(99, 102, 241, 0.04); }
 .rowInactive { opacity: 0.5; }
 
-/* Кликабельная строка — подсветка при hover */
-.rowClickable {
-    cursor:     pointer;
-    transition: background 0.1s;
-}
-.rowClickable:hover { background: var(--c-accent-soft); }
-
 .cellId {
     font-family: monospace;
     font-size:   12px;
@@ -447,8 +443,8 @@
     text-transform: uppercase;
 }
 
-.badgeAdmin  { background: rgba(99, 102, 241, 0.15); color: #6366f1; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; display: inline-block; }
-.badgeUser   { background: var(--c-surface); color: var(--c-ink-3); border: 1px solid var(--c-border); font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; display: inline-block; }
+.badgeAdmin  { background: rgba(99, 102, 241, 0.15); color: #6366f1; }
+.badgeUser   { background: var(--c-surface); color: var(--c-ink-3); border: 1px solid var(--c-border); }
 .badgeActive { background: rgba(16, 185, 129, 0.12); color: #10b981; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; }
 .badgeTrial  { background: rgba(245, 158, 11, 0.12); color: #f59e0b; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; }
 .badgeTg     { color: #3b82f6; font-size: 12px; }
@@ -607,23 +603,6 @@
 .historyDate { font-size: 11px; color: var(--c-ink-3); }
 
 
-/* ── История уведомлений в новом стиле ── */
-.notifHistoryItem {
-    padding:       12px 14px;
-    background:    var(--c-bg);
-    border:        1px solid var(--c-border);
-    border-radius: 8px;
-}
-
-.notifHistoryHeader {
-    display:     flex;
-    align-items: center;
-    gap:         8px;
-    flex-wrap:   wrap;
-    margin-bottom: 4px;
-}
-
-
 .loading {
     text-align: center;
     padding:    40px;
@@ -643,320 +622,6 @@
 .placeholder p  { font-size: 13px; margin: 0; }
 
 
-/* ════════════════════════════════════════════════════════════
-   Модальное окно деталей пользователя
-   ════════════════════════════════════════════════════════════ */
-
-.modalOverlay {
-    position:        fixed;
-    inset:           0;
-    background:      rgba(0, 0, 0, 0.55);
-    z-index:         200;
-    display:         flex;
-    align-items:     flex-start;
-    justify-content: center;
-    padding:         40px 16px 24px;
-    overflow-y:      auto;
-    backdrop-filter: blur(2px);
-}
-
-.modalPanel {
-    background:    var(--c-surface);
-    border:        1px solid var(--c-border);
-    border-radius: 14px;
-    width:         100%;
-    max-width:     760px;
-    display:       flex;
-    flex-direction: column;
-    box-shadow:    0 24px 64px rgba(0, 0, 0, 0.22);
-    min-height:    0;
-    max-height:    calc(100vh - 64px);
-    overflow:      hidden;
-    flex-shrink:   0;
-}
-
-.modalHeader {
-    display:         flex;
-    align-items:     flex-start;
-    justify-content: space-between;
-    padding:         20px 24px 16px;
-    border-bottom:   1px solid var(--c-border);
-    gap:             12px;
-    flex-shrink:     0;
-}
-
-.modalTitle {
-    font-family:    var(--font-head);
-    font-size:      18px;
-    font-weight:    800;
-    color:          var(--c-ink);
-    margin:         0 0 4px;
-    letter-spacing: -.3px;
-}
-
-.modalSubtitle {
-    font-size:  12px;
-    color:      var(--c-ink-3);
-    font-family: monospace;
-}
-
-.modalClose {
-    width:         32px;
-    height:        32px;
-    border:        1px solid var(--c-border);
-    border-radius: 8px;
-    background:    var(--c-bg);
-    color:         var(--c-ink-3);
-    font-size:     14px;
-    cursor:        pointer;
-    display:       flex;
-    align-items:   center;
-    justify-content: center;
-    flex-shrink:   0;
-    transition:    all .15s;
-}
-.modalClose:hover { border-color: #ef4444; color: #ef4444; background: rgba(239,68,68,.06); }
-
-/* Вкладки внутри модала */
-.modalTabs {
-    display:        flex;
-    gap:            2px;
-    padding:        10px 16px 0;
-    border-bottom:  1px solid var(--c-border);
-    background:     var(--c-surface);
-    flex-shrink:    0;
-    overflow-x:     auto;
-}
-
-.modalTab {
-    padding:         8px 14px;
-    border:          none;
-    background:      none;
-    color:           var(--c-ink-3);
-    font-size:       13px;
-    font-weight:     500;
-    cursor:          pointer;
-    font-family:     inherit;
-    border-bottom:   2px solid transparent;
-    margin-bottom:   -1px;
-    white-space:     nowrap;
-    transition:      color .12s, border-color .12s;
-}
-.modalTab:hover { color: var(--c-ink); }
-
-.modalTabActive {
-    color:        var(--c-accent);
-    font-weight:  600;
-    border-bottom-color: var(--c-accent);
-}
-
-/* Тело модала — скроллится */
-.modalBody {
-    padding:    20px 24px;
-    overflow-y: auto;
-    flex:       1;
-    min-height: 0;
-}
-
-/* Сетка деталей профиля */
-.detailGrid {
-    display:        flex;
-    flex-direction: column;
-    gap:            2px;
-}
-
-.detailRow {
-    display:         flex;
-    align-items:     flex-start;
-    gap:             12px;
-    padding:         8px 0;
-    border-bottom:   1px solid var(--c-border);
-}
-.detailRow:last-child { border-bottom: none; }
-
-.detailLabel {
-    font-size:   12px;
-    color:       var(--c-ink-3);
-    min-width:   160px;
-    flex-shrink: 0;
-    padding-top: 1px;
-}
-
-.detailValue {
-    font-size:  13px;
-    color:      var(--c-ink);
-    flex:       1;
-    line-height: 1.4;
-}
-
-.detailMono {
-    font-family: monospace;
-    font-size:   12px;
-}
-
-.detailDivider {
-    height:        1px;
-    background:    var(--c-border);
-    margin:        8px 0;
-    border:        none;
-}
-
-.detailFullRow {
-    display:        flex;
-    flex-direction: column;
-    gap:            6px;
-    padding:        8px 0;
-}
-
-.detailContextBox {
-    font-size:     13px;
-    color:         var(--c-ink-2);
-    background:    var(--c-bg);
-    border:        1px solid var(--c-border);
-    border-radius: 8px;
-    padding:       10px 12px;
-    line-height:   1.55;
-    white-space:   pre-wrap;
-    word-break:    break-word;
-}
-
-/* Лиды в модале */
-.leadsNote {
-    font-size:     12px;
-    color:         var(--c-ink-3);
-    margin-bottom: 12px;
-}
-
-.leadCard {
-    background:    var(--c-bg);
-    border:        1px solid var(--c-border);
-    border-radius: 8px;
-    padding:       12px 14px;
-    margin-bottom: 8px;
-    transition:    border-color .15s;
-}
-.leadCard:hover { border-color: var(--c-accent); }
-
-.leadCardHeader {
-    display:     flex;
-    align-items: center;
-    gap:         8px;
-    flex-wrap:   wrap;
-    margin-bottom: 6px;
-}
-
-.leadKeyword {
-    font-size:     11px;
-    font-weight:   700;
-    background:    var(--c-accent-soft);
-    color:         var(--c-accent);
-    padding:       2px 7px;
-    border-radius: 4px;
-}
-
-.leadChat {
-    font-size:   12px;
-    color:       var(--c-ink-2);
-    font-weight: 500;
-}
-
-.leadStatus {
-    font-size:   11px;
-    font-weight: 600;
-    padding:     2px 6px;
-    border-radius: 4px;
-    background:  var(--c-bg);
-    border:      1px solid var(--c-border);
-    color:       var(--c-ink-3);
-}
-
-.leadStatusNEW     { background: rgba(59,130,246,.12); color: #3b82f6; border-color: rgba(59,130,246,.3); }
-.leadStatusVIEWED  { background: rgba(16,185,129,.12); color: #10b981; border-color: rgba(16,185,129,.3); }
-.leadStatusREPLIED { background: rgba(139,92,246,.12); color: #8b5cf6; border-color: rgba(139,92,246,.3); }
-.leadStatusIGNORED { background: rgba(107,114,128,.12); color: #6b7280; border-color: rgba(107,114,128,.3); }
-
-.leadDate {
-    font-size: 11px;
-    color:     var(--c-ink-3);
-    margin-left: auto;
-}
-
-.leadAuthor {
-    font-size:     12px;
-    color:         var(--c-ink-3);
-    margin-bottom: 4px;
-}
-
-.leadText {
-    font-size:   13px;
-    color:       var(--c-ink-2);
-    line-height: 1.5;
-    word-break:  break-word;
-}
-
-.leadLink {
-    display:       inline-block;
-    margin-top:    6px;
-    font-size:     12px;
-    color:         #3b82f6;
-    text-decoration: none;
-}
-.leadLink:hover { text-decoration: underline; }
-
-/* Чаты в модале */
-.chipList {
-    display:  flex;
-    flex-wrap: wrap;
-    gap:      8px;
-}
-
-.chipItem {
-    display:       flex;
-    align-items:   center;
-    gap:           6px;
-    padding:       6px 10px;
-    background:    var(--c-bg);
-    border:        1px solid var(--c-border);
-    border-radius: 7px;
-    font-size:     13px;
-}
-
-.chipTitle { color: var(--c-ink); }
-
-.chipLink {
-    color:           #3b82f6;
-    text-decoration: none;
-    font-size:       12px;
-}
-.chipLink:hover { text-decoration: underline; }
-
-/* Ключевые слова в модале */
-.kwWrap {
-    display:  flex;
-    flex-wrap: wrap;
-    gap:      6px;
-}
-
-.kwBadge {
-    display:       inline-block;
-    padding:       4px 10px;
-    background:    var(--c-accent-soft);
-    color:         var(--c-accent);
-    font-size:     12px;
-    font-weight:   600;
-    border-radius: 6px;
-}
-
-/* Пустое состояние */
-.emptyState {
-    text-align: center;
-    padding:    32px;
-    color:      var(--c-ink-3);
-    font-size:  14px;
-}
-
-
-/* ── Responsiveness ── */
 @media (max-width: 1024px) {
     .notifTab { grid-template-columns: 1fr; }
     .main { padding: 24px 24px; }
@@ -965,6 +630,7 @@
 @media (max-width: 860px) {
 
     .header { padding: 0 16px; gap: 10px; }
+
 
     .sidebar {
         position:   fixed;
@@ -979,8 +645,10 @@
 
     .sidebarOpen { left: 0; }
 
+    /* Показываем бургер */
     .burger { display: flex; }
 
+    /* headerRight — скрываем backBtn-текст и langSwitch чтобы влезло в хедер */
     .langSwitch { display: none; }
 
     .body {
@@ -1001,13 +669,6 @@
 
     .backBtnFull  { display: none; }
     .backBtnShort { display: inline; }
-
-
-    .modalOverlay  { padding: 0; align-items: flex-end; }
-    .modalPanel    { max-width: 100%; border-radius: 14px 14px 0 0; max-height: 92vh; }
-    .modalBody     { padding: 16px; }
-    .modalHeader   { padding: 16px; }
-    .detailLabel   { min-width: 120px; }
 }
 
 @media (max-width: 480px) {

@@ -2,7 +2,6 @@ package io.getaimly.backend.auth
 
 import com.fasterxml.jackson.annotation.JsonProperty
 import io.getaimly.backend.auth.dto.AuthResponse
-import io.getaimly.backend.referral.ReferralService
 import io.getaimly.backend.security.JwtService
 import io.getaimly.backend.user.User
 import io.getaimly.backend.user.UserRepository
@@ -10,18 +9,14 @@ import jakarta.servlet.http.HttpServletResponse
 import jakarta.transaction.Transactional
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
-import org.springframework.beans.factory.annotation.Lazy
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.client.RestClient
 import java.time.LocalDateTime
 
 
-// referral_code — опциональное поле, передаётся фронтом если пользователь
-// пришёл по реферальной ссылке перед тем как нажал "Войти через Google"
 data class GoogleAuthRequest(
-    @JsonProperty("id_token")      val idToken:      String,
-    @JsonProperty("referral_code") val referralCode: String? = null,
+    @JsonProperty("id_token") val idToken: String,
 )
 
 data class GoogleTokenInfo(
@@ -37,11 +32,9 @@ data class GoogleTokenInfo(
 @RestController
 @RequestMapping("/api/v1/auth/oauth2")
 class GoogleOAuthController(
-    private val userRepository:  UserRepository,
-    private val jwtService:      JwtService,
-    private val authController:  AuthController,
-    // @Lazy — чтобы разорвать возможный circular dependency с AuthController
-    @Lazy private val referralService: ReferralService,
+    private val userRepository: UserRepository,
+    private val jwtService:     JwtService,
+    private val authController: AuthController,
     @Value("\${google.client-id}") private val googleClientId: String,
 ) {
     private val log    = LoggerFactory.getLogger(GoogleOAuthController::class.java)
@@ -68,15 +61,11 @@ class GoogleOAuthController(
 
         val email = tokenInfo.email.lowercase()
 
-        // Флаг: пользователь создаётся впервые?
-        // Только новым пользователям применяем реф-код — уже существующие
-        // должны были получить его при первой регистрации.
-        val existingUser = userRepository.findByGoogleId(tokenInfo.sub).orElse(null)
+        // ищем пользователя по googleId или email, если не нашли — создаём
+        val user = userRepository.findByGoogleId(tokenInfo.sub).orElse(null)
             ?: userRepository.findByEmail(email).orElse(null)
+            ?: createGoogleUser(email, tokenInfo)
 
-        val isNewUser = existingUser == null
-
-        val user = existingUser ?: createGoogleUser(email, tokenInfo)
 
         if (user.googleId == null) {
             user.googleId      = tokenInfo.sub
@@ -91,25 +80,12 @@ class GoogleOAuthController(
             throw ForbiddenException("Аккаунт заблокирован")
         }
 
-        // ── Реферальная программа ────────────────────────────────────────────
-        // Применяем реф-код только при первой регистрации через Google.
-        // Для уже существующего пользователя, который просто входит — игнорируем.
-        if (isNewUser && !request.referralCode.isNullOrBlank()) {
-            runCatching {
-                referralService.registerRefereeIfNew(request.referralCode, user)
-            }.onSuccess {
-                log.info("[REFERRAL] Рефери зарегистрирован при Google OAuth: userId=${user.id} code=${request.referralCode}")
-            }.onFailure { e ->
-                log.warn("[REFERRAL] Ошибка при регистрации рефери (Google OAuth): userId=${user.id} code=${request.referralCode} err=${e.message}")
-            }
-        }
-
         val auth = buildGoogleAuthResponse(user)
 
         // используем тот же метод что в AuthController — единые настройки куки
         authController.setAuthCookie(response, auth.token)
 
-        log.info("вход через Google: userId=${user.id} email=$email isNew=$isNewUser")
+        log.info("вход через Google: userId=${user.id} email=$email")
         return ResponseEntity.ok(auth.copy(token = ""))  // токен в куке, не в теле
     }
 
@@ -146,9 +122,10 @@ class GoogleOAuthController(
         email              = user.email,
         firstName          = user.firstName,
         emailVerified      = user.emailVerified,
-        trialUsed          = user.trialUsed,
+        trialUsed = user.trialUsed,
         telegramLinked     = user.telegramId != null,
         role               = user.role.name,
+
         subscriptionStatus = user.subscriptionStatus,
         subscriptionPlan   = user.subscriptionPlan,
     )
