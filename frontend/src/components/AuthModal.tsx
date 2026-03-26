@@ -90,14 +90,6 @@ function captureRefCode(): string | undefined {
     }
     return sessionStorage.getItem(REF_STORAGE_KEY) || undefined
 }
-
-/**
- * Возвращает реферальный код из sessionStorage (если есть).
- */
-function getStoredRefCode(): string | undefined {
-    return sessionStorage.getItem(REF_STORAGE_KEY) || undefined
-}
-
 /**
  * Очищает сохранённый реферальный код.
  */
