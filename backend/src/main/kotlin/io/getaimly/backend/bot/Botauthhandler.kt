@@ -107,7 +107,6 @@ class BotAuthHandler(
                             "Войдите или зарегистрируйтесь на сайте, а затем авторизуйтесь здесь:\n" +
                             "🌐 $SITE_URL\n\n" +
                             "Введите email от аккаунта AIMLY:",
-                    markup        = keyboard(row(btn("❌ Отмена", "auth:cancel"))),
                     parseMarkdown = true,
                 )
             }
