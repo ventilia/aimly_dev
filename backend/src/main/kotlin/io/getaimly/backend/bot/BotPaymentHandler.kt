@@ -14,7 +14,7 @@ class BotPaymentHandler(
 
     companion object {
         const val TRIBUTE_BOT_URL =
-            "https://t.me/tribute/app?startapp=ep_8xkUDdkgdcdIKFpXiZ9B7LGSk6x4TbxwNNWPQSFjRxqZQnNIZq"
+            "https://t.me/tribute/app?startapp=sRnQ"
     }
 
 
