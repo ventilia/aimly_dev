@@ -126,6 +126,7 @@ export const authApi = {
         password:        string
         confirmPassword: string
         firstName?:      string
+        referralCode?:   string
     }): Promise<RegisterResponse> {
         return request('/api/v1/auth/register', {
             method: 'POST',

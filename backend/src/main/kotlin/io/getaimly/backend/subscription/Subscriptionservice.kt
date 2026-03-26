@@ -100,7 +100,7 @@ class SubscriptionService(
             return
         }
 
-        val expiresAt = LocalDateTime.now().plusDays(5)
+        val expiresAt = LocalDateTime.now().plusDays(7)
 
         user.trialUsed          = true
         user.subscriptionStatus = "TRIAL"

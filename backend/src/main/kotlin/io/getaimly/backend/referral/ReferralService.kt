@@ -29,10 +29,10 @@ class ReferralService(
     private val log = LoggerFactory.getLogger(ReferralService::class.java)
 
     companion object {
-        const val BONUS_DAYS_PER_REFERRAL = 5
+        const val BONUS_DAYS_PER_REFERRAL = 7
     }
 
-    // ─── Получить или создать реферальный код пользователя ───────────────────
+
 
     @Transactional
     fun getOrCreateCode(user: User): ReferralCode {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import {useState, useEffect, useRef, useMemo} from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Lang } from '../i18n/translations'
 import { authApi } from '../api/auth'
@@ -71,6 +71,20 @@ function buildGoogleOAuthUrl(): string {
         nonce,
     })
     return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
+}
+
+// ── Хелперы для реферального кода ────────────────────────────────────────────
+const REF_STORAGE_KEY = 'aimly_ref_code'
+
+/** Читаем ?ref= из URL и сохраняем в sessionStorage, чтобы не потерять при навигации */
+function captureRefCode(): string | undefined {
+    const params = new URLSearchParams(window.location.search)
+    const fromUrl = params.get('ref') || undefined
+    if (fromUrl) {
+        sessionStorage.setItem(REF_STORAGE_KEY, fromUrl)
+        return fromUrl
+    }
+    return sessionStorage.getItem(REF_STORAGE_KEY) || undefined
 }
 
 
@@ -252,6 +266,10 @@ export default function AuthModal({
     const [tab,  setTab]  = useState<TabMode>(initialTab)
     const [step, setStep] = useState<Step>('form')
 
+    // --- Реферальный код — читаем из URL или sessionStorage (не теряется при навигации) ---
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const referralCode = useMemo(() => captureRefCode(), [])
+
     // --- Поля формы входа/регистрации ---
     const [email,           setEmail]           = useState('')
     const [password,        setPassword]        = useState('')
@@ -313,6 +331,8 @@ export default function AuthModal({
     useEffect(() => {
         if (step === 'success') {
             const timer = setTimeout(() => {
+                // После успешной регистрации — очищаем сохранённый реф-код
+                sessionStorage.removeItem(REF_STORAGE_KEY)
                 if (onSuccess) {
                     onSuccess()
                 } else {
@@ -394,6 +414,7 @@ export default function AuthModal({
                 password,
                 confirmPassword,
                 firstName:      firstName.trim() || undefined,
+                referralCode,   // передаём реф-код из URL или sessionStorage
             })
             if (res.token !== null || res.userId !== null) {
                 setEmailUsed(email.trim()); setStep('code'); startResendTimer(60)
@@ -431,6 +452,8 @@ export default function AuthModal({
     const handleGoogle = () => {
         if (onSuccess) sessionStorage.setItem('oauth_after_checkout', '1')
         sessionStorage.setItem('oauth_return_to', '/dashboard')
+        // Сохраняем реф-код чтобы он не потерялся при редиректе через OAuth
+        if (referralCode) sessionStorage.setItem(REF_STORAGE_KEY, referralCode)
         window.location.href = buildGoogleOAuthUrl()
     }
 
@@ -458,7 +481,6 @@ export default function AuthModal({
     const handleVerifyResetCode = async () => {
         setResetCodeError(null)
         if (resetCode.length !== 6) { setResetCodeError('Введите 6-значный код'); return }
-        // Просто переходим к следующему шагу — код проверим при смене пароля
         setStep('new-password')
     }
 
@@ -489,7 +511,6 @@ export default function AuthModal({
             saveSession(res)
             setStep('reset-success')
         } catch (e: unknown) {
-            // Если код неверный — возвращаем пользователя к вводу кода
             const msg = e instanceof Error ? e.message : 'Ошибка. Попробуйте ещё раз'
             if (msg.toLowerCase().includes('код') || msg.toLowerCase().includes('code')) {
                 setStep('reset-code')

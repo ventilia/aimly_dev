@@ -13,6 +13,7 @@ data class RegisterRequest(
         regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).+$",
         message = "пароль должен содержать строчные, заглавные буквы и цифры",
     )
+    val referralCode: String? = null,
     val password: String,
 
     @field:NotBlank(message = "подтверждение пароля обязательно")

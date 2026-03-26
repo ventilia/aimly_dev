@@ -3,6 +3,7 @@ package io.getaimly.backend.auth
 import io.getaimly.backend.auth.dto.*
 import io.getaimly.backend.bot.AimlyBot
 import io.getaimly.backend.email.EmailService
+import io.getaimly.backend.referral.ReferralService
 import io.getaimly.backend.security.JwtService
 import io.getaimly.backend.security.RateLimitService
 import io.getaimly.backend.subscription.SubscriptionService
@@ -27,6 +28,7 @@ class AuthService(
 
     @Lazy private val subscriptionService: SubscriptionService,
     @Lazy private val bot: AimlyBot,
+    @Lazy private val referralService: ReferralService,
 ) {
     private val log    = LoggerFactory.getLogger(AuthService::class.java)
     private val random = SecureRandom()
@@ -74,6 +76,14 @@ class AuthService(
         )
 
         log.info("[AUTH] Регистрация: userId=${user.id} email=${user.email} name=${user.firstName}")
+
+        // ── Реферальный код — применяем ПОСЛЕ создания пользователя ──────────
+        if (!request.referralCode.isNullOrBlank()) {
+            runCatching { referralService.registerRefereeIfNew(request.referralCode, user) }
+                .onSuccess { log.info("[REFERRAL] Рефери зарегистрирован при регистрации: userId=${user.id} code=${request.referralCode}") }
+                .onFailure { log.warn("[REFERRAL] Ошибка регистрации рефери при регистрации: ${it.message}") }
+        }
+
         sendVerificationCode(user)
 
         val token = jwtService.generateToken(user.id, user.email)

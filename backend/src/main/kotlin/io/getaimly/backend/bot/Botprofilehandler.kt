@@ -49,7 +49,7 @@ class BotProfileHandler(
         // Реферальная статистика для краткого отображения в профиле
         val refStats   = referralService.getStats(user)
 
-        log.info("[BOT][PROFILE] Просмотр профиля: userId=${user.id} email=${user.email} план=${user.subscriptionPlan} статус=${user.subscriptionStatus} чатов=$chatCount ключ_слов=$kwCount всего_лидов=$totalLeads новых=$newLeads")
+        log.info("[BOT][PROFILE] Просмотр профиля: userId=${user.id} email=${user.email} план=${user.subscriptionPlan} статус=${user.subscriptionStatus} чатов=$chatCount ключ_слов=$kwCount всего_лидов=$totalLeads новых=$newLeads реф_всего=${refStats.totalReferrals} реф_оплатили=${refStats.paidReferrals} буфер=${refStats.bonusDaysLeft}")
 
         val plan          = user.subscriptionPlan
         val hasAiFeatures = plan == "MINIMUM" || plan == "START" || user.subscriptionStatus == "TRIAL"
@@ -74,9 +74,10 @@ class BotProfileHandler(
             else                                  -> "\n🎯 *Бизнес-контекст AI:* не задан"
         }
 
-        // Реферальная строка — всегда показываем кратко
+        // Реферальная строка — кратко + подсказка про механику
         val refLine = "\n👥 *Рефералы:* ${refStats.paidReferrals} оплатили " +
-                "\\(бонус: ${refStats.bonusDaysLeft} дн\\.\\)"
+                "\\(бонус: ${refStats.bonusDaysLeft} дн\\.\\)" +
+                "\n_💡 За каждого оплатившего друга — \\+7 дней бесплатно_"
 
         val text = "👤 *Профиль*\n\n" +
                 "📧 ${user.email.md()}\n" +
@@ -132,7 +133,7 @@ class BotProfileHandler(
                 chatId, msgId,
                 "🔒 *AI-персонализация недоступна*\n\n" +
                         "На тарифе *START* и выше вы можете задать описание своего бизнеса — " +
-                        "AI будет отбирать только тех клиентов, которые ищут именно то, что вы предлагаете.\n\n" +
+                        "AI будет отбирать только тех клиентов, которые ищут именно то, что вы предлагаете\\.\n\n" +
                         "💡 Пример: «Я frontend-разработчик на React, ищу клиентов с бюджетом от 50к»",
                 keyboard(
                     row(btn("💳 Оплатить подписку", "payment:plans")),
@@ -156,12 +157,12 @@ class BotProfileHandler(
         sender.editText(
             chatId, msgId,
             "🎯 *AI-персонализация*$currentLine\n\n" +
-                    "Опишите ваш бизнес, услуги и целевую аудиторию.\n" +
-                    "AI учитывает это при фильтрации лидов и при генерации ключевых слов.\n\n" +
+                    "Опишите ваш бизнес, услуги и целевую аудиторию\\.\n" +
+                    "AI учитывает это при фильтрации лидов и при генерации ключевых слов\\.\n\n" +
                     "✏️ Отправьте новый текст (до 2000 символов):\n\n" +
-                    "💡 _Пример: Я frontend-разработчик, специализируюсь на React и Next.js. " +
-                    "Ищу клиентов, которым нужна разработка или доработка веб-приложений. " +
-                    "Работаю с бюджетами от 50 000 ₽._",
+                    "💡 _Пример: Я frontend-разработчик, специализируюсь на React и Next\\.js\\. " +
+                    "Ищу клиентов, которым нужна разработка или доработка веб-приложений\\. " +
+                    "Работаю с бюджетами от 50 000 ₽\\._",
             keyboard(
                 row(btn("🗑 Очистить контекст", "profile:clear_context")),
                 row(btn("❌ Отмена",             "menu:profile")),
@@ -204,7 +205,7 @@ class BotProfileHandler(
 
                 val confirmText = if (isSaved)
                     "✅ *Бизнес-контекст сохранён!*\n\n" +
-                            "🤖 AI теперь учитывает ваш профиль при фильтрации лидов и генерации ключевых слов.\n\n" +
+                            "🤖 AI теперь учитывает ваш профиль при фильтрации лидов и генерации ключевых слов\\.\n\n" +
                             "📌 _Описание:_\n${trimmed.take(300).md()}${if (trimmed.length > 300) "…" else ""}"
                 else
                     "✅ *Бизнес-контекст очищен.*\n\nAI будет работать без персонализации."
@@ -264,7 +265,7 @@ class BotProfileHandler(
                     "После отвязки:\n" +
                     "• Мониторинг лидов остановится\n" +
                     "• Уведомления перестанут приходить\n\n" +
-                    "Аккаунт getaimly.io сохранится. Вы сможете привязать снова.",
+                    "Аккаунт getaimly\\.io сохранится\\. Вы сможете привязать снова.",
             keyboard(row(
                 btn("✅ Да, отвязать", "profile:unlink_tg:confirm"),
                 btn("❌ Отмена",        "menu:profile"),
