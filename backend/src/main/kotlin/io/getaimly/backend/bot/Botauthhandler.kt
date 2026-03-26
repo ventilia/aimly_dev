@@ -4,6 +4,7 @@ import io.getaimly.backend.auth.AuthService
 import io.getaimly.backend.auth.BadRequestException
 import io.getaimly.backend.auth.ForbiddenException
 import io.getaimly.backend.auth.LoginResult
+import io.getaimly.backend.auth.RegisterViaTelegramResult
 import io.getaimly.backend.auth.TooManyRequestsException
 import io.getaimly.backend.auth.UnauthorizedException
 import io.getaimly.backend.auth.dto.LoginRequest
@@ -33,6 +34,9 @@ class BotAuthHandler(
         const val SITE_DASHBOARD = "$SITE_URL/dashboard"
         private const val PAY_PREFIX = "pay_"
         private const val REF_PREFIX = "ref_"
+
+        // Минимальная длина пароля при регистрации через бота
+        private const val MIN_PASSWORD_LENGTH = 8
     }
 
     // ── Хелпер: безопасное имя из Telegram — null если пустое/blank ─────────
@@ -88,27 +92,43 @@ class BotAuthHandler(
                     .onFailure { log.warn("[BOT][AUTH] Ошибка регистрации рефери: ${it.message}") }
                 showMainMenu(chatId, existing.firstName)
             } else {
-                // Новый пользователь — сохраняем код в сессии, показываем приветствие
+                // Новый пользователь — сохраняем код в сессии, показываем приветствие с кнопками
+                sessions[chatId] = UserSession(
+                    step                = BotStep.WAITING_EMAIL, // заглушка, кнопки управляют дальше
+                    msgId               = 0,
+                    pendingReferralCode = refCode,
+                )
+                sessions.remove(chatId) // не ждём ввода текста до нажатия кнопки
+
+                log.info("[BOT][AUTH] Реферальный код сохранён в сессии: $tgUser code=$refCode")
+
+                val greet = greeting(from.safeName())
+                sender.sendText(
+                    chatId,
+                    "$greet\n\n" +
+                            "Вы перешли по реферальной ссылке AIMLY.\n\n" +
+                            "AIMLY — сервис поиска лидов в Telegram-чатах по ключевым словам.\n\n" +
+                            "🎁 Бонус: зарегистрируйтесь по этой ссылке и получите +7 дней бесплатно.\n\n" +
+                            "Войдите в существующий аккаунт или создайте новый прямо здесь:",
+                    markup = keyboard(
+                        row(
+                            btn("🔐 Войти", "auth:login"),
+                            btn("📝 Зарегистрироваться", "auth:register"),
+                        ),
+                    ),
+                    // Намеренно без parseMarkdown — чистый текст, без лишних экранирований
+                )
+
+                // Сохраняем referralCode отдельно, чтобы подхватить в любом из потоков
                 sessions[chatId] = UserSession(
                     step                = BotStep.WAITING_EMAIL,
                     msgId               = 0,
                     pendingReferralCode = refCode,
                 )
-                log.info("[BOT][AUTH] Реферальный код сохранён в сессии: $tgUser code=$refCode")
-
-                // ✅ Фикс: используем safeName() чтобы не было "Привет, .!"
-                val greet = greeting(from.safeName())
-                sender.sendText(
-                    chatId,
-                    "$greet\n\n" +
-                            "Вы перешли по реферальной ссылке AIMLY\\.\n\n" +
-                            "*AIMLY* — сервис поиска лидов в Telegram\\-чатах по ключевым словам\\.\n\n" +
-                            "🎁 *Бонус:* зарегистрируйтесь по этой ссылке и получите +7 дней бесплатно\\. " +
-                            "Войдите или зарегистрируйтесь на сайте, а затем авторизуйтесь здесь:\n" +
-                            "🌐 $SITE_URL\n\n" +
-                            "Введите email от аккаунта AIMLY:",
-                    parseMarkdown = true,
-                )
+                // Убираем активную сессию (шаг не начат — только код хранится)
+                sessions.remove(chatId)
+                // Кладём обратно как "pending" без шага — для этого используем специальный контейнер
+                pendingReferralCodes[chatId] = refCode
             }
             return
         }
@@ -124,9 +144,7 @@ class BotAuthHandler(
                 log.info("[BOT][AUTH] ✅ Привязка через pay_token успешна: $tgUser userId=${user?.id} email=${user?.email}")
                 sender.sendText(
                     chatId,
-                    "✅ *Telegram привязан к аккаунту AIMLY\\!*\n\n" +
-                            "Теперь переходим к оплате подписки\\.",
-                    parseMarkdown = true,
+                    "✅ Telegram привязан к аккаунту AIMLY!\n\nТеперь переходим к оплате подписки.",
                 )
                 paymentHandler.sendPaymentMessage(chatId, from.id)
             } else {
@@ -139,9 +157,13 @@ class BotAuthHandler(
                     log.warn("[BOT][AUTH] ❌ pay_token устарел, пользователь не найден: $tgUser")
                     sender.sendText(
                         chatId,
-                        "Ссылка привязки устарела.\n\n" +
-                                "Войдите через сайт и повторите переход к оплате:\n" +
-                                "🌐 $SITE_URL/checkout",
+                        "Ссылка привязки устарела.\n\nВойдите в аккаунт или зарегистрируйтесь:",
+                        markup = keyboard(
+                            row(
+                                btn("🔐 Войти",               "auth:login_pay"),
+                                btn("📝 Зарегистрироваться",  "auth:register"),
+                            ),
+                        ),
                     )
                 }
             }
@@ -155,64 +177,71 @@ class BotAuthHandler(
                 log.info("[BOT][AUTH] /start?pay: $tgUser уже привязан → переход к оплате userId=${existing.id} email=${existing.email}")
                 paymentHandler.sendPaymentMessage(chatId, from.id)
             } else {
-                log.info("[BOT][AUTH] /start?pay: $tgUser не авторизован → запрашиваем email для входа перед оплатой")
-                sessions[chatId] = UserSession(
-                    step          = BotStep.WAITING_EMAIL,
-                    msgId         = 0,
-                    pendingAction = "pay",
-                )
+                log.info("[BOT][AUTH] /start?pay: $tgUser не авторизован → показываем кнопки входа/регистрации")
                 sender.sendText(
                     chatId,
-                    "Для оплаты подписки войдите в аккаунт AIMLY.\n\nВведите email:",
-                    markup = keyboard(row(btn("❌ Отмена", "auth:cancel"))),
+                    "Для оплаты подписки нужно войти в аккаунт AIMLY:",
+                    markup = keyboard(
+                        row(
+                            btn("🔐 Войти",               "auth:login_pay"),
+                            btn("📝 Зарегистрироваться",  "auth:register"),
+                        ),
+                    ),
                 )
             }
             return
         }
 
-        // ── Обычная привязка через link token ────────────────────────────────
-        log.info("[BOT][AUTH] Попытка привязки Telegram: $tgUser")
-        val ok = authService.linkTelegram(token, from.id, from.userName)
-        if (ok) {
+        // ── Обычный TG_LINK токен (привязка с сайта) ─────────────────────────
+        val linked = authService.linkTelegram(token, from.id, from.userName)
+        if (linked) {
             val user = userRepository.findByTelegramId(from.id).orElse(null)
-            log.info("[BOT][AUTH] ✅ Telegram успешно привязан: $tgUser userId=${user?.id} email=${user?.email}")
-            sender.sendText(
-                chatId,
-                "✅ *Telegram успешно привязан к аккаунту AIMLY\\!*\n\n" +
-                        "Теперь новые лиды будут приходить сюда автоматически\\.\n\n" +
-                        "🌐 Для удобного управления рекомендуем использовать сайт:\n" +
-                        "$SITE_DASHBOARD\n\n" +
-                        "📌 Чтобы начать мониторинг прямо здесь:\n" +
-                        "  1\\. Добавьте чаты → кнопка «💬 Чаты»\n" +
-                        "  2\\. Укажите ключевые слова → «🔍 Ключевые слова»",
-                parseMarkdown = true,
-            )
-            showMainMenu(chatId, user?.firstName)
+            log.info("[BOT][AUTH] ✅ Telegram привязан через токен: $tgUser userId=${user?.id} email=${user?.email}")
+            val name = user?.firstName?.takeIf { it.isNotBlank() } ?: user?.email?.split("@")?.first() ?: "пользователь"
+            showMainMenu(chatId, name)
         } else {
-            log.warn("[BOT][AUTH] ❌ Недействительный link token: $tgUser")
-            sender.sendText(
-                chatId,
-                "❌ Ссылка недействительна или истекла.\n\n" +
-                        "Запросите новую ссылку в личном кабинете:\n" +
-                        "🌐 $SITE_DASHBOARD → Профиль → Привязать Telegram",
-            )
+            val existing = userRepository.findByTelegramId(from.id).orElse(null)
+            if (existing != null) {
+                log.info("[BOT][AUTH] Токен устарел, но пользователь уже привязан: $tgUser userId=${existing.id}")
+                showMainMenu(chatId, existing.firstName)
+            } else {
+                log.warn("[BOT][AUTH] ❌ Токен привязки устарел: $tgUser")
+                sender.sendText(
+                    chatId,
+                    "Ссылка устарела.\n\nВойдите в аккаунт или зарегистрируйтесь:",
+                    markup = keyboard(
+                        row(
+                            btn("🔐 Войти",               "auth:login"),
+                            btn("📝 Зарегистрироваться",  "auth:register"),
+                        ),
+                    ),
+                )
+            }
         }
     }
 
+    // ─── Хранилище referralCode до начала потока входа/регистрации ────────────
+    // (живёт только в памяти, достаточно для нашего сценария)
+    private val pendingReferralCodes = java.util.concurrent.ConcurrentHashMap<Long, String>()
+
+    /**
+     * Стартовый экран для незарегистрированных пользователей.
+     * Показывает две кнопки: Войти / Зарегистрироваться.
+     */
     fun showWelcome(chatId: Long, name: String?) {
-        log.info("[BOT][AUTH] Показываем приветствие: chatId=$chatId firstName=${name ?: "—"}")
-        // ✅ Фикс: greeting() защищает от пустой строки
         val greet = greeting(name)
+        log.info("[BOT][AUTH] Показ приветствия: chatId=$chatId")
         sender.sendText(
             chatId,
             "$greet\n\n" +
-                    "*AIMLY* — сервис поиска лидов в Telegram\\-чатах по ключевым словам\\.\n\n" +
-                    "🤖 Этот бот повторяет весь функционал сайта \\(кроме администрирования\\)\\.\n" +
-                    "Для максимального удобства рекомендуем использовать веб\\-версию:\n" +
-                    "🌐 $SITE_URL\n\n" +
-                    "Войдите в аккаунт, чтобы начать:",
-            markup        = keyboard(row(btn("🔐 Войти в аккаунт", "auth:login"))),
-            parseMarkdown = true,
+                    "Добро пожаловать в AIMLY — сервис поиска лидов в Telegram-чатах.\n\n" +
+                    "Войдите в существующий аккаунт или создайте новый:",
+            markup = keyboard(
+                row(
+                    btn("🔐 Войти",               "auth:login"),
+                    btn("📝 Зарегистрироваться",  "auth:register"),
+                ),
+            ),
         )
     }
 
@@ -233,7 +262,6 @@ class BotAuthHandler(
             rows.add(row(btn("💳 Оплатить подписку", "payment:plans")))
         }
 
-        // ✅ Фикс: greeting() защищает от пустой строки
         val greet = greeting(name)
 
         sender.sendText(
@@ -260,7 +288,6 @@ class BotAuthHandler(
             rows.add(row(btn("💳 Оплатить подписку", "payment:plans")))
         }
 
-        // ✅ Фикс: берём имя из БД, защищаем от пустой строки
         val greet = greeting(user?.firstName)
 
         sender.editText(
@@ -271,19 +298,21 @@ class BotAuthHandler(
     }
 
 
-    fun startLoginFlow(chatId: Long, msgId: Int) {
-        log.info("[BOT][AUTH] Начало входа (форма логина): chatId=$chatId")
-        val existingRefCode = sessions[chatId]?.pendingReferralCode
+    // ─── ВХОД (логин) ─────────────────────────────────────────────────────────
+
+    fun startLoginFlow(chatId: Long, msgId: Int, pendingAction: String? = null) {
+        log.info("[BOT][AUTH] Начало входа: chatId=$chatId pendingAction=$pendingAction")
+        val existingRefCode = pendingReferralCodes[chatId]
         sessions[chatId] = UserSession(
             step                = BotStep.WAITING_EMAIL,
             msgId               = msgId,
             pendingReferralCode = existingRefCode,
+            pendingAction       = pendingAction,
         )
         sender.editText(
             chatId, msgId,
-            "🔐 *Вход в аккаунт*\n\nВведите email от вашего аккаунта getaimly\\.io:",
+            "🔐 Вход в аккаунт\n\nВведите email от вашего аккаунта getaimly.io:",
             markup        = keyboard(row(btn("❌ Отмена", "auth:cancel"))),
-            parseMarkdown = true,
         )
     }
 
@@ -292,12 +321,12 @@ class BotAuthHandler(
         val email   = text.lowercase().trim()
 
         if (!email.contains('@') || !email.contains('.')) {
-            log.warn("[BOT][AUTH] Некорректный email: chatId=$chatId input=\"$text\"")
+            log.warn("[BOT][AUTH] Некорректный email при входе: chatId=$chatId input=\"$text\"")
             sender.sendText(chatId, "⚠️ Некорректный формат email.\n\nПопробуйте ещё раз:")
             return
         }
 
-        log.info("[BOT][AUTH] Email введён: chatId=$chatId email=\"$email\"")
+        log.info("[BOT][AUTH] Email введён (вход): chatId=$chatId email=\"$email\"")
         session.email = email
         session.step  = BotStep.WAITING_PASSWORD
         sender.sendText(chatId, "🔑 Введите пароль:")
@@ -322,10 +351,10 @@ class BotAuthHandler(
                         authService.linkTelegramDirect(result.auth.userId, from.id, from.userName)
                     }
                     val name = result.auth.firstName?.takeIf { it.isNotBlank() } ?: email.split("@").first()
-                    log.info("[BOT][AUTH] ✅ Успешный вход: $tgUser userId=${result.auth.userId} email=$email план=${result.auth.subscriptionPlan} статус=${result.auth.subscriptionStatus}")
+                    log.info("[BOT][AUTH] ✅ Успешный вход: $tgUser userId=${result.auth.userId} email=$email")
 
-                    // ── Применяем реферальный код если был сохранён ──────────
-                    val refCode = session.pendingReferralCode
+                    // Применяем реферальный код если был сохранён
+                    val refCode = session.pendingReferralCode ?: pendingReferralCodes.remove(chatId)
                     if (refCode != null) {
                         val user = userRepository.findByTelegramId(from.id).orElse(null)
                         if (user != null) {
@@ -334,7 +363,6 @@ class BotAuthHandler(
                                 .onFailure { log.warn("[REFERRAL] Ошибка регистрации рефери после входа в боте: ${it.message}") }
                         }
                     }
-                    // ─────────────────────────────────────────────────────────
 
                     sender.sendText(chatId, "✅ Добро пожаловать, $name!\n\nТеперь лиды будут приходить сюда.")
 
@@ -348,18 +376,17 @@ class BotAuthHandler(
                 }
                 is LoginResult.PendingVerification -> {
                     log.warn("[BOT][AUTH] Email не подтверждён: $tgUser email=\"$email\"")
-                    sessions[chatId] = session.copy(step = BotStep.WAITING_EMAIL, email = null)
                     sender.sendText(
                         chatId,
-                        "📧 Email не подтверждён.\n\nПроверьте почту $email и перейдите по ссылке.",
-                        markup = keyboard(row(btn("🔄 Войти снова", "auth:retry"), btn("❌ Отмена", "auth:cancel"))),
+                        "📧 Email не подтверждён.\n\nПроверьте почту $email и перейдите по ссылке подтверждения.",
+                        markup = keyboard(row(btn("🔄 Войти снова", "auth:login"), btn("❌ Отмена", "auth:cancel_msg"))),
                     )
                 }
             }
         }.onFailure { e ->
             val msg = when (e) {
                 is TooManyRequestsException -> e.message ?: "Слишком много попыток"
-                is UnauthorizedException    -> e.message ?: "Неверный email или пароль"
+                is UnauthorizedException    -> e.message ?: "Неверные данные"
                 is ForbiddenException       -> e.message ?: "Аккаунт заблокирован"
                 is BadRequestException      -> e.message ?: "Ошибка запроса"
                 else -> {
@@ -368,12 +395,150 @@ class BotAuthHandler(
                 }
             }
             log.warn("[BOT][AUTH] Ошибка входа: $tgUser email=$email причина=${e.message}")
-            sessions[chatId] = session.copy(step = BotStep.WAITING_EMAIL, email = null)
             sender.sendText(
                 chatId,
-                "❌ $msg\n\nВведите email ещё раз или нажмите Отмена:",
-                markup = keyboard(row(btn("❌ Отмена", "auth:cancel"))),
+                "❌ $msg",
+                markup = keyboard(
+                    row(btn("🔄 Попробовать снова", "auth:login"), btn("❌ Отмена", "auth:cancel_msg")),
+                ),
             )
         }
+    }
+
+
+    // ─── РЕГИСТРАЦИЯ ──────────────────────────────────────────────────────────
+
+    /**
+     * Старт потока регистрации.
+     * msgId = 0 если сообщение отправляется новым, иначе редактируем существующее.
+     */
+    fun startRegisterFlow(chatId: Long, msgId: Int) {
+        log.info("[BOT][AUTH] Начало регистрации: chatId=$chatId")
+        sessions[chatId] = UserSession(
+            step                = BotStep.WAITING_REG_EMAIL,
+            msgId               = msgId,
+            pendingReferralCode = pendingReferralCodes[chatId],
+        )
+        val text   = "📝 Регистрация\n\nВведите email для нового аккаунта:"
+        val markup = keyboard(row(btn("❌ Отмена", "auth:cancel")))
+        if (msgId != 0) sender.editText(chatId, msgId, text, markup)
+        else            sender.sendText(chatId, text, markup)
+    }
+
+    fun handleWaitingRegEmail(chatId: Long, text: String) {
+        val session = sessions[chatId] ?: return
+        val email   = text.lowercase().trim()
+
+        if (!email.contains('@') || !email.contains('.')) {
+            log.warn("[BOT][AUTH] Некорректный email при регистрации: chatId=$chatId input=\"$text\"")
+            sender.sendText(chatId, "⚠️ Некорректный формат email.\n\nПопробуйте ещё раз:")
+            return
+        }
+
+        log.info("[BOT][AUTH] Email для регистрации: chatId=$chatId email=\"$email\"")
+        session.regEmail = email
+        session.step     = BotStep.WAITING_REG_PASSWORD
+        sender.sendText(
+            chatId,
+            "🔑 Придумайте пароль:\n\n" +
+                    "Требования:\n" +
+                    "• минимум $MIN_PASSWORD_LENGTH символов\n" +
+                    "• строчные и заглавные латинские буквы\n" +
+                    "• хотя бы одна цифра",
+        )
+    }
+
+    fun handleWaitingRegPassword(chatId: Long, text: String) {
+        val session  = sessions[chatId] ?: return
+        val password = text.trim()
+
+        val validationError = validatePassword(password)
+        if (validationError != null) {
+            log.warn("[BOT][AUTH] Слабый пароль при регистрации: chatId=$chatId")
+            sender.sendText(chatId, "⚠️ $validationError\n\nВведите пароль ещё раз:")
+            return
+        }
+
+        log.info("[BOT][AUTH] Пароль для регистрации принят: chatId=$chatId")
+        session.regPassword = password
+        session.step        = BotStep.WAITING_REG_PASSWORD_CONFIRM
+        sender.sendText(chatId, "🔑 Повторите пароль:")
+    }
+
+    fun handleWaitingRegPasswordConfirm(chatId: Long, text: String, from: User) {
+        val session  = sessions.remove(chatId) ?: return
+        val email    = session.regEmail    ?: return
+        val password = session.regPassword ?: return
+        val confirm  = text.trim()
+        val tgUser   = "${from.firstName} (@${from.userName ?: "—"}, tgId=${from.id})"
+
+        if (password != confirm) {
+            log.warn("[BOT][AUTH] Пароли не совпадают при регистрации: chatId=$chatId")
+            // Возвращаем на шаг ввода пароля
+            sessions[chatId] = session.copy(step = BotStep.WAITING_REG_PASSWORD, regPassword = null)
+            sender.sendText(chatId, "❌ Пароли не совпадают.\n\nВведите пароль заново:")
+            return
+        }
+
+        val refCode = session.pendingReferralCode ?: pendingReferralCodes.remove(chatId)
+
+        log.info("[BOT][AUTH] Попытка регистрации через бота: $tgUser email=\"$email\"")
+
+        when (val result = authService.registerViaTelegram(
+            email            = email,
+            password         = password,
+            firstName        = from.firstName?.takeIf { it.isNotBlank() },
+            telegramId       = from.id,
+            telegramUsername = from.userName,
+            referralCode     = refCode,
+        )) {
+            is RegisterViaTelegramResult.Success -> {
+                val name = result.user.firstName?.takeIf { it.isNotBlank() } ?: email.split("@").first()
+                log.info("[BOT][AUTH] ✅ Регистрация через бота: $tgUser userId=${result.user.id} email=$email")
+                sender.sendText(
+                    chatId,
+                    "✅ Аккаунт создан!\n\n" +
+                            "Добро пожаловать, $name!\n\n" +
+                            "Вы можете войти на сайте getaimly.io с этим email и паролем.",
+                )
+                showMainMenu(chatId, name)
+            }
+            is RegisterViaTelegramResult.EmailTaken -> {
+                log.warn("[BOT][AUTH] Email занят при регистрации через бота: $tgUser email=$email")
+                sender.sendText(
+                    chatId,
+                    "❌ Аккаунт с таким email уже существует.\n\nВойдите в него:",
+                    markup = keyboard(
+                        row(btn("🔐 Войти",               "auth:login"),
+                            btn("📝 Другой email",        "auth:register")),
+                    ),
+                )
+            }
+            is RegisterViaTelegramResult.TelegramAlreadyLinked -> {
+                log.warn("[BOT][AUTH] TG уже привязан при регистрации: $tgUser")
+                val linked = userRepository.findByTelegramId(from.id).orElse(null)
+                showMainMenu(chatId, linked?.firstName)
+            }
+        }
+    }
+
+
+    // ─── Вспомогательные ──────────────────────────────────────────────────────
+
+    private fun validatePassword(password: String): String? {
+        if (password.length < MIN_PASSWORD_LENGTH)
+            return "Пароль должен содержать минимум $MIN_PASSWORD_LENGTH символов."
+        if (!password.any { it.isLowerCase() })
+            return "Пароль должен содержать строчные буквы."
+        if (!password.any { it.isUpperCase() })
+            return "Пароль должен содержать заглавные буквы."
+        if (!password.any { it.isDigit() })
+            return "Пароль должен содержать хотя бы одну цифру."
+        return null
+    }
+
+    /** Сбросить реферальный код из «ожидающих» при явной отмене */
+    fun clearPendingReferral(chatId: Long) {
+        pendingReferralCodes.remove(chatId)
     }
 }

@@ -42,7 +42,7 @@ class AimlyBot(
     private val expiryRepository: SubscriptionExpiryRepository,
     private val aiService: AiService,
     private val chatSearchService: ChatSearchService,
-    private val referralService: ReferralService,          // ← новый
+    private val referralService: ReferralService,
 ) : SpringLongPollingBot, LongPollingSingleThreadUpdateConsumer {
 
     private val log            = LoggerFactory.getLogger(AimlyBot::class.java)
@@ -65,7 +65,7 @@ class AimlyBot(
         leadRepository  = leadRepository,
         authService     = authService,
         paymentHandler  = paymentHandler,
-        referralService = referralService,   // ← новый
+        referralService = referralService,
     )
 
     private val leadsHandler = BotLeadsHandler(
@@ -103,7 +103,7 @@ class AimlyBot(
         expiryRepository       = expiryRepository,
         authService            = authService,
         leadService            = leadService,
-        referralService        = referralService,   // ← новый
+        referralService        = referralService,
     )
 
     private val chatSearchHandler = BotChatSearchHandler(
@@ -116,10 +116,10 @@ class AimlyBot(
         chatSearchService      = chatSearchService,
     )
 
-    private val referralHandler = BotReferralHandler(   // ← новый handler
-        sender          = sender,
-        userRepository  = userRepository,
-        referralService = referralService,
+    private val referralHandler = BotReferralHandler(
+        sender           = sender,
+        userRepository   = userRepository,
+        referralService  = referralService,
         expiryRepository = expiryRepository,
     )
 
@@ -144,7 +144,6 @@ class AimlyBot(
         sender.sendText(chatId, text)
     }
 
-    // перегрузка
     fun sendText(chatId: Long, text: String, markup: InlineKeyboardMarkup?) {
         sender.sendText(chatId, text, markup)
     }
@@ -174,9 +173,12 @@ class AimlyBot(
         val tgUser     = "${from.firstName} (@${from.userName ?: "—"}, tgId=${from.id})"
         val startToken = if (text.startsWith("/start ")) text.removePrefix("/start ").trim() else null
 
-        // Не логируем пароль в открытом виде
+        // Не логируем пароли в открытом виде
         val session = sessions[chatId]
-        if (session?.step == BotStep.WAITING_PASSWORD) {
+        val isPasswordStep = session?.step == BotStep.WAITING_PASSWORD ||
+                session?.step == BotStep.WAITING_REG_PASSWORD ||
+                session?.step == BotStep.WAITING_REG_PASSWORD_CONFIRM
+        if (isPasswordStep) {
             log.info("[BOT][MSG] $tgUser → [ПАРОЛЬ СКРЫТ]")
         } else {
             log.info("[BOT][MSG] $tgUser → «${text.take(100)}»")
@@ -231,18 +233,27 @@ class AimlyBot(
     ) {
         val session = sessions[chatId] ?: return
         when (session.step) {
+            // ── Вход ──────────────────────────────────────────────────────────
             BotStep.WAITING_EMAIL                -> authHandler.handleWaitingEmail(chatId, text)
             BotStep.WAITING_PASSWORD             -> authHandler.handleWaitingPassword(chatId, text, from)
+
+            // ── Регистрация через бота ────────────────────────────────────────
+            BotStep.WAITING_REG_EMAIL            -> authHandler.handleWaitingRegEmail(chatId, text)
+            BotStep.WAITING_REG_PASSWORD         -> authHandler.handleWaitingRegPassword(chatId, text)
+            BotStep.WAITING_REG_PASSWORD_CONFIRM -> authHandler.handleWaitingRegPasswordConfirm(chatId, text, from)
+
+            // ── Прочие шаги ───────────────────────────────────────────────────
             BotStep.WAITING_CHAT_LINK            -> chatsHandler.handleChatLinkInput(chatId, text, from)
             BotStep.WAITING_KEYWORD              -> keywordsHandler.handleKeywordInput(chatId, text, from)
             BotStep.WAITING_CONTEXT              -> profileHandler.handleContextInput(chatId, text)
-            BotStep.WAITING_AI_KEYWORD_CONFIRM   -> {  }
+            BotStep.WAITING_AI_KEYWORD_CONFIRM   -> { /* обрабатывается через callback */ }
             BotStep.WAITING_CHAT_SEARCH_QUERY    -> chatSearchHandler.handleSearchQueryInput(chatId, text, from)
         }
     }
 
     private fun handleCancel(chatId: Long, tgUser: String) {
         val session = sessions.remove(chatId)
+        authHandler.clearPendingReferral(chatId)
         log.info("[BOT] /cancel: $tgUser был_шаг=${session?.step ?: "нет сессии"}")
         val msgId = session?.msgId ?: 0
         if (msgId != 0) {
@@ -265,22 +276,33 @@ class AimlyBot(
         log.info("[BOT][CB] $tgUser → \"$data\"")
 
         when {
+            // ── Авторизация: кнопка «Войти» ───────────────────────────────────
             data == "auth:login"     -> authHandler.startLoginFlow(chatId, msgId)
+
+            // ── Авторизация: кнопка «Войти» перед оплатой ────────────────────
+            data == "auth:login_pay" -> authHandler.startLoginFlow(chatId, msgId, pendingAction = "pay")
+
+            // ── Авторизация: кнопка «Зарегистрироваться» ─────────────────────
+            data == "auth:register"  -> authHandler.startRegisterFlow(chatId, msgId)
+
+            // ── Отмена — редактируем существующее сообщение ───────────────────
             data == "auth:cancel"    -> {
                 sessions.remove(chatId)
-                log.info("[BOT][CB] Отмена авторизации: $tgUser")
+                authHandler.clearPendingReferral(chatId)
+                log.info("[BOT][CB] Отмена авторизации/регистрации: $tgUser")
                 sender.editText(chatId, msgId, "Отменено. Нажмите /start чтобы начать.")
             }
-            data == "auth:retry"     -> authHandler.startLoginFlow(chatId, msgId)
-            data == "auth:retry_pay" -> {
-                sessions[chatId] = UserSession(step = BotStep.WAITING_EMAIL, msgId = msgId, pendingAction = "pay")
-                sender.editText(
-                    chatId, msgId,
-                    "🔐 *Вход в аккаунт*\n\nВведите email от вашего аккаунта getaimly.io:",
-                    markup        = keyboard(row(btn("❌ Отмена", "auth:cancel"))),
-                    parseMarkdown = true,
-                )
+
+            // ── Отмена — просто убираем сессию (сообщение уже не редактируется) ──
+            data == "auth:cancel_msg" -> {
+                sessions.remove(chatId)
+                authHandler.clearPendingReferral(chatId)
+                log.info("[BOT][CB] Отмена (без редактирования): $tgUser")
+                sender.sendText(chatId, "Отменено. Нажмите /start чтобы начать.")
             }
+
+            data == "auth:retry"     -> authHandler.startLoginFlow(chatId, msgId)
+            data == "auth:retry_pay" -> authHandler.startLoginFlow(chatId, msgId, pendingAction = "pay")
 
             data == "menu:back"     -> authHandler.showMainMenuEdit(chatId, msgId, from)
             data == "menu:leads"    -> leadsHandler.showLeadsMenu(chatId, from.id, msgId)
@@ -288,15 +310,13 @@ class AimlyBot(
             data == "menu:keywords" -> keywordsHandler.showKeywords(chatId, msgId, from.id)
             data == "menu:profile"  -> profileHandler.showProfile(chatId, msgId, from)
             data == "menu:help"     -> {
-                sender.editText(chatId, msgId, buildHelpText(), parseMarkdown = true)
+                sender.editText(chatId, msgId, buildHelpText())
                 sender.sendText(chatId, "Используйте /start для возврата в главное меню.")
             }
 
             data == "payment:plans" -> paymentHandler.showPlans(chatId, msgId, from.id)
 
-            // ── Реферальная программа ─────────────────────────────────────────
             data == "referral:info" -> referralHandler.showReferral(chatId, msgId, from.id)
-            // ──────────────────────────────────────────────────────────────────
 
             data == "leads:new"      -> leadsHandler.showLeadsList(chatId, msgId, from.id, 0, "NEW")
             data == "leads:all"      -> leadsHandler.showLeadsList(chatId, msgId, from.id, 0, null)
@@ -447,8 +467,8 @@ class AimlyBot(
 
     private fun buildHelpText() =
         "📖 Помощь AIMLY\n\n" +
-                "🤖 Бот повторяет весь функционал сайта \n" +
-                "Для максимального удобства рекомендуем использовать веб-версию:\n" +
+                "Бот предоставляет полный функционал сервиса.\n" +
+                "Для удобства также доступна веб-версия:\n" +
                 "🌐 ${BotAuthHandler.SITE_URL}\n\n" +
                 "Команды:\n" +
                 "/start — главное меню\n" +

@@ -96,6 +96,58 @@ class AuthService(
     }
 
 
+    /**
+     * Регистрация через Telegram-бота.
+     * Аккаунт создаётся с уже привязанным telegramId.
+     * Email-верификация считается пройденной (бот подтверждает личность).
+     * Trial выдаётся сразу.
+     */
+    @Transactional
+    fun registerViaTelegram(
+        email:            String,
+        password:         String,
+        firstName:        String?,
+        telegramId:       Long,
+        telegramUsername: String?,
+        referralCode:     String?,
+    ): RegisterViaTelegramResult {
+        val normalizedEmail = email.trim().lowercase()
+
+        if (userRepository.existsByEmail(normalizedEmail)) {
+            return RegisterViaTelegramResult.EmailTaken
+        }
+
+        userRepository.findByTelegramId(telegramId).orElse(null)?.let {
+            return RegisterViaTelegramResult.TelegramAlreadyLinked
+        }
+
+        val user = userRepository.save(
+            User(
+                email            = normalizedEmail,
+                password         = passwordEncoder.encode(password),
+                firstName        = firstName,
+                telegramId       = telegramId,
+                telegramUsername = telegramUsername,
+                telegramLinkedAt = LocalDateTime.now(),
+                emailVerified    = true,
+            )
+        )
+
+        log.info("[AUTH] Регистрация через бота: userId=${user.id} email=${user.email} tgId=$telegramId")
+
+        if (!referralCode.isNullOrBlank()) {
+            runCatching { referralService.registerRefereeIfNew(referralCode, user) }
+                .onSuccess { log.info("[REFERRAL] Рефери зарегистрирован при регистрации в боте: userId=${user.id} code=$referralCode") }
+                .onFailure { log.warn("[REFERRAL] Ошибка регистрации рефери в боте: ${it.message}") }
+        }
+
+        runCatching { subscriptionService.grantTrial(user) }
+            .onFailure { log.warn("не удалось выдать trial при регистрации в боте userId=${user.id}: ${it.message}") }
+
+        return RegisterViaTelegramResult.Success(user)
+    }
+
+
     @Transactional
     fun verifyEmail(userId: Long, request: VerifyEmailRequest): AuthResponse {
         val user = userRepository.findById(userId)
@@ -172,15 +224,25 @@ class AuthService(
             throw TooManyRequestsException("Слишком много попыток входа. Попробуйте через 30 минут")
         }
 
-        val user          = userRepository.findByEmail(key).orElse(null)
-        val passwordValid = user != null && passwordEncoder.matches(request.password, user.password)
+        // ── Шаг 1: пользователь существует? ──────────────────────────────────
+        val user = userRepository.findByEmail(key).orElse(null)
+
+        if (user == null) {
+            // Не записываем в rate limit — это не ошибка пароля.
+            // Но всё равно логируем для мониторинга.
+            log.warn("[AUTH] Пользователь не найден: email=$key ip=$ipAddress")
+            throw UnauthorizedException("Аккаунт с таким email не найден")
+        }
+
+        // ── Шаг 2: пароль верный? ─────────────────────────────────────────────
+        val passwordValid = passwordEncoder.matches(request.password, user.password)
 
         if (!passwordValid) {
             rateLimitService.recordFailedAttempt(key)
             val remaining = rateLimitService.getRemainingAttempts(key)
             log.warn("[AUTH] Неверный пароль: email=$key ip=$ipAddress осталось=$remaining попыток")
             if (remaining > 0) {
-                throw UnauthorizedException("Неверный email или пароль. Осталось попыток: $remaining")
+                throw UnauthorizedException("Неверный пароль. Осталось попыток: $remaining")
             } else {
                 throw TooManyRequestsException("Аккаунт заблокирован на 30 минут из-за множества неверных попыток")
             }
@@ -188,7 +250,7 @@ class AuthService(
 
         rateLimitService.recordSuccess(key)
 
-        if (!user!!.isActive) {
+        if (!user.isActive) {
             log.warn("[AUTH] Попытка входа в заблокированный аккаунт: userId=${user.id} email=$key ip=$ipAddress")
             throw ForbiddenException("Аккаунт заблокирован")
         }
@@ -233,7 +295,6 @@ class AuthService(
             botUsername = botUsername,
         )
     }
-
 
 
     @Transactional
@@ -492,4 +553,11 @@ class AuthService(
 sealed class LoginResult {
     data class Success(val auth: AuthResponse) : LoginResult()
     data class PendingVerification(val token: String, val email: String) : LoginResult()
+}
+
+
+sealed class RegisterViaTelegramResult {
+    data class Success(val user: User) : RegisterViaTelegramResult()
+    object EmailTaken            : RegisterViaTelegramResult()
+    object TelegramAlreadyLinked : RegisterViaTelegramResult()
 }

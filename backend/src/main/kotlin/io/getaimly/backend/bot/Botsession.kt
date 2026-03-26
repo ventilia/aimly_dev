@@ -4,12 +4,24 @@ import io.getaimly.backend.lead.ChatSearchResult
 import java.time.LocalDateTime
 
 enum class BotStep {
+    // ── Авторизация (вход) ─────────────────────────────────────────────────
     WAITING_EMAIL,
     WAITING_PASSWORD,
+
+    // ── Регистрация через бот ──────────────────────────────────────────────
+    WAITING_REG_EMAIL,
+    WAITING_REG_PASSWORD,
+    WAITING_REG_PASSWORD_CONFIRM,
+
+    // ── Управление чатами ─────────────────────────────────────────────────
     WAITING_CHAT_LINK,
+
+    // ── Ключевые слова ────────────────────────────────────────────────────
     WAITING_KEYWORD,
     WAITING_CONTEXT,
     WAITING_AI_KEYWORD_CONFIRM,
+
+    // ── Поиск чатов ───────────────────────────────────────────────────────
     WAITING_CHAT_SEARCH_QUERY,
 }
 
@@ -21,8 +33,11 @@ data class UserSession(
 
     var pendingAction: String? = null,
 
-
     var pendingReferralCode: String? = null,
+
+
+    var regEmail:    String? = null,
+    var regPassword: String? = null,
 
     var aiKeywordSuggestions: List<String> = emptyList(),
     var aiKeywordPage: Int = 0,
