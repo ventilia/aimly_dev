@@ -43,6 +43,26 @@ interface LeadRepository : JpaRepository<Lead, Long> {
     @Modifying
     @Query("UPDATE Lead l SET l.status = io.getaimly.backend.lead.LeadStatus.VIEWED WHERE l.user.id = :userId AND l.status = io.getaimly.backend.lead.LeadStatus.NEW")
     fun markAllViewedByUserId(@Param("userId") userId: Long)
+
+    // ── Для админ-панели: все лиды всех пользователей с фильтрацией ──────────
+
+    @Query("""
+        SELECT l FROM Lead l
+        JOIN FETCH l.user u
+        WHERE (:userId IS NULL OR u.id = :userId)
+          AND (:status IS NULL OR l.status = :status)
+          AND (:keyword IS NULL OR lower(l.matchedKeyword) LIKE lower(concat('%', :keyword, '%')))
+        ORDER BY l.foundAt DESC
+    """)
+    fun findAllForAdmin(
+        @Param("userId")  userId:  Long?,
+        @Param("status")  status:  String?,
+        @Param("keyword") keyword: String?,
+        pageable: Pageable,
+    ): Page<Lead>
+
+    // ── Для детальной карточки пользователя: последние N лидов ───────────────
+    // (findByUserIdOrderByFoundAtDesc уже есть — используется с PageRequest.of(0, 20))
 }
 
 @Repository
