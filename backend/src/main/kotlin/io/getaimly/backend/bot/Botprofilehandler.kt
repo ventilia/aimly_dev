@@ -46,19 +46,26 @@ class BotProfileHandler(
         val expiry     = expiryRepository.findByUserId(user.id)
         val since      = user.createdAt?.toLocalDate()?.toString() ?: "—"
 
-        val refStats   = referralService.getStats(user)
+        val refStats = referralService.getStats(user)
 
-        log.info("[BOT][PROFILE] Просмотр профиля: userId=${user.id} email=${user.email} план=${user.subscriptionPlan} статус=${user.subscriptionStatus} чатов=$chatCount ключ_слов=$kwCount всего_лидов=$totalLeads новых=$newLeads реф_всего=${refStats.totalReferrals} реф_оплатили=${refStats.paidReferrals} буфер=${refStats.bonusDaysLeft}")
+        log.info(
+            "[BOT][PROFILE] Просмотр профиля: userId=${user.id} email=${user.email} " +
+                    "план=${user.subscriptionPlan} статус=${user.subscriptionStatus} " +
+                    "чатов=$chatCount ключ_слов=$kwCount всего_лидов=$totalLeads новых=$newLeads " +
+                    "реф_всего=${refStats.totalReferrals} реф_оплатили=${refStats.paidReferrals} буфер=${refStats.bonusDaysLeft}"
+        )
 
         val plan          = user.subscriptionPlan
         val hasAiFeatures = plan == "MINIMUM" || plan == "START" || user.subscriptionStatus == "TRIAL"
 
+        // subLine содержит уже готовые Markdown-escape последовательности —
+        // НЕ прогонять через .md(), иначе слеши удваиваются.
         val subLine = when {
             user.subscriptionStatus == "ACTIVE" -> {
                 val till   = expiry?.expiresAt?.toLocalDate()?.toString() ?: "—"
                 val buffer = expiry?.bonusDaysBuffer ?: 0
                 val bufPart = if (buffer > 0) " \\(\\+$buffer бонусных дн\\.\\)" else ""
-                "✅ ${user.subscriptionPlan ?: "ACTIVE"} — до $till$bufPart"
+                "✅ ${(user.subscriptionPlan ?: "ACTIVE").md()} — до $till$bufPart"
             }
             user.subscriptionStatus == "TRIAL" -> {
                 val till = expiry?.expiresAt?.toLocalDate()?.toString() ?: "—"
@@ -73,19 +80,18 @@ class BotProfileHandler(
             else                                  -> "\n🎯 *Бизнес-контекст AI:* не задан"
         }
 
-        // ✅ Улучшенная реферальная строка: явно +7 дней для обеих сторон
         val refLine = "\n👥 *Рефералы:* ${refStats.paidReferrals} оплатили " +
                 "\\(бонус: ${refStats.bonusDaysLeft} дн\\.\\)" +
                 "\n_💡 Пригласите друга → он оплатит → вы оба получаете \\+7 дней бесплатно_"
 
-        // ✅ Фикс: защита от пустой строки firstName
         val displayName = user.firstName?.takeIf { it.isNotBlank() } ?: user.email.split("@").first()
 
+        // subLine уже содержит корректные escape-последовательности — используем напрямую
         val text = "👤 *Профиль*\n\n" +
                 "📧 ${user.email.md()}\n" +
                 "👤 ${displayName.md()}\n" +
                 "📱 Telegram: ✅ привязан\n" +
-                "💳 Подписка: ${subLine.md()}" +
+                "💳 Подписка: $subLine" +
                 contextLine +
                 refLine + "\n\n" +
                 "📊 *Статистика:*\n" +
@@ -134,7 +140,7 @@ class BotProfileHandler(
                 "🔒 *AI-персонализация недоступна*\n\n" +
                         "На тарифе *START* и выше вы можете задать описание своего бизнеса — " +
                         "AI будет отбирать только тех клиентов, которые ищут именно то, что вы предлагаете\\.\n\n" +
-                        "💡 Пример: «Я frontend-разработчик на React, ищу клиентов с бюджетом от 50к»",
+                        "💡 Пример: «Я frontend\\-разработчик на React, ищу клиентов с бюджетом от 50к»",
                 keyboard(
                     row(btn("💳 Оплатить подписку", "payment:plans")),
                     row(btn("◀️ Назад", "menu:profile")),
@@ -160,8 +166,8 @@ class BotProfileHandler(
                     "Опишите ваш бизнес, услуги и целевую аудиторию\\.\n" +
                     "AI учитывает это при фильтрации лидов и при генерации ключевых слов\\.\n\n" +
                     "✏️ Отправьте новый текст (до 2000 символов):\n\n" +
-                    "💡 _Пример: Я frontend-разработчик, специализируюсь на React и Next\\.js\\. " +
-                    "Ищу клиентов, которым нужна разработка или доработка веб-приложений\\. " +
+                    "💡 _Пример: Я frontend\\-разработчик, специализируюсь на React и Next\\.js\\. " +
+                    "Ищу клиентов, которым нужна разработка или доработка веб\\-приложений\\. " +
                     "Работаю с бюджетами от 50 000 ₽\\._",
             keyboard(
                 row(btn("🗑 Очистить контекст", "profile:clear_context")),
@@ -204,11 +210,11 @@ class BotProfileHandler(
                 log.info("[BOT][PROFILE] ✅ AI-контекст $action: userId=${userEntity.id} email=${userEntity.email}")
 
                 val confirmText = if (isSaved)
-                    "✅ *Бизнес-контекст сохранён!*\n\n" +
+                    "✅ *Бизнес-контекст сохранён\\!*\n\n" +
                             "🤖 AI теперь учитывает ваш профиль при фильтрации лидов и генерации ключевых слов\\.\n\n" +
                             "📌 _Описание:_\n${trimmed.take(300).md()}${if (trimmed.length > 300) "…" else ""}"
                 else
-                    "✅ *Бизнес-контекст очищен.*\n\nAI будет работать без персонализации."
+                    "✅ *Бизнес-контекст очищен\\.* \n\nAI будет работать без персонализации."
 
                 if (savedMsgId != 0) {
                     sender.editText(
@@ -244,15 +250,18 @@ class BotProfileHandler(
                 log.info("[BOT][PROFILE] ✅ AI-контекст очищен: userId=${user.id} email=${user.email}")
                 sender.editText(
                     chatId, msgId,
-                    "✅ *Бизнес-контекст очищен.*\n\nAI будет работать без персонализации.",
+                    "✅ *Бизнес-контекст очищен\\.* \n\nAI будет работать без персонализации.",
                     keyboard(row(btn("◀️ К профилю", "menu:profile"))),
                     parseMarkdown = true,
                 )
             }
             .onFailure { e ->
                 log.warn("[BOT][PROFILE] ❌ Ошибка очистки контекста: userId=${user.id} email=${user.email} причина=${e.message}")
-                sender.editText(chatId, msgId, "❌ Ошибка: ${e.message}",
-                    keyboard(row(btn("◀️ Назад", "menu:profile"))))
+                sender.editText(
+                    chatId, msgId,
+                    "❌ Ошибка: ${e.message}",
+                    keyboard(row(btn("◀️ Назад", "menu:profile"))),
+                )
             }
     }
 
@@ -295,8 +304,11 @@ class BotProfileHandler(
             }
             .onFailure { e ->
                 log.warn("[BOT][PROFILE] ❌ Ошибка отвязки Telegram: userId=${user.id} email=${user.email} причина=${e.message}")
-                sender.editText(chatId, msgId, "❌ Ошибка: ${e.message}",
-                    keyboard(row(btn("◀️ Назад", "menu:profile"))))
+                sender.editText(
+                    chatId, msgId,
+                    "❌ Ошибка: ${e.message}",
+                    keyboard(row(btn("◀️ Назад", "menu:profile"))),
+                )
             }
     }
 }
