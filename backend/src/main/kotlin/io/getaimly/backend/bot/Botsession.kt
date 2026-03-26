@@ -7,6 +7,8 @@ enum class BotStep {
     // ── Авторизация (вход) ─────────────────────────────────────────────────
     WAITING_EMAIL,
     WAITING_PASSWORD,
+    /** Ввод 6-значного кода подтверждения email при входе через бота */
+    WAITING_LOGIN_CODE,
 
     // ── Регистрация через бот ──────────────────────────────────────────────
     WAITING_REG_EMAIL,
@@ -35,9 +37,10 @@ data class UserSession(
 
     var pendingReferralCode: String? = null,
 
-
     var regEmail:    String? = null,
     var regPassword: String? = null,
+    
+    var pendingVerificationUserId: Long? = null,
 
     var aiKeywordSuggestions: List<String> = emptyList(),
     var aiKeywordPage: Int = 0,

@@ -234,8 +234,10 @@ class AimlyBot(
         val session = sessions[chatId] ?: return
         when (session.step) {
             // ── Вход ──────────────────────────────────────────────────────────
-            BotStep.WAITING_EMAIL                -> authHandler.handleWaitingEmail(chatId, text)
-            BotStep.WAITING_PASSWORD             -> authHandler.handleWaitingPassword(chatId, text, from)
+            BotStep.WAITING_EMAIL      -> authHandler.handleWaitingEmail(chatId, text)
+            BotStep.WAITING_PASSWORD   -> authHandler.handleWaitingPassword(chatId, text, from)
+            // Ввод кода подтверждения email при входе через бота
+            BotStep.WAITING_LOGIN_CODE -> authHandler.handleWaitingLoginCode(chatId, text, from)
 
             // ── Регистрация через бота ────────────────────────────────────────
             BotStep.WAITING_REG_EMAIL            -> authHandler.handleWaitingRegEmail(chatId, text)
@@ -284,6 +286,9 @@ class AimlyBot(
 
             // ── Авторизация: кнопка «Зарегистрироваться» ─────────────────────
             data == "auth:register"  -> authHandler.startRegisterFlow(chatId, msgId)
+
+            // ── Повторная отправка кода верификации email ─────────────────────
+            data == "auth:resend_code" -> authHandler.resendVerificationCode(chatId, msgId)
 
             // ── Отмена — редактируем существующее сообщение ───────────────────
             data == "auth:cancel"    -> {
