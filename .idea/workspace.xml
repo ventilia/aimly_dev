@@ -4,17 +4,8 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="a461964d-f6a3-4e0b-a3fa-4fab913d5a3e" name="Changes" comment="проверка тг статс">
+    <list default="true" id="a461964d-f6a3-4e0b-a3fa-4fab913d5a3e" name="Changes" comment="код на почту при боте и критическое исправление входа через бота 1(дев)">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/auth/AuthService.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/auth/AuthService.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/auth/dto/RegisterRequest.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/auth/dto/RegisterRequest.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/BotReferralHandler.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/BotReferralHandler.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/Botauthhandler.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/Botauthhandler.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/Botprofilehandler.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/Botprofilehandler.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/referral/ReferralService.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/referral/ReferralService.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/subscription/Subscriptionservice.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/subscription/Subscriptionservice.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/api/auth.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/api/auth.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/components/AuthModal.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/components/AuthModal.tsx" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -150,6 +141,7 @@
       <workItem from="1773485112417" duration="7420000" />
       <workItem from="1774457194471" duration="311000" />
       <workItem from="1774531551706" duration="1547000" />
+      <workItem from="1774561409222" duration="1956000" />
     </task>
     <task id="LOCAL-00001" summary="Fix version">
       <option name="closed" value="true" />
@@ -391,7 +383,71 @@
       <option name="project" value="LOCAL" />
       <updated>1773494235714</updated>
     </task>
-    <option name="localTasksCounter" value="31" />
+    <task id="LOCAL-00031" summary="рефералка финал">
+      <option name="closed" value="true" />
+      <created>1774545338821</created>
+      <option name="number" value="00031" />
+      <option name="presentableId" value="LOCAL-00031" />
+      <option name="project" value="LOCAL" />
+      <updated>1774545338821</updated>
+    </task>
+    <task id="LOCAL-00032" summary="рефералка финал 1">
+      <option name="closed" value="true" />
+      <created>1774546315885</created>
+      <option name="number" value="00032" />
+      <option name="presentableId" value="LOCAL-00032" />
+      <option name="project" value="LOCAL" />
+      <updated>1774546315885</updated>
+    </task>
+    <task id="LOCAL-00033" summary="рефералка финал 1 (тест)">
+      <option name="closed" value="true" />
+      <created>1774546570299</created>
+      <option name="number" value="00033" />
+      <option name="presentableId" value="LOCAL-00033" />
+      <option name="project" value="LOCAL" />
+      <updated>1774546570299</updated>
+    </task>
+    <task id="LOCAL-00034" summary="рефералка финал 1 (тест)">
+      <option name="closed" value="true" />
+      <created>1774546704139</created>
+      <option name="number" value="00034" />
+      <option name="presentableId" value="LOCAL-00034" />
+      <option name="project" value="LOCAL" />
+      <updated>1774546704139</updated>
+    </task>
+    <task id="LOCAL-00035" summary="слеши подправил и если нет аккаунта, то говорим об этом">
+      <option name="closed" value="true" />
+      <created>1774562511574</created>
+      <option name="number" value="00035" />
+      <option name="presentableId" value="LOCAL-00035" />
+      <option name="project" value="LOCAL" />
+      <updated>1774562511574</updated>
+    </task>
+    <task id="LOCAL-00036" summary="код на почту при боте и критическое исправление входа через бота (дев)">
+      <option name="closed" value="true" />
+      <created>1774563472685</created>
+      <option name="number" value="00036" />
+      <option name="presentableId" value="LOCAL-00036" />
+      <option name="project" value="LOCAL" />
+      <updated>1774563472685</updated>
+    </task>
+    <task id="LOCAL-00037" summary="код на почту при боте и критическое исправление входа через бота 1(дев)">
+      <option name="closed" value="true" />
+      <created>1774564914009</created>
+      <option name="number" value="00037" />
+      <option name="presentableId" value="LOCAL-00037" />
+      <option name="project" value="LOCAL" />
+      <updated>1774564914010</updated>
+    </task>
+    <task id="LOCAL-00038" summary="код на почту при боте и критическое исправление входа через бота 1(дев)">
+      <option name="closed" value="true" />
+      <created>1774564920011</created>
+      <option name="number" value="00038" />
+      <option name="presentableId" value="LOCAL-00038" />
+      <option name="project" value="LOCAL" />
+      <updated>1774564920011</updated>
+    </task>
+    <option name="localTasksCounter" value="39" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -442,6 +498,12 @@
     <MESSAGE value="push. бета1" />
     <MESSAGE value="push." />
     <MESSAGE value="проверка тг статс" />
-    <option name="LAST_COMMIT_MESSAGE" value="проверка тг статс" />
+    <MESSAGE value="рефералка финал" />
+    <MESSAGE value="рефералка финал 1" />
+    <MESSAGE value="рефералка финал 1 (тест)" />
+    <MESSAGE value="слеши подправил и если нет аккаунта, то говорим об этом" />
+    <MESSAGE value="код на почту при боте и критическое исправление входа через бота (дев)" />
+    <MESSAGE value="код на почту при боте и критическое исправление входа через бота 1(дев)" />
+    <option name="LAST_COMMIT_MESSAGE" value="код на почту при боте и критическое исправление входа через бота 1(дев)" />
   </component>
 </project>

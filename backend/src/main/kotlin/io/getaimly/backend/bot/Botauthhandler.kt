@@ -86,7 +86,8 @@ class BotAuthHandler(
                 return
             }
             log.info("[BOT][AUTH] /start: $tgUser уже привязан → userId=${existing.id} email=${existing.email} план=${existing.subscriptionPlan} статус=${existing.subscriptionStatus}")
-            showMainMenu(chatId, existing.firstName)
+            // FIX: передаём from.id как tgUserId, а не chatId
+            showMainMenu(chatId, existing.firstName, from.id)
         } else {
             log.info("[BOT][AUTH] /start: $tgUser — не авторизован, показываем приветствие")
             showWelcome(chatId, from.safeName())
@@ -106,7 +107,7 @@ class BotAuthHandler(
             val codeEntity = referralService.resolveReferralCode(refCode)
             if (codeEntity == null) {
                 log.warn("[BOT][AUTH] Реферальный код не найден: $tgUser code=$refCode")
-                if (existing != null) showMainMenu(chatId, existing.firstName)
+                if (existing != null) showMainMenu(chatId, existing.firstName, from.id)
                 else showWelcome(chatId, from.safeName())
                 return
             }
@@ -115,7 +116,7 @@ class BotAuthHandler(
                 runCatching { referralService.registerRefereeIfNew(refCode, existing) }
                     .onSuccess { log.info("[BOT][AUTH] Рефери зарегистрирован (уже авторизован): userId=${existing.id} code=$refCode") }
                     .onFailure { log.warn("[BOT][AUTH] Ошибка регистрации рефери: ${it.message}") }
-                showMainMenu(chatId, existing.firstName)
+                showMainMenu(chatId, existing.firstName, from.id)
             } else {
                 pendingReferralCodes[chatId] = refCode
                 log.info("[BOT][AUTH] Реферальный код сохранён в сессии: $tgUser code=$refCode")
@@ -203,12 +204,12 @@ class BotAuthHandler(
             val user = userRepository.findByTelegramId(from.id).orElse(null)
             log.info("[BOT][AUTH] ✅ Telegram привязан через токен: $tgUser userId=${user?.id} email=${user?.email}")
             val name = user?.firstName?.takeIf { it.isNotBlank() } ?: user?.email?.split("@")?.first() ?: "пользователь"
-            showMainMenu(chatId, name)
+            showMainMenu(chatId, name, from.id)
         } else {
             val existing = userRepository.findByTelegramId(from.id).orElse(null)
             if (existing != null) {
                 log.info("[BOT][AUTH] Токен устарел, но пользователь уже привязан: $tgUser userId=${existing.id}")
-                showMainMenu(chatId, existing.firstName)
+                showMainMenu(chatId, existing.firstName, from.id)
             } else {
                 log.warn("[BOT][AUTH] ❌ Токен привязки устарел: $tgUser")
                 sender.sendText(
@@ -247,8 +248,13 @@ class BotAuthHandler(
         )
     }
 
-    fun showMainMenu(chatId: Long, name: String?) {
-        val user       = userRepository.findByTelegramId(chatId).orElse(null)
+    /**
+     * FIX: добавлен параметр tgUserId (реальный Telegram ID пользователя).
+     * Раньше использовался chatId для поиска пользователя, что неверно —
+     * chatId и telegramId совпадают только случайно в личных чатах.
+     */
+    fun showMainMenu(chatId: Long, name: String?, tgUserId: Long = chatId) {
+        val user       = userRepository.findByTelegramId(tgUserId).orElse(null)
         val newCount   = user?.let { leadRepository.countByUserIdAndStatus(it.id, LeadStatus.NEW) } ?: 0
         val leadsLabel = if (newCount > 0) "📬 Лиды  •  $newCount новых" else "📋 Лиды"
 
@@ -370,7 +376,8 @@ class BotAuthHandler(
                             log.info("[BOT][AUTH] После входа → переход к оплате: userId=${result.auth.userId} email=$email")
                             paymentHandler.sendPaymentMessage(chatId, from.id)
                         }
-                        else -> showMainMenu(chatId, name)
+                        // FIX: передаём from.id как tgUserId
+                        else -> showMainMenu(chatId, name, from.id)
                     }
                 }
 
@@ -523,7 +530,8 @@ class BotAuthHandler(
                         log.info("[BOT][AUTH] После регистрации → переход к оплате: userId=$userId email=$email")
                         paymentHandler.sendPaymentMessage(chatId, from.id)
                     }
-                    else -> showMainMenu(chatId, name)
+                    // FIX: передаём from.id как tgUserId
+                    else -> showMainMenu(chatId, name, from.id)
                 }
             }
 
@@ -609,7 +617,8 @@ class BotAuthHandler(
                     log.info("[BOT][AUTH] После верификации входа → переход к оплате: userId=$userId email=$email")
                     paymentHandler.sendPaymentMessage(chatId, from.id)
                 }
-                else -> showMainMenu(chatId, name)
+                // FIX: передаём from.id как tgUserId
+                else -> showMainMenu(chatId, name, from.id)
             }
         }.onFailure { e ->
             val msg = when (e) {
@@ -814,7 +823,8 @@ class BotAuthHandler(
                     "✅ Аккаунт создан!\n\nДобро пожаловать, $name!\n\n" +
                             "Вы можете войти на сайте getaimly.io с этим email и паролем.",
                 )
-                showMainMenu(chatId, name)
+                // FIX: передаём from.id как tgUserId
+                showMainMenu(chatId, name, from.id)
             }
 
             is RegisterViaTelegramResult.EmailTaken -> {
@@ -836,7 +846,8 @@ class BotAuthHandler(
                 log.warn("[BOT][AUTH] TG уже привязан при регистрации: $tgUser")
                 sessions.remove(chatId)
                 val linked = userRepository.findByTelegramId(from.id).orElse(null)
-                showMainMenu(chatId, linked?.firstName)
+                // FIX: передаём from.id как tgUserId
+                showMainMenu(chatId, linked?.firstName, from.id)
             }
         }
     }

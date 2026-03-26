@@ -58,13 +58,13 @@ class BotProfileHandler(
         val plan          = user.subscriptionPlan
         val hasAiFeatures = plan == "MINIMUM" || plan == "START" || user.subscriptionStatus == "TRIAL"
 
-        // subLine содержит уже готовые Markdown-escape последовательности —
-        // НЕ прогонять через .md(), иначе слеши удваиваются.
+        // FIX: убраны MarkdownV2-escape (\( \. \+) — бот использует обычный Markdown,
+        // в котором эти символы не являются специальными и слэши отображаются буквально.
         val subLine = when {
             user.subscriptionStatus == "ACTIVE" -> {
                 val till   = expiry?.expiresAt?.toLocalDate()?.toString() ?: "—"
                 val buffer = expiry?.bonusDaysBuffer ?: 0
-                val bufPart = if (buffer > 0) " \\(\\+$buffer бонусных дн\\.\\)" else ""
+                val bufPart = if (buffer > 0) " (+$buffer бонусных дн.)" else ""
                 "✅ ${(user.subscriptionPlan ?: "ACTIVE").md()} — до $till$bufPart"
             }
             user.subscriptionStatus == "TRIAL" -> {
@@ -80,13 +80,13 @@ class BotProfileHandler(
             else                                  -> "\n🎯 *Бизнес-контекст AI:* не задан"
         }
 
+        // FIX: убраны \( \. \+ — лишние в обычном Markdown
         val refLine = "\n👥 *Рефералы:* ${refStats.paidReferrals} оплатили " +
-                "\\(бонус: ${refStats.bonusDaysLeft} дн\\.\\)" +
-                "\n_💡 Пригласите друга → он оплатит → вы оба получаете \\+7 дней бесплатно_"
+                "(бонус: ${refStats.bonusDaysLeft} дн.)" +
+                "\n_💡 Пригласите друга → он оплатит → вы оба получаете +7 дней бесплатно_"
 
         val displayName = user.firstName?.takeIf { it.isNotBlank() } ?: user.email.split("@").first()
 
-        // subLine уже содержит корректные escape-последовательности — используем напрямую
         val text = "👤 *Профиль*\n\n" +
                 "📧 ${user.email.md()}\n" +
                 "👤 ${displayName.md()}\n" +
@@ -137,10 +137,11 @@ class BotProfileHandler(
             log.info("[BOT][PROFILE] AI-персонализация недоступна (нет плана): userId=${user.id} email=${user.email} план=$plan")
             sender.editText(
                 chatId, msgId,
+                // FIX: убраны \. и \- — в обычном Markdown не нужны
                 "🔒 *AI-персонализация недоступна*\n\n" +
                         "На тарифе *START* и выше вы можете задать описание своего бизнеса — " +
-                        "AI будет отбирать только тех клиентов, которые ищут именно то, что вы предлагаете\\.\n\n" +
-                        "💡 Пример: «Я frontend\\-разработчик на React, ищу клиентов с бюджетом от 50к»",
+                        "AI будет отбирать только тех клиентов, которые ищут именно то, что вы предлагаете.\n\n" +
+                        "💡 Пример: «Я frontend-разработчик на React, ищу клиентов с бюджетом от 50к»",
                 keyboard(
                     row(btn("💳 Оплатить подписку", "payment:plans")),
                     row(btn("◀️ Назад", "menu:profile")),
@@ -162,13 +163,14 @@ class BotProfileHandler(
         sessions[chatId] = UserSession(step = BotStep.WAITING_CONTEXT, msgId = msgId)
         sender.editText(
             chatId, msgId,
+            // FIX: убраны \. и \- — в обычном Markdown не нужны
             "🎯 *AI-персонализация*$currentLine\n\n" +
-                    "Опишите ваш бизнес, услуги и целевую аудиторию\\.\n" +
-                    "AI учитывает это при фильтрации лидов и при генерации ключевых слов\\.\n\n" +
+                    "Опишите ваш бизнес, услуги и целевую аудиторию.\n" +
+                    "AI учитывает это при фильтрации лидов и при генерации ключевых слов.\n\n" +
                     "✏️ Отправьте новый текст (до 2000 символов):\n\n" +
-                    "💡 _Пример: Я frontend\\-разработчик, специализируюсь на React и Next\\.js\\. " +
-                    "Ищу клиентов, которым нужна разработка или доработка веб\\-приложений\\. " +
-                    "Работаю с бюджетами от 50 000 ₽\\._",
+                    "💡 _Пример: Я frontend-разработчик, специализируюсь на React и Next.js. " +
+                    "Ищу клиентов, которым нужна разработка или доработка веб-приложений. " +
+                    "Работаю с бюджетами от 50 000 ₽._",
             keyboard(
                 row(btn("🗑 Очистить контекст", "profile:clear_context")),
                 row(btn("❌ Отмена",             "menu:profile")),
@@ -193,6 +195,10 @@ class BotProfileHandler(
 
         sessions.remove(chatId)
 
+        // FIX: ранее здесь использовался chatId для поиска пользователя вместо tgUserId.
+        // В личном чате с ботом chatId == from.id, однако это не гарантировано.
+        // Сессия не хранит tgUserId, поэтому используем chatId — в личных чатах это корректно.
+        // Если в будущем потребуется поддержка групп, нужно добавить tgUserId в UserSession.
         val userEntity = userRepository.findByTelegramId(chatId).orElse(null)
             ?: run {
                 log.warn("[BOT][PROFILE] Пользователь не найден при сохранении контекста: chatId=$chatId")
@@ -209,12 +215,13 @@ class BotProfileHandler(
                 val action  = if (isSaved) "сохранён" else "очищен"
                 log.info("[BOT][PROFILE] ✅ AI-контекст $action: userId=${userEntity.id} email=${userEntity.email}")
 
+                // FIX: убраны \! и \. — в обычном Markdown не нужны
                 val confirmText = if (isSaved)
-                    "✅ *Бизнес-контекст сохранён\\!*\n\n" +
-                            "🤖 AI теперь учитывает ваш профиль при фильтрации лидов и генерации ключевых слов\\.\n\n" +
+                    "✅ *Бизнес-контекст сохранён!*\n\n" +
+                            "🤖 AI теперь учитывает ваш профиль при фильтрации лидов и генерации ключевых слов.\n\n" +
                             "📌 _Описание:_\n${trimmed.take(300).md()}${if (trimmed.length > 300) "…" else ""}"
                 else
-                    "✅ *Бизнес-контекст очищен\\.* \n\nAI будет работать без персонализации."
+                    "✅ *Бизнес-контекст очищен.* \n\nAI будет работать без персонализации."
 
                 if (savedMsgId != 0) {
                     sender.editText(
@@ -248,9 +255,10 @@ class BotProfileHandler(
         runCatching { leadService.saveBusinessContext(user, "") }
             .onSuccess {
                 log.info("[BOT][PROFILE] ✅ AI-контекст очищен: userId=${user.id} email=${user.email}")
+                // FIX: убран \. — в обычном Markdown не нужен
                 sender.editText(
                     chatId, msgId,
-                    "✅ *Бизнес-контекст очищен\\.* \n\nAI будет работать без персонализации.",
+                    "✅ *Бизнес-контекст очищен.* \n\nAI будет работать без персонализации.",
                     keyboard(row(btn("◀️ К профилю", "menu:profile"))),
                     parseMarkdown = true,
                 )
@@ -270,11 +278,12 @@ class BotProfileHandler(
         log.info("[BOT][PROFILE] Запрос отвязки Telegram: chatId=$chatId")
         sender.editText(
             chatId, msgId,
+            // FIX: убраны \. — в обычном Markdown не нужны
             "⚠️ *Отвязать Telegram?*\n\n" +
                     "После отвязки:\n" +
                     "• Мониторинг лидов остановится\n" +
                     "• Уведомления перестанут приходить\n\n" +
-                    "Аккаунт getaimly\\.io сохранится\\. Вы сможете привязать снова.",
+                    "Аккаунт getaimly.io сохранится. Вы сможете привязать снова.",
             keyboard(row(
                 btn("✅ Да, отвязать", "profile:unlink_tg:confirm"),
                 btn("❌ Отмена",        "menu:profile"),

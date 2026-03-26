@@ -220,7 +220,8 @@ class AimlyBot(
 
             else -> {
                 val user = userRepository.findByTelegramId(from.id).orElse(null)
-                if (user != null) authHandler.showMainMenu(chatId, user.firstName)
+                // FIX: передаём from.id как tgUserId, а не chatId
+                if (user != null) authHandler.showMainMenu(chatId, user.firstName, from.id)
                 else authHandler.showWelcome(chatId, from.firstName)
             }
         }

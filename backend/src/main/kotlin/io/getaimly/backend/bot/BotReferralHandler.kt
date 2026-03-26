@@ -32,26 +32,26 @@ class BotReferralHandler(
                     "всего=${stats.totalReferrals} оплатили=${stats.paidReferrals} буфер=${stats.bonusDaysLeft}"
         )
 
-        // Строка о бонусном буфере
+        // FIX: убраны \. — в обычном Markdown не нужны, отображаются как буквальные слэши
         val bufferLine = when {
             stats.bonusDaysLeft > 0 ->
-                "\n\n🎁 *Бонусных дней в запасе:* ${stats.bonusDaysLeft} дн\\.\n" +
+                "\n\n🎁 *Бонусных дней в запасе:* ${stats.bonusDaysLeft} дн.\n" +
                         "_Используются автоматически если автоплатёж не пройдёт_"
             else ->
                 "\n\n🎁 *Бонусных дней в запасе:* нет"
         }
 
-        // Строка о текущей подписке
         val subLine = when {
             expiry != null && user.subscriptionStatus in setOf("ACTIVE", "TRIAL") ->
                 "\n📅 Подписка до: ${expiry.expiresAt.toLocalDate()}"
             else -> ""
         }
 
+        // FIX: убраны \. — в обычном Markdown не нужны
         val text =
             "👥 *Реферальная программа*\n\n" +
-                    "Приглашайте друзей и коллег в AIMLY\\.\n" +
-                    "За каждого, кто оплатит подписку по вашей ссылке — вы получите *+7 дней* бонуса\\.\n\n" +
+                    "Приглашайте друзей и коллег в AIMLY.\n" +
+                    "За каждого, кто оплатит подписку по вашей ссылке — вы получите *+7 дней* бонуса.\n\n" +
                     "─────────────────────\n" +
                     "📊 *Ваша статистика:*\n" +
                     "👤 Перешли по ссылке: *${stats.totalReferrals}*\n" +
