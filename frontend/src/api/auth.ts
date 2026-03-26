@@ -57,20 +57,26 @@ export interface NotificationDto {
     createdAt:   string
 }
 
+// ─── AdminUserDto — полная версия, отражающая backend AdminUserDto ────────────
+// Поля subscriptionExpiresAt, bonusDaysBuffer, chatCount, keywordCount
+// добавлены, т.к. backend уже их отдаёт (toListDto() в AdminController.kt).
 export interface AdminUserDto {
-    id:                 number
-    email:              string
-    firstName:          string | null
-    telegramId:         number | null
-    telegramUsername:   string | null
-    emailVerified:      boolean
-    isActive:           boolean
-    role:               string
-    balance:            number
-    subscriptionStatus: string | null
-    subscriptionPlan:   string | null
-    leadsCount:         number
-    createdAt:          string | null
+    id:                    number
+    email:                 string
+    firstName:             string | null
+    telegramId:            number | null
+    telegramUsername:      string | null
+    emailVerified:         boolean
+    isActive:              boolean
+    role:                  string
+    subscriptionStatus:    string | null
+    subscriptionPlan:      string | null
+    subscriptionExpiresAt: string | null   // было missing — добавлено
+    leadsCount:            number
+    chatCount:             number           // было missing — добавлено
+    keywordCount:          number           // было missing — добавлено
+    bonusDaysBuffer:       number           // было missing — добавлено
+    createdAt:             string | null
 }
 
 export interface PurchaseResponse {
@@ -168,13 +174,13 @@ export const authApi = {
         return request('/api/v1/auth/telegram/unlink', { method: 'POST' })
     },
 
-    loginWithGoogle(idToken: string): Promise<AuthResponse> {
+    // referralCode — передаётся, если пользователь пришёл по реф-ссылке перед OAuth
+    loginWithGoogle(idToken: string, referralCode?: string): Promise<AuthResponse> {
         return request('/api/v1/auth/oauth2/google', {
             method: 'POST',
-            body:   JSON.stringify({ id_token: idToken }),
+            body:   JSON.stringify({ id_token: idToken, referral_code: referralCode ?? null }),
         })
     },
-
 
     forgotPassword(email: string): Promise<{ message: string }> {
         return request('/api/v1/auth/forgot-password', {
@@ -209,9 +215,9 @@ export const notificationsApi = {
         return request(`/api/v1/notifications/${id}/read`, { method: 'POST' })
     },
     createNotification(data: {
-        title:       string
-        body:        string
-        target:      string
+        title:        string
+        body:         string
+        target:       string
         scheduledAt?: string
     }): Promise<NotificationDto> {
         return request('/api/v1/notifications/admin', {

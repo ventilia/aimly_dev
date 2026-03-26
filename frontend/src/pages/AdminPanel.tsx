@@ -1,7 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Lang } from '../i18n/translations'
-import SubscriptionsTab from '../dashboard/SubscriptionsTab'
 import {
     adminApi, notificationsApi,
     type AdminUserDto, type NotificationDto,
@@ -14,18 +13,17 @@ const BASE: string = import.meta.env.VITE_API_URL || ''
 
 interface Props { lang: Lang; setLang: (l: Lang) => void }
 
-// ── Убрана вкладка 'subscriptions', её функционал перенесён в 'users' ────────
 type Tab = 'overview' | 'users' | 'leads_all' | 'userbot' | 'notifications'
 
 const TABS: { id: Tab; label: { ru: string; en: string } }[] = [
-    { id: 'overview',       label: { ru: 'Обзор',           en: 'Overview'       } },
-    { id: 'users',          label: { ru: 'Пользователи',    en: 'Users'          } },
-    { id: 'leads_all',      label: { ru: 'Лиды',            en: 'All Leads'      } },
-    { id: 'userbot',        label: { ru: 'Userbot',         en: 'Userbot'        } },
-    { id: 'notifications',  label: { ru: 'Уведомления',     en: 'Notifications'  } },
+    { id: 'overview',       label: { ru: 'Обзор',        en: 'Overview'      } },
+    { id: 'users',          label: { ru: 'Пользователи', en: 'Users'         } },
+    { id: 'leads_all',      label: { ru: 'Лиды',         en: 'All Leads'     } },
+    { id: 'userbot',        label: { ru: 'Userbot',      en: 'Userbot'       } },
+    { id: 'notifications',  label: { ru: 'Уведомления',  en: 'Notifications' } },
 ]
 
-// ─── Типы ─────────────────────────────────────────────────────────────────────
+// ─── Типы ──────────────────────────────────────────────────────────────────────
 
 interface AdminUserDetailDto {
     id: number; email: string; firstName: string | null
@@ -60,6 +58,7 @@ interface UserbotUserInfo { userId: number; email: string; leadsCount: number; c
 type SortKey = 'id' | 'firstName' | 'email' | 'role' | 'leadsCount' | 'createdAt' | 'chatCount' | 'keywordCount' | 'subscriptionStatus'
 type SortDir = 'asc' | 'desc'
 
+// Теперь AdminUserDto включает все нужные поля — кастить не нужно
 function sortUsers(users: AdminUserDto[], key: SortKey, dir: SortDir): AdminUserDto[] {
     return [...users].sort((a, b) => {
         let av: string | number = ''
@@ -67,10 +66,15 @@ function sortUsers(users: AdminUserDto[], key: SortKey, dir: SortDir): AdminUser
         if (key === 'createdAt') {
             av = a.createdAt ? new Date(a.createdAt).getTime() : 0
             bv = b.createdAt ? new Date(b.createdAt).getTime() : 0
-        } else {
-            av = ((a as Record<string, unknown>)[key] ?? '') as string | number
-            bv = ((b as Record<string, unknown>)[key] ?? '') as string | number
-        }
+        } else if (key === 'id')                  { av = a.id;                  bv = b.id }
+        else if (key === 'firstName')              { av = a.firstName ?? '';     bv = b.firstName ?? '' }
+        else if (key === 'email')                  { av = a.email;               bv = b.email }
+        else if (key === 'role')                   { av = a.role;                bv = b.role }
+        else if (key === 'leadsCount')             { av = a.leadsCount;          bv = b.leadsCount }
+        else if (key === 'chatCount')              { av = a.chatCount;           bv = b.chatCount }
+        else if (key === 'keywordCount')           { av = a.keywordCount;        bv = b.keywordCount }
+        else if (key === 'subscriptionStatus')     { av = a.subscriptionStatus ?? ''; bv = b.subscriptionStatus ?? '' }
+
         if (typeof av === 'string') av = av.toLowerCase()
         if (typeof bv === 'string') bv = bv.toLowerCase()
         if (av < bv) return dir === 'asc' ? -1 : 1
@@ -79,13 +83,24 @@ function sortUsers(users: AdminUserDto[], key: SortKey, dir: SortDir): AdminUser
     })
 }
 
-// ─── Детальная карточка пользователя ─────────────────────────────────────────
+// ─── Вспомогательный компонент InfoRow ────────────────────────────────────────
+
+function InfoRow({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
+    return (
+        <div className={s.detailRow}>
+            <span className={s.detailLabel}>{label}</span>
+            <span className={`${s.detailValue} ${mono ? s.detailMono : ''}`}>{value}</span>
+        </div>
+    )
+}
+
+// ─── Детальная карточка пользователя ──────────────────────────────────────────
 
 function UserDetailModal({ userId, lang, onClose }: { userId: number; lang: Lang; onClose: () => void }) {
     const ru = lang === 'ru'
-    const [detail, setDetail] = useState<AdminUserDetailDto | null>(null)
-    const [loading, setLoading] = useState(true)
-    const [error, setError]     = useState('')
+    const [detail, setDetail]     = useState<AdminUserDetailDto | null>(null)
+    const [loading, setLoading]   = useState(true)
+    const [error, setError]       = useState('')
     const [activeTab, setActiveTab] = useState<'info' | 'leads' | 'chats' | 'keywords'>('info')
 
     useEffect(() => {
@@ -120,7 +135,7 @@ function UserDetailModal({ userId, lang, onClose }: { userId: number; lang: Lang
 
                 {detail && (
                     <>
-                        {/* Мини-tabs внутри модала */}
+                        {/* Вкладки внутри модала */}
                         <div className={s.modalTabs}>
                             {(['info', 'leads', 'chats', 'keywords'] as const).map(t => (
                                 <button key={t}
@@ -155,9 +170,9 @@ function UserDetailModal({ userId, lang, onClose }: { userId: number; lang: Lang
                                     <div className={s.detailDivider} />
                                     <InfoRow label={ru ? 'Подписка' : 'Subscription'}
                                              value={<span style={{ color: subColor(detail.subscriptionStatus), fontWeight: 600 }}>
-                                            {detail.subscriptionStatus || '—'}
+                                                 {detail.subscriptionStatus || '—'}
                                                  {detail.subscriptionPlan ? ` / ${detail.subscriptionPlan}` : ''}
-                                        </span>} />
+                                             </span>} />
                                     <InfoRow label={ru ? 'Истекает' : 'Expires'}
                                              value={detail.subscriptionExpiresAt
                                                  ? new Date(detail.subscriptionExpiresAt).toLocaleDateString(ru ? 'ru-RU' : 'en-US')
@@ -165,13 +180,13 @@ function UserDetailModal({ userId, lang, onClose }: { userId: number; lang: Lang
                                     <InfoRow label={ru ? 'Бонусных дней' : 'Bonus days'} value={String(detail.bonusDaysBuffer)} />
                                     <InfoRow label={ru ? 'Trial использован' : 'Trial used'} value={detail.trialUsed ? '✅' : '❌'} />
                                     <div className={s.detailDivider} />
-                                    <InfoRow label={ru ? 'Всего лидов' : 'Total leads'} value={String(detail.leadsCount)} />
-                                    <InfoRow label={ru ? 'Новых лидов' : 'New leads'} value={String(detail.newLeadsCount)} />
-                                    <InfoRow label={ru ? 'Чатов' : 'Chats'} value={String(detail.chatCount)} />
-                                    <InfoRow label={ru ? 'Ключевых слов' : 'Keywords'} value={String(detail.keywordCount)} />
+                                    <InfoRow label={ru ? 'Всего лидов' : 'Total leads'}    value={String(detail.leadsCount)} />
+                                    <InfoRow label={ru ? 'Новых лидов' : 'New leads'}      value={String(detail.newLeadsCount)} />
+                                    <InfoRow label={ru ? 'Чатов' : 'Chats'}                value={String(detail.chatCount)} />
+                                    <InfoRow label={ru ? 'Ключевых слов' : 'Keywords'}     value={String(detail.keywordCount)} />
                                     <div className={s.detailDivider} />
                                     <InfoRow label={ru ? 'Реф. переходов' : 'Total referrals'} value={String(detail.totalReferrals)} />
-                                    <InfoRow label={ru ? 'Реф. оплатили' : 'Paid referrals'} value={String(detail.paidReferrals)} />
+                                    <InfoRow label={ru ? 'Реф. оплатили' : 'Paid referrals'}   value={String(detail.paidReferrals)} />
                                     {detail.businessContext && (
                                         <>
                                             <div className={s.detailDivider} />
@@ -200,7 +215,7 @@ function UserDetailModal({ userId, lang, onClose }: { userId: number; lang: Lang
                                                 <div className={s.leadCardHeader}>
                                                     <span className={s.leadKeyword}>{l.matchedKeyword}</span>
                                                     <span className={s.leadChat}>{l.chatTitle || l.chatLink}</span>
-                                                    <span className={`${s.leadStatus} ${s[`leadStatus${l.status}`] || ''}`}>{l.status}</span>
+                                                    <span className={`${s.leadStatus} ${s[`leadStatus${l.status}` as keyof typeof s] || ''}`}>{l.status}</span>
                                                     {l.aiValid !== null && (
                                                         <span style={{ fontSize: 11, color: l.aiValid ? '#10b981' : '#ef4444' }}>
                                                             {l.aiValid ? '✓ AI' : '✗ AI'}
@@ -265,29 +280,18 @@ function UserDetailModal({ userId, lang, onClose }: { userId: number; lang: Lang
     )
 }
 
-function InfoRow({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
-    return (
-        <div className={s.detailRow}>
-            <span className={s.detailLabel}>{label}</span>
-            <span className={`${s.detailValue} ${mono ? s.detailMono : ''}`}>{value}</span>
-        </div>
-    )
-}
+// ─── Таблица пользователей + блок выдачи подписок ─────────────────────────────
 
-// ─── Улучшенная таблица пользователей + встроенные подписки ──────────────────
-
-const PLANS    = ['START', 'BUSINESS', 'TRIAL']
-const STATUSES = ['ACTIVE', 'TRIAL', 'INACTIVE']
+const PLANS = ['START', 'BUSINESS', 'TRIAL']
 
 function UsersTab({
-                      users, lang, currentUserId, onRoleChange, subs, subsLoading, onSubsReload,
+                      users, lang, currentUserId, onRoleChange, subs, onSubsReload,
                   }: {
     users:         AdminUserDto[]
     lang:          Lang
     currentUserId: number
     onRoleChange:  (id: number, role: string) => void
     subs:          SubscriptionInfo[]
-    subsLoading:   boolean
     onSubsReload:  () => void
 }) {
     const ru = lang === 'ru'
@@ -401,33 +405,87 @@ function UsersTab({
 
             <h2 className={s.tabTitle}>
                 {ru ? 'Пользователи' : 'Users'}
-                {<span className={s.count}>{filtered.length}{filtered.length !== users.length && ` / ${users.length}`}</span>}
+                <span className={s.count}>{filtered.length}{filtered.length !== users.length && ` / ${users.length}`}</span>
             </h2>
 
             {/* ── Блок выдачи подписки (перенесён из вкладки Подписки) ─────── */}
             <div className={s.subCard}>
-                <h3 className={s.subCardTitle}>{ru ? 'Выдать / продлить подписку' : 'Grant / Extend Subscription'}</h3>
+                <h3 className={s.subCardTitle}>{ru ? 'Выдать подписку' : 'Grant Subscription'}</h3>
                 <div className={s.formRow}>
                     <input
-                        className={s.formInput} type="number"
-                        placeholder={ru ? 'ID пользователя' : 'User ID'}
-                        value={grantUserId} onChange={e => setGrantUserId(e.target.value)}
-                        style={{ width: 130 }}
+                        className={s.formInput}
+                        type="number"
+                        placeholder="User ID"
+                        value={grantUserId}
+                        onChange={e => setGrantUserId(e.target.value)}
+                        style={{ width: 100 }}
                     />
-                    <select className={s.formSelect} value={grantPlan} onChange={e => setGrantPlan(e.target.value)} style={{ width: 120 }}>
+                    <select className={s.formSelect} value={grantPlan} onChange={e => setGrantPlan(e.target.value)}>
                         {PLANS.map(p => <option key={p} value={p}>{p}</option>)}
                     </select>
                     <input
-                        className={s.formInput} type="number"
+                        className={s.formInput}
+                        type="number"
                         placeholder={ru ? 'Дней' : 'Days'}
-                        value={grantDays} onChange={e => setGrantDays(e.target.value)}
+                        value={grantDays}
+                        onChange={e => setGrantDays(e.target.value)}
                         style={{ width: 80 }}
                     />
                     <button className={s.grantBtn} onClick={handleGrant} disabled={grantLoading}>
                         {grantLoading ? '...' : ru ? 'Выдать' : 'Grant'}
                     </button>
                 </div>
-                {grantMsg && <div className={grantMsg.ok ? s.formSuccess : s.formError}>{grantMsg.text}</div>}
+                {grantMsg && (
+                    <div className={grantMsg.ok ? s.formSuccess : s.formError}>{grantMsg.text}</div>
+                )}
+
+                {/* Список активных подписок */}
+                {subs.length > 0 && (
+                    <div style={{ marginTop: 16 }}>
+                        <div style={{ fontSize: 12, color: 'var(--c-ink-3)', marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px' }}>
+                            {ru ? 'Активные подписки' : 'Active subscriptions'} ({subs.filter(s => s.status === 'ACTIVE' || s.status === 'TRIAL').length})
+                        </div>
+                        <div className={s.tableWrapper} style={{ maxHeight: 220, overflowY: 'auto' }}>
+                            <table className={s.usersTable}>
+                                <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Email</th>
+                                    <th>{ru ? 'План' : 'Plan'}</th>
+                                    <th>{ru ? 'Статус' : 'Status'}</th>
+                                    <th>{ru ? 'Истекает' : 'Expires'}</th>
+                                    <th></th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                {subs.filter(sub => sub.status === 'ACTIVE' || sub.status === 'TRIAL').map(sub => (
+                                    <tr key={sub.userId}>
+                                        <td className={s.cellId}>{sub.userId}</td>
+                                        <td style={{ fontSize: 12 }}>{sub.email}</td>
+                                        <td><span className={s.planPill}>{sub.plan || '—'}</span></td>
+                                        <td>
+                                                <span style={{ color: subColor(sub.status), fontWeight: 600, fontSize: 12 }}>
+                                                    {sub.status}
+                                                </span>
+                                        </td>
+                                        <td className={s.cellDate}>
+                                            {sub.expiresAt ? new Date(sub.expiresAt).toLocaleDateString(ru ? 'ru-RU' : 'en-US') : '—'}
+                                        </td>
+                                        <td onClick={e => e.stopPropagation()}>
+                                            <button
+                                                className={s.actionBtn}
+                                                style={{ color: '#ef4444', borderColor: 'rgba(239,68,68,.3)', background: 'rgba(239,68,68,.06)', fontSize: 11 }}
+                                                onClick={() => handleRevoke(sub.userId)}>
+                                                {ru ? 'Откл.' : 'Revoke'}
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* ── Фильтры ──────────────────────────────────────────────────── */}
@@ -472,7 +530,7 @@ function UsersTab({
                         <Th col="subscriptionStatus" label={ru ? 'Подписка'       : 'Subscription'} />
                         <Th col="leadsCount"         label={ru ? 'Лиды'           : 'Leads'} />
                         <Th col="chatCount"          label={ru ? 'Чаты'           : 'Chats'} />
-                        <Th col="keywordCount"       label={ru ? 'KW'             : 'KW'} />
+                        <Th col="keywordCount"       label="KW" />
                         <th>{ru ? 'Telegram'         : 'Telegram'}</th>
                         <Th col="createdAt"          label={ru ? 'Создан'         : 'Created'} />
                         <Th col="role"               label={ru ? 'Роль'           : 'Role'} />
@@ -480,87 +538,84 @@ function UsersTab({
                     </tr>
                     </thead>
                     <tbody>
-                    {filtered.map(u => {
-                        const sub = subs.find(s => s.userId === u.id)
-                        return (
-                            <tr
-                                key={u.id}
-                                className={`${!u.isActive ? s.rowInactive : ''} ${s.rowClickable}`}
-                                onClick={() => setSelectedUserId(u.id)}
-                            >
-                                <td className={s.cellId}>{u.id}</td>
-                                <td>
-                                    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--c-ink)' }}>
-                                        {u.firstName || <span style={{ color: 'var(--c-ink-3)' }}>—</span>}
+                    {filtered.map(u => (
+                        <tr
+                            key={u.id}
+                            className={`${!u.isActive ? s.rowInactive : ''} ${s.rowClickable}`}
+                            onClick={() => setSelectedUserId(u.id)}
+                        >
+                            <td className={s.cellId}>{u.id}</td>
+                            <td>
+                                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--c-ink)' }}>
+                                    {u.firstName || <span style={{ color: 'var(--c-ink-3)' }}>—</span>}
+                                </div>
+                                <div style={{ fontSize: 11, color: 'var(--c-ink-3)', marginTop: 1 }}>{u.email}</div>
+                                {!u.emailVerified && (
+                                    <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>
+                                        {ru ? '⚠️ email не верифицирован' : '⚠️ email unverified'}
                                     </div>
-                                    <div style={{ fontSize: 11, color: 'var(--c-ink-3)', marginTop: 1 }}>{u.email}</div>
-                                    {!u.emailVerified && (
-                                        <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>
-                                            {ru ? '⚠️ email не верифицирован' : '⚠️ email unverified'}
-                                        </div>
-                                    )}
-                                </td>
-                                <td>
-                                    {u.subscriptionStatus ? (
-                                        <div>
-                                            <span style={{ color: subColor(u.subscriptionStatus), fontWeight: 600, fontSize: 12 }}>
-                                                {u.subscriptionStatus}
+                                )}
+                            </td>
+                            <td>
+                                {u.subscriptionStatus ? (
+                                    <div>
+                                        <span style={{ color: subColor(u.subscriptionStatus), fontWeight: 600, fontSize: 12 }}>
+                                            {u.subscriptionStatus}
+                                        </span>
+                                        {u.subscriptionPlan && (
+                                            <span style={{ fontSize: 11, color: 'var(--c-ink-3)', marginLeft: 4 }}>
+                                                {u.subscriptionPlan}
                                             </span>
-                                            {u.subscriptionPlan && (
-                                                <span style={{ fontSize: 11, color: 'var(--c-ink-3)', marginLeft: 4 }}>
-                                                    {u.subscriptionPlan}
-                                                </span>
-                                            )}
-                                            {u.subscriptionExpiresAt && (
-                                                <div style={{ fontSize: 10, color: 'var(--c-ink-3)', marginTop: 2 }}>
-                                                    {new Date(u.subscriptionExpiresAt).toLocaleDateString(ru ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short' })}
-                                                </div>
-                                            )}
-                                            {u.bonusDaysBuffer > 0 && (
-                                                <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>+{u.bonusDaysBuffer}д бонус</div>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <span className={s.badgeNone}>—</span>
-                                    )}
-                                </td>
-                                <td className={s.cellNum}>
-                                    <span style={{ fontWeight: u.leadsCount > 0 ? 600 : 400 }}>{u.leadsCount}</span>
-                                </td>
-                                <td className={s.cellNum}>{u.chatCount}</td>
-                                <td className={s.cellNum}>{u.keywordCount}</td>
-                                <td>
-                                    {u.telegramId
-                                        ? <span className={s.badgeTg}>✓ {u.telegramUsername ? `@${u.telegramUsername}` : u.telegramId}</span>
-                                        : <span className={s.badgeNone}>—</span>
-                                    }
-                                </td>
-                                <td className={s.cellDate}>
-                                    {u.createdAt ? new Date(u.createdAt).toLocaleDateString(ru ? 'ru-RU' : 'en-US') : '—'}
-                                </td>
-                                <td>
-                                    <span className={u.role === 'ADMIN' ? s.badgeAdmin : s.badgeUser}>{u.role}</span>
-                                </td>
-                                <td onClick={e => e.stopPropagation()}>
-                                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                                        <button className={s.actionBtn} onClick={() => handleToggleRole(u)} disabled={changing === u.id}>
-                                            {changing === u.id ? '...' : u.role === 'ADMIN'
-                                                ? (ru ? 'Снять ADMIN' : '↓ ADMIN')
-                                                : (ru ? 'ADMIN' : '↑ ADMIN')}
-                                        </button>
-                                        {u.subscriptionStatus && (
-                                            <button
-                                                className={s.actionBtn}
-                                                style={{ color: '#ef4444', borderColor: 'rgba(239,68,68,.3)', background: 'rgba(239,68,68,.06)' }}
-                                                onClick={() => handleRevoke(u.id)}>
-                                                {ru ? 'Откл.' : 'Revoke'}
-                                            </button>
+                                        )}
+                                        {u.subscriptionExpiresAt && (
+                                            <div style={{ fontSize: 10, color: 'var(--c-ink-3)', marginTop: 2 }}>
+                                                {new Date(u.subscriptionExpiresAt).toLocaleDateString(ru ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short' })}
+                                            </div>
+                                        )}
+                                        {u.bonusDaysBuffer > 0 && (
+                                            <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>+{u.bonusDaysBuffer}д бонус</div>
                                         )}
                                     </div>
-                                </td>
-                            </tr>
-                        )
-                    })}
+                                ) : (
+                                    <span className={s.badgeNone}>—</span>
+                                )}
+                            </td>
+                            <td className={s.cellNum}>
+                                <span style={{ fontWeight: u.leadsCount > 0 ? 600 : 400 }}>{u.leadsCount}</span>
+                            </td>
+                            <td className={s.cellNum}>{u.chatCount}</td>
+                            <td className={s.cellNum}>{u.keywordCount}</td>
+                            <td>
+                                {u.telegramId
+                                    ? <span className={s.badgeTg}>✓ {u.telegramUsername ? `@${u.telegramUsername}` : u.telegramId}</span>
+                                    : <span className={s.badgeNone}>—</span>
+                                }
+                            </td>
+                            <td className={s.cellDate}>
+                                {u.createdAt ? new Date(u.createdAt).toLocaleDateString(ru ? 'ru-RU' : 'en-US') : '—'}
+                            </td>
+                            <td>
+                                <span className={u.role === 'ADMIN' ? s.badgeAdmin : s.badgeUser}>{u.role}</span>
+                            </td>
+                            <td onClick={e => e.stopPropagation()}>
+                                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                    <button className={s.actionBtn} onClick={() => handleToggleRole(u)} disabled={changing === u.id}>
+                                        {changing === u.id ? '...' : u.role === 'ADMIN'
+                                            ? (ru ? 'Снять ADMIN' : '↓ ADMIN')
+                                            : (ru ? 'ADMIN' : '↑ ADMIN')}
+                                    </button>
+                                    {u.subscriptionStatus && (
+                                        <button
+                                            className={s.actionBtn}
+                                            style={{ color: '#ef4444', borderColor: 'rgba(239,68,68,.3)', background: 'rgba(239,68,68,.06)' }}
+                                            onClick={() => handleRevoke(u.id)}>
+                                            {ru ? 'Откл.' : 'Revoke'}
+                                        </button>
+                                    )}
+                                </div>
+                            </td>
+                        </tr>
+                    ))}
                     </tbody>
                 </table>
             </div>
@@ -583,6 +638,9 @@ function AllLeadsTab({ lang }: { lang: Lang }) {
     const [filterUser,    setFilterUser]    = useState('')
     const [filterStatus,  setFilterStatus]  = useState('')
     const [filterKeyword, setFilterKeyword] = useState('')
+
+    // Раскрытый лид для просмотра текста
+    const [expandedLead, setExpandedLead] = useState<number | null>(null)
 
     const PAGE_SIZE = 50
 
@@ -632,7 +690,7 @@ function AllLeadsTab({ lang }: { lang: Lang }) {
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 <input
                     style={{ ...inputSt, width: 100 }}
-                    placeholder={ru ? 'User ID' : 'User ID'}
+                    placeholder="User ID"
                     value={filterUser} onChange={e => setFilterUser(e.target.value)}
                     type="number"
                 />
@@ -677,85 +735,150 @@ function AllLeadsTab({ lang }: { lang: Lang }) {
                             <thead>
                             <tr>
                                 <th>ID</th>
-                                <th>{ru ? 'Пользователь' : 'User'}</th>
+                                <th>{ru ? 'Кому' : 'Owner'}</th>
                                 <th>{ru ? 'Чат' : 'Chat'}</th>
                                 <th>{ru ? 'Автор' : 'Author'}</th>
-                                <th>{ru ? 'Ключевое слово' : 'Keyword'}</th>
+                                <th>{ru ? 'Ключ. слово' : 'Keyword'}</th>
+                                <th>{ru ? 'Сообщение' : 'Message'}</th>
                                 <th>{ru ? 'Статус' : 'Status'}</th>
                                 <th>AI</th>
                                 <th>{ru ? 'Дата' : 'Date'}</th>
-                                <th>{ru ? 'Текст' : 'Text'}</th>
                             </tr>
                             </thead>
                             <tbody>
                             {leads.map(l => (
-                                <tr key={l.id}>
-                                    <td className={s.cellId}>{l.id}</td>
-                                    <td>
-                                        <div style={{ fontSize: 12, fontWeight: 500 }}>{l.userFirstName || '—'}</div>
-                                        <div style={{ fontSize: 11, color: 'var(--c-ink-3)' }}>{l.userEmail}</div>
-                                        <div style={{ fontSize: 10, color: 'var(--c-ink-3)' }}>ID {l.userId}</div>
-                                    </td>
-                                    <td style={{ maxWidth: 140 }}>
-                                        <div style={{ fontSize: 12, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                            {l.chatTitle || '—'}
-                                        </div>
-                                        {l.chatLink && (
-                                            <a href={l.chatLink} target="_blank" rel="noreferrer"
-                                               style={{ fontSize: 10, color: '#3b82f6' }}>↗</a>
-                                        )}
-                                    </td>
-                                    <td style={{ maxWidth: 120 }}>
-                                        <div style={{ fontSize: 12 }}>{l.authorName || '—'}</div>
-                                        {l.authorUsername && (
-                                            <div style={{ fontSize: 11, color: 'var(--c-ink-3)' }}>@{l.authorUsername}</div>
-                                        )}
-                                    </td>
-                                    <td>
-                                        <span style={{
-                                            background: 'var(--c-accent-soft)',
-                                            color: 'var(--c-accent)',
-                                            fontSize: 11, fontWeight: 600,
-                                            padding: '2px 6px', borderRadius: 4,
-                                        }}>
-                                            {l.matchedKeyword}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <span style={{ color: statusColor(l.status), fontWeight: 600, fontSize: 12 }}>
-                                            {l.status}
-                                        </span>
-                                    </td>
-                                    <td style={{ fontSize: 12 }}>
-                                        {l.aiValid === null ? '—'
-                                            : l.aiValid
-                                                ? <span style={{ color: '#10b981' }}>✓</span>
-                                                : <span style={{ color: '#ef4444' }}>✗</span>
-                                        }
-                                        {l.aiReason && (
-                                            <div style={{ fontSize: 10, color: 'var(--c-ink-3)', maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                                                 title={l.aiReason}>
-                                                {l.aiReason}
+                                <>
+                                    <tr
+                                        key={l.id}
+                                        style={{ cursor: 'pointer' }}
+                                        onClick={() => setExpandedLead(expandedLead === l.id ? null : l.id)}
+                                    >
+                                        <td className={s.cellId}>{l.id}</td>
+
+                                        {/* Кому — владелец лида */}
+                                        <td>
+                                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--c-ink)' }}>
+                                                {l.userFirstName || <span style={{ color: 'var(--c-ink-3)' }}>—</span>}
                                             </div>
-                                        )}
-                                    </td>
-                                    <td className={s.cellDate}>
-                                        {new Date(l.foundAt).toLocaleString(ru ? 'ru-RU' : 'en-US', {
-                                            day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-                                        })}
-                                    </td>
-                                    <td style={{ maxWidth: 200 }}>
-                                        <div style={{ fontSize: 12, color: 'var(--c-ink-2)', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-                                            {l.messageText}
-                                        </div>
-                                        {l.messageLink && (
-                                            <a href={l.messageLink} target="_blank" rel="noreferrer"
-                                               style={{ fontSize: 10, color: '#3b82f6' }}>
-                                                {ru ? '↗ открыть' : '↗ open'}
-                                            </a>
-                                        )}
-                                    </td>
-                                </tr>
+                                            <div style={{ fontSize: 11, color: 'var(--c-ink-3)' }}>
+                                                {l.userEmail || ''}
+                                            </div>
+                                            {l.userId && (
+                                                <div style={{ fontSize: 10, color: 'var(--c-accent)', fontFamily: 'monospace' }}>
+                                                    #{l.userId}
+                                                </div>
+                                            )}
+                                        </td>
+
+                                        {/* Чат */}
+                                        <td>
+                                            <div style={{ fontSize: 12, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {l.chatTitle || l.chatLink || '—'}
+                                            </div>
+                                            {l.chatLink && (
+                                                <a
+                                                    href={l.chatLink} target="_blank" rel="noreferrer"
+                                                    style={{ fontSize: 10, color: '#3b82f6', textDecoration: 'none' }}
+                                                    onClick={e => e.stopPropagation()}
+                                                >↗ {ru ? 'открыть' : 'open'}</a>
+                                            )}
+                                        </td>
+
+                                        {/* Автор */}
+                                        <td>
+                                            <div style={{ fontSize: 12, fontWeight: 500 }}>{l.authorName}</div>
+                                            {l.authorUsername && (
+                                                <div style={{ fontSize: 11, color: 'var(--c-ink-3)' }}>@{l.authorUsername}</div>
+                                            )}
+                                        </td>
+
+                                        {/* Ключевое слово */}
+                                        <td>
+                                            <span className={s.leadKeyword}>{l.matchedKeyword}</span>
+                                        </td>
+
+                                        {/* Превью сообщения */}
+                                        <td style={{ maxWidth: 220 }}>
+                                            <div style={{
+                                                fontSize: 12, color: 'var(--c-ink-2)', lineHeight: 1.4,
+                                                overflow: 'hidden', textOverflow: 'ellipsis',
+                                                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                                            }}>
+                                                {l.messageText}
+                                            </div>
+                                        </td>
+
+                                        {/* Статус */}
+                                        <td>
+                                            <span style={{
+                                                fontSize: 11, fontWeight: 600,
+                                                color: statusColor(l.status),
+                                                background: `${statusColor(l.status)}18`,
+                                                padding: '2px 7px', borderRadius: 4,
+                                            }}>
+                                                {l.status}
+                                            </span>
+                                        </td>
+
+                                        {/* AI */}
+                                        <td>
+                                            {l.aiValid === null ? (
+                                                <span style={{ color: 'var(--c-ink-3)', fontSize: 11 }}>—</span>
+                                            ) : (
+                                                <span style={{ fontSize: 12, color: l.aiValid ? '#10b981' : '#ef4444' }}>
+                                                    {l.aiValid ? '✓' : '✗'}
+                                                </span>
+                                            )}
+                                        </td>
+
+                                        {/* Дата */}
+                                        <td className={s.cellDate} style={{ whiteSpace: 'nowrap' }}>
+                                            {new Date(l.foundAt).toLocaleString(ru ? 'ru-RU' : 'en-US', {
+                                                day: '2-digit', month: 'short',
+                                                hour: '2-digit', minute: '2-digit',
+                                            })}
+                                        </td>
+                                    </tr>
+
+                                    {/* Раскрытая строка с полным текстом */}
+                                    {expandedLead === l.id && (
+                                        <tr key={`${l.id}-exp`} style={{ background: 'var(--c-bg)' }}>
+                                            <td colSpan={9} style={{ padding: '12px 16px' }}>
+                                                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                                                    <div style={{ flex: 1, minWidth: 240 }}>
+                                                        <div style={{ fontSize: 11, color: 'var(--c-ink-3)', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase' }}>
+                                                            {ru ? 'Полный текст сообщения' : 'Full message text'}
+                                                        </div>
+                                                        <div style={{
+                                                            fontSize: 13, color: 'var(--c-ink)', lineHeight: 1.55,
+                                                            background: 'var(--c-surface)', border: '1px solid var(--c-border)',
+                                                            borderRadius: 8, padding: '10px 12px', wordBreak: 'break-word',
+                                                        }}>
+                                                            {l.messageText}
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 160 }}>
+                                                        {l.aiReason && (
+                                                            <div>
+                                                                <div style={{ fontSize: 11, color: 'var(--c-ink-3)', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase' }}>
+                                                                    AI reason
+                                                                </div>
+                                                                <div style={{ fontSize: 12, color: 'var(--c-ink-2)', lineHeight: 1.4 }}>{l.aiReason}</div>
+                                                            </div>
+                                                        )}
+                                                        {l.messageLink && (
+                                                            <a
+                                                                href={l.messageLink} target="_blank" rel="noreferrer"
+                                                                style={{ fontSize: 13, color: '#3b82f6', textDecoration: 'none', fontWeight: 500 }}>
+                                                                🔗 {ru ? 'Открыть в Telegram' : 'Open in Telegram'}
+                                                            </a>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    )}
+                                </>
                             ))}
                             </tbody>
                         </table>
@@ -763,14 +886,35 @@ function AllLeadsTab({ lang }: { lang: Lang }) {
 
                     {/* Пагинация */}
                     {pages > 1 && (
-                        <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
-                            <button className={s.actionBtn} onClick={() => load(0)} disabled={page === 0}>«</button>
-                            <button className={s.actionBtn} onClick={() => load(page - 1)} disabled={page === 0}>‹</button>
-                            <span style={{ padding: '6px 12px', fontSize: 13, color: 'var(--c-ink-2)' }}>
-                                {page + 1} / {pages}
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <button
+                                className={s.actionBtn}
+                                disabled={page === 0}
+                                onClick={() => load(page - 1)}>
+                                ←
+                            </button>
+                            {Array.from({ length: Math.min(pages, 10) }, (_, i) => {
+                                const pg = pages <= 10 ? i : Math.max(0, page - 4) + i
+                                if (pg >= pages) return null
+                                return (
+                                    <button
+                                        key={pg}
+                                        className={s.actionBtn}
+                                        style={pg === page ? { background: 'var(--c-accent)', color: '#fff', borderColor: 'var(--c-accent)' } : {}}
+                                        onClick={() => load(pg)}>
+                                        {pg + 1}
+                                    </button>
+                                )
+                            })}
+                            <button
+                                className={s.actionBtn}
+                                disabled={page >= pages - 1}
+                                onClick={() => load(page + 1)}>
+                                →
+                            </button>
+                            <span style={{ fontSize: 12, color: 'var(--c-ink-3)' }}>
+                                {ru ? `Страница ${page + 1} из ${pages}` : `Page ${page + 1} of ${pages}`}
                             </span>
-                            <button className={s.actionBtn} onClick={() => load(page + 1)} disabled={page >= pages - 1}>›</button>
-                            <button className={s.actionBtn} onClick={() => load(pages - 1)} disabled={page >= pages - 1}>»</button>
                         </div>
                     )}
                 </>
@@ -779,79 +923,95 @@ function AllLeadsTab({ lang }: { lang: Lang }) {
     )
 }
 
-// ─── UserbotTab (без изменений) ───────────────────────────────────────────────
+// ─── Userbot Tab ──────────────────────────────────────────────────────────────
 
 function UserbotTab({ lang }: { lang: Lang }) {
-    const ru   = lang === 'ru'
-    const [stats,        setStats]        = useState<UserbotStats | null>(null)
-    const [users,        setUsers]        = useState<UserbotUserInfo[]>([])
-    const [loading,      setLoading]      = useState(true)
-    const [error,        setError]        = useState('')
-    const [expandedUser, setExpandedUser] = useState<number | null>(null)
-    const [userSearch,   setUserSearch]   = useState('')
+    const ru = lang === 'ru'
+    const [stats,          setStats]          = useState<UserbotStats | null>(null)
+    const [users,          setUsers]          = useState<UserbotUserInfo[]>([])
+    const [loading,        setLoading]        = useState(true)
+    const [error,          setError]          = useState('')
+    const [expandedUser,   setExpandedUser]   = useState<number | null>(null)
+    const [userSearch,     setUserSearch]     = useState('')
+    const [step,           setStep]           = useState<'idle' | 'code' | 'done'>('idle')
+    const [phone,          setPhone]          = useState('')
+    const [apiID,          setApiID]          = useState('')
+    const [apiHash,        setApiHash]        = useState('')
+    const [code,           setCode]           = useState('')
+    const [password,       setPassword]       = useState('')
+    const [tempId,         setTempId]         = useState('')
+    const [regLoading,     setRegLoading]     = useState(false)
+    const [regError,       setRegError]       = useState('')
+    const [regSuccess,     setRegSuccess]     = useState('')
     const [deletingSession, setDeletingSession] = useState<number | null>(null)
-    const [deleteError,     setDeleteError]     = useState('')
-    type Step = 'idle' | 'phone' | 'code' | 'done'
-    const [step,       setStep]       = useState<Step>('idle')
-    const [phone,      setPhone]      = useState('')
-    const [apiID,      setApiID]      = useState('')
-    const [apiHash,    setApiHash]    = useState('')
-    const [tempId,     setTempId]     = useState('')
-    const [code,       setCode]       = useState('')
-    const [password,   setPassword]   = useState('')
-    const [regLoading, setRegLoading] = useState(false)
-    const [regError,   setRegError]   = useState('')
-    const [regSuccess, setRegSuccess] = useState('')
+    const [deleteError,    setDeleteError]    = useState('')
 
     const load = useCallback(async () => {
         setLoading(true); setError('')
         try {
-            const [st, us] = await Promise.all([
-                fetch(`${BASE}/api/v1/admin/userbot/stats`, { credentials: 'include' }).then(r => r.json()) as Promise<UserbotStats>,
-                fetch(`${BASE}/api/v1/admin/userbot/users`, { credentials: 'include' }).then(r => r.json()) as Promise<UserbotUserInfo[]>,
+            const [statsRes, usersRes] = await Promise.all([
+                fetch(`${BASE}/api/v1/admin/userbot/stats`,  { credentials: 'include' }).then(r => r.json()),
+                fetch(`${BASE}/api/v1/admin/userbot/users`,  { credentials: 'include' }).then(r => r.json()),
             ])
-            setStats(st); setUsers(Array.isArray(us) ? us : [])
-        } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Ошибка') }
-        finally { setLoading(false) }
+            setStats(statsRes as UserbotStats)
+            setUsers(Array.isArray(usersRes) ? usersRes : [])
+        } catch (e: unknown) {
+            setError(e instanceof Error ? e.message : 'Ошибка')
+        } finally { setLoading(false) }
     }, [])
 
     useEffect(() => { load() }, [load])
 
-    const handleDeleteSession = async (sessionId: number, phone: string) => {
-        if (!confirm(ru ? `Удалить юзербота #${sessionId} (${phone})?` : `Delete userbot #${sessionId} (${phone})?`)) return
-        setDeletingSession(sessionId); setDeleteError('')
-        try {
-            const res  = await fetch(`${BASE}/api/v1/admin/userbot/sessions/delete`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId }) })
-            const data = await res.json()
-            if (!res.ok) throw new Error(data.error ?? `Ошибка ${res.status}`)
-            setTimeout(load, 600)
-        } catch (e: unknown) { setDeleteError(e instanceof Error ? e.message : 'Ошибка') }
-        finally { setDeletingSession(null) }
-    }
-
     const handleSendPhone = async () => {
-        if (!phone.trim()) return
+        if (!phone.trim()) { setRegError(ru ? 'Введите телефон' : 'Enter phone'); return }
         setRegLoading(true); setRegError('')
         try {
-            const res  = await fetch(`${BASE}/api/v1/admin/userbot/sessions/register`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: phone.trim(), apiID: parseInt(apiID, 10), apiHash: apiHash.trim() }) })
-            const data = await res.json()
-            if (!res.ok) throw new Error(data.error ?? `Ошибка ${res.status}`)
-            setTempId(data.tempId); setStep('code')
-        } catch (e: unknown) { setRegError(e instanceof Error ? e.message : 'Ошибка') }
-        finally { setRegLoading(false) }
+            const res = await fetch(`${BASE}/api/v1/admin/userbot/sessions/register`, {
+                method: 'POST', credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone: phone.trim(), apiID: Number(apiID), apiHash: apiHash.trim() }),
+            })
+            const data = await res.json() as { tempId?: string; error?: string }
+            if (!res.ok || data.error) throw new Error(data.error || 'Ошибка')
+            setTempId(data.tempId || '')
+            setStep('code')
+        } catch (e: unknown) {
+            setRegError(e instanceof Error ? e.message : 'Ошибка')
+        } finally { setRegLoading(false) }
     }
 
     const handleConfirmCode = async () => {
-        if (!code.trim()) return
         setRegLoading(true); setRegError('')
         try {
-            const res  = await fetch(`${BASE}/api/v1/admin/userbot/sessions/confirm`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tempId, code: code.trim(), password: password.trim() || undefined }) })
-            const data = await res.json()
-            if (!res.ok) throw new Error(data.error ?? `Ошибка ${res.status}`)
-            setRegSuccess(ru ? `✅ Юзербот зарегистрирован! SessionId: ${data.sessionId}` : `✅ Userbot registered! SessionId: ${data.sessionId}`)
-            setStep('done'); setTimeout(load, 1500)
-        } catch (e: unknown) { setRegError(e instanceof Error ? e.message : 'Ошибка') }
-        finally { setRegLoading(false) }
+            const res = await fetch(`${BASE}/api/v1/admin/userbot/sessions/confirm`, {
+                method: 'POST', credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tempId, code: code.trim(), password: password || undefined }),
+            })
+            const data = await res.json() as { sessionId?: number; error?: string }
+            if (!res.ok || data.error) throw new Error(data.error || 'Ошибка')
+            setRegSuccess(ru ? `Сессия ${data.sessionId} добавлена!` : `Session ${data.sessionId} added!`)
+            setStep('done')
+            load()
+        } catch (e: unknown) {
+            setRegError(e instanceof Error ? e.message : 'Ошибка')
+        } finally { setRegLoading(false) }
+    }
+
+    const handleDeleteSession = async (sessionId: number, phone: string) => {
+        if (!confirm(ru ? `Удалить сессию ${phone}?` : `Delete session ${phone}?`)) return
+        setDeletingSession(sessionId); setDeleteError('')
+        try {
+            const res = await fetch(`${BASE}/api/v1/admin/userbot/sessions/delete`, {
+                method: 'POST', credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionId }),
+            })
+            if (!res.ok) throw new Error('Ошибка')
+            load()
+        } catch (e: unknown) {
+            setDeleteError(e instanceof Error ? e.message : 'Ошибка')
+        } finally { setDeletingSession(null) }
     }
 
     const resetWizard = () => { setStep('idle'); setPhone(''); setCode(''); setPassword(''); setTempId(''); setRegError(''); setRegSuccess('') }
@@ -932,7 +1092,9 @@ function UserbotTab({ lang }: { lang: Lang }) {
 export default function AdminPanel({ lang }: Props) {
     const ru = lang === 'ru'
     const navigate = useNavigate()
-    const { auth } = useAuthContext()
+    // FIX: useAuthContext возвращает { user, loading, token, saveSession, logout, refreshUser }
+    // поля 'auth' нет — используем 'user' напрямую
+    const { user } = useAuthContext()
 
     const [tab,         setTab]         = useState<Tab>('overview')
     const [users,       setUsers]       = useState<AdminUserDto[]>([])
@@ -942,7 +1104,7 @@ export default function AdminPanel({ lang }: Props) {
 
     // Подписки для UsersTab
     const [subs,       setSubs]       = useState<SubscriptionInfo[]>([])
-    const [subsLoading,setSubsLoading] = useState(false)
+    const [subsLoading, setSubsLoading] = useState(false)
 
     // Уведомления
     const [notifs,       setNotifs]       = useState<NotificationDto[]>([])
@@ -980,9 +1142,10 @@ export default function AdminPanel({ lang }: Props) {
 
     useEffect(() => { loadUsers() }, [loadUsers])
     useEffect(() => {
-        if (tab === 'users')    loadSubs()
+        if (tab === 'users' && !subsLoading) loadSubs()
         if (tab === 'notifications' && !notifsLoaded) loadNotifs()
-    }, [tab, loadSubs, loadNotifs, notifsLoaded])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tab])
 
     const handleRoleChange = (id: number, role: string) => {
         setUsers(prev => prev.map(u => u.id === id ? { ...u, role } : u))
@@ -1001,10 +1164,13 @@ export default function AdminPanel({ lang }: Props) {
         } finally { setNotifLoading(false) }
     }
 
-    const totalLeads = users.reduce((s, u) => s + u.leadsCount, 0)
+    const totalLeads  = users.reduce((acc, u) => acc + u.leadsCount, 0)
     const activeUsers = users.filter(u => u.subscriptionStatus === 'ACTIVE').length
     const trialUsers  = users.filter(u => u.subscriptionStatus === 'TRIAL').length
     const tgLinked    = users.filter(u => !!u.telegramId).length
+
+    // Берём userId из user напрямую — без несуществующего поля auth
+    const currentUserId = user?.userId ?? 0
 
     return (
         <div className={s.root}>
@@ -1054,11 +1220,11 @@ export default function AdminPanel({ lang }: Props) {
                             <h2 className={s.tabTitle}>{ru ? 'Обзор' : 'Overview'}</h2>
                             <div className={s.statsGrid}>
                                 {[
-                                    { label: ru ? 'Пользователей' : 'Users',         value: users.length },
-                                    { label: ru ? 'Активных'      : 'Active',         value: activeUsers },
-                                    { label: ru ? 'Trial'         : 'Trial',          value: trialUsers },
-                                    { label: ru ? 'TG привязан'   : 'TG linked',      value: tgLinked },
-                                    { label: ru ? 'Лидов всего'   : 'Total leads',    value: totalLeads.toLocaleString() },
+                                    { label: ru ? 'Пользователей' : 'Users',       value: users.length },
+                                    { label: ru ? 'Активных'      : 'Active',       value: activeUsers },
+                                    { label: ru ? 'Trial'         : 'Trial',        value: trialUsers },
+                                    { label: ru ? 'TG привязан'   : 'TG linked',    value: tgLinked },
+                                    { label: ru ? 'Лидов всего'   : 'Total leads',  value: totalLeads.toLocaleString() },
                                 ].map(c => (
                                     <div key={c.label} className={s.statCard}>
                                         <span className={s.statVal}>{c.value}</span>
@@ -1071,15 +1237,14 @@ export default function AdminPanel({ lang }: Props) {
                         </div>
                     )}
 
-                    {/* ── Пользователи (с блоком подписок) ── */}
+                    {/* ── Пользователи ── */}
                     {tab === 'users' && (
                         <UsersTab
                             users={users}
                             lang={lang}
-                            currentUserId={auth?.userId ?? 0}
+                            currentUserId={currentUserId}
                             onRoleChange={handleRoleChange}
                             subs={subs}
-                            subsLoading={subsLoading}
                             onSubsReload={loadSubs}
                         />
                     )}

@@ -8,8 +8,15 @@ import { useAuthContext } from '../context/AuthContext'
  * Google перенаправляет сюда с хэшем вида:
  *   /oauth/callback#id_token=xxx&token_type=Bearer&expires_in=3600
  *
- * Мы извлекаем id_token и отправляем на бэкенд.
+ * Реф-код: если пользователь до входа через Google перешёл по реф-ссылке
+ * (?ref=XXXXXX), AuthModal сохраняет код в sessionStorage['aimly_ref_code'].
+ * Мы его здесь читаем и передаём в loginWithGoogle().
+ * Код очищается только после успешной авторизации.
  */
+
+// Должен совпадать с REF_STORAGE_KEY в AuthModal.tsx
+const REF_STORAGE_KEY = 'aimly_ref_code'
+
 export default function OAuthCallback() {
     const { saveSession } = useAuthContext()
     const navigate = useNavigate()
@@ -21,14 +28,18 @@ export default function OAuthCallback() {
         const idToken = params.get('id_token')
 
         if (!idToken) {
-            // Если нет токена — возможно пользователь попал сюда случайно
             setError('Токен Google не найден. Попробуйте войти снова.')
             setTimeout(() => navigate('/'), 3000)
             return
         }
 
-        authApi.loginWithGoogle(idToken)
+        // Читаем реф-код, сохранённый до начала OAuth-флоу в AuthModal
+        const pendingRefCode = sessionStorage.getItem(REF_STORAGE_KEY) ?? undefined
+
+        authApi.loginWithGoogle(idToken, pendingRefCode)
             .then(auth => {
+                // Очищаем реф-код только после успешной авторизации
+                if (pendingRefCode) sessionStorage.removeItem(REF_STORAGE_KEY)
                 saveSession(auth)
                 // Редирект туда, откуда пришёл (если сохранили) или на дашборд
                 const returnTo = sessionStorage.getItem('oauth_return_to') || '/dashboard'
