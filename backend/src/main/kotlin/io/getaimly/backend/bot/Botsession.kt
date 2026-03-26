@@ -39,7 +39,7 @@ data class UserSession(
 
     var regEmail:    String? = null,
     var regPassword: String? = null,
-    
+
     var pendingVerificationUserId: Long? = null,
 
     var aiKeywordSuggestions: List<String> = emptyList(),

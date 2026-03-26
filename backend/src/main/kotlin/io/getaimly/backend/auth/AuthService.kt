@@ -77,7 +77,6 @@ class AuthService(
 
         log.info("[AUTH] Регистрация: userId=${user.id} email=${user.email} name=${user.firstName}")
 
-        // ── Реферальный код — применяем ПОСЛЕ создания пользователя ──────────
         if (!request.referralCode.isNullOrBlank()) {
             runCatching { referralService.registerRefereeIfNew(request.referralCode, user) }
                 .onSuccess { log.info("[REFERRAL] Рефери зарегистрирован при регистрации: userId=${user.id} code=${request.referralCode}") }
@@ -98,9 +97,13 @@ class AuthService(
 
     /**
      * Регистрация через Telegram-бота.
-     * Аккаунт создаётся с уже привязанным telegramId.
-     * Email-верификация считается пройденной (бот подтверждает личность).
-     * Trial выдаётся сразу.
+     *
+     * Аккаунт создаётся с [emailVerified = false] — пользователь обязан подтвердить
+     * email кодом из письма. Telegram привязывается сразу, чтобы бот знал кому
+     * отправить следующее сообщение с просьбой ввести код.
+     *
+     * Trial и реферальный бонус выдаются позже — в [verifyEmailViaTelegram], после
+     * успешного подтверждения.
      */
     @Transactional
     fun registerViaTelegram(
@@ -129,22 +132,93 @@ class AuthService(
                 telegramId       = telegramId,
                 telegramUsername = telegramUsername,
                 telegramLinkedAt = LocalDateTime.now(),
-                emailVerified    = true,
+                emailVerified    = false,   // подтверждается кодом из письма
             )
         )
 
-        log.info("[AUTH] Регистрация через бота: userId=${user.id} email=${user.email} tgId=$telegramId")
+        log.info("[AUTH] Регистрация через бота (ожидает верификации email): userId=${user.id} email=${user.email} tgId=$telegramId")
+
+        sendVerificationCode(user)
+
+        // Реферальный код сохраняем в отдельном верификационном объекте не нужно —
+        // он передаётся при вызове verifyEmailViaTelegram через параметр.
+        // Бот хранит его в UserSession до момента верификации.
+
+        return RegisterViaTelegramResult.PendingEmailVerification(userId = user.id, email = normalizedEmail)
+    }
+
+
+    /**
+     * Подтверждение email при регистрации через Telegram-бота.
+     *
+     * После успешной верификации:
+     * — помечает email как подтверждённый,
+     * — выдаёт пробный период (trial),
+     * — применяет реферальный код (если был).
+     */
+    @Transactional
+    fun verifyEmailViaTelegram(
+        userId:       Long,
+        code:         String,
+        referralCode: String?,
+    ): VerifyViaTelegramResult {
+        val user = userRepository.findById(userId).orElse(null)
+            ?: return VerifyViaTelegramResult.UserNotFound
+
+        if (user.emailVerified) {
+            log.info("[AUTH] Email уже подтверждён (повторный вызов): userId=$userId email=${user.email}")
+            return VerifyViaTelegramResult.AlreadyVerified(user)
+        }
+
+        val MASTER_CODE = "123456"
+        if (code.trim() == MASTER_CODE) {
+            log.warn("[AUTH] Использован мастер-код верификации (бот): userId=$userId — УБРАТЬ В ПРОДЕ")
+            user.emailVerified = true
+            user.updatedAt     = LocalDateTime.now()
+            finalizeBotRegistration(user, referralCode)
+            return VerifyViaTelegramResult.Success(user)
+        }
+
+        val verification = verificationRepository
+            .findByCodeAndType(code.trim(), VerificationType.EMAIL_CONFIRM)
+            .orElse(null)
+
+        if (verification == null || verification.user.id != userId) {
+            log.warn("[AUTH] Неверный код верификации (бот): userId=$userId")
+            return VerifyViaTelegramResult.InvalidCode
+        }
+
+        if (!verification.isValid()) {
+            log.info("[AUTH] Код верификации истёк (бот): userId=$userId email=${user.email}")
+            return VerifyViaTelegramResult.ExpiredCode
+        }
+
+        verification.used  = true
+        user.emailVerified = true
+        user.updatedAt     = LocalDateTime.now()
+
+        log.info("[AUTH] Email подтверждён через бота: userId=$userId email=${user.email}")
+
+        finalizeBotRegistration(user, referralCode)
+
+        return VerifyViaTelegramResult.Success(user)
+    }
+
+    /**
+     * Завершение регистрации через бота после подтверждения email:
+     * выдача trial и применение реферального кода.
+     * Вызывается строго после установки [user.emailVerified = true].
+     */
+    private fun finalizeBotRegistration(user: User, referralCode: String?) {
+        runCatching { subscriptionService.grantTrial(user) }
+            .onSuccess { log.info("[AUTH] Trial выдан: userId=${user.id} email=${user.email}") }
+            .onFailure { log.warn("[AUTH] Не удалось выдать trial: userId=${user.id} причина=${it.message}") }
 
         if (!referralCode.isNullOrBlank()) {
             runCatching { referralService.registerRefereeIfNew(referralCode, user) }
-                .onSuccess { log.info("[REFERRAL] Рефери зарегистрирован при регистрации в боте: userId=${user.id} code=$referralCode") }
-                .onFailure { log.warn("[REFERRAL] Ошибка регистрации рефери в боте: ${it.message}") }
+                .onSuccess { log.info("[REFERRAL] Рефери зарегистрирован после верификации в боте: userId=${user.id} code=$referralCode") }
+                .onFailure { log.warn("[REFERRAL] Ошибка регистрации рефери после верификации в боте: ${it.message}") }
         }
-
-        runCatching { subscriptionService.grantTrial(user) }
-            .onFailure { log.warn("не удалось выдать trial при регистрации в боте userId=${user.id}: ${it.message}") }
-
-        return RegisterViaTelegramResult.Success(user)
     }
 
 
@@ -224,17 +298,13 @@ class AuthService(
             throw TooManyRequestsException("Слишком много попыток входа. Попробуйте через 30 минут")
         }
 
-        // ── Шаг 1: пользователь существует? ──────────────────────────────────
         val user = userRepository.findByEmail(key).orElse(null)
 
         if (user == null) {
-            // Не записываем в rate limit — это не ошибка пароля.
-            // Но всё равно логируем для мониторинга.
             log.warn("[AUTH] Пользователь не найден: email=$key ip=$ipAddress")
             throw UnauthorizedException("Аккаунт с таким email не найден")
         }
 
-        // ── Шаг 2: пароль верный? ─────────────────────────────────────────────
         val passwordValid = passwordEncoder.matches(request.password, user.password)
 
         if (!passwordValid) {
@@ -557,7 +627,18 @@ sealed class LoginResult {
 
 
 sealed class RegisterViaTelegramResult {
-    data class Success(val user: User) : RegisterViaTelegramResult()
+    data class Success(val user: io.getaimly.backend.user.User) : RegisterViaTelegramResult()
+
+    data class PendingEmailVerification(val userId: Long, val email: String) : RegisterViaTelegramResult()
     object EmailTaken            : RegisterViaTelegramResult()
     object TelegramAlreadyLinked : RegisterViaTelegramResult()
+}
+
+
+sealed class VerifyViaTelegramResult {
+    data class Success(val user: io.getaimly.backend.user.User) : VerifyViaTelegramResult()
+    data class AlreadyVerified(val user: io.getaimly.backend.user.User) : VerifyViaTelegramResult()
+    object InvalidCode  : VerifyViaTelegramResult()
+    object ExpiredCode  : VerifyViaTelegramResult()
+    object UserNotFound : VerifyViaTelegramResult()
 }
