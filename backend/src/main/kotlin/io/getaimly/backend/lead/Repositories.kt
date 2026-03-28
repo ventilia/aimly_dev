@@ -22,6 +22,13 @@ interface LeadRepository : JpaRepository<Lead, Long> {
 
     fun existsByTgMessageIdAndTgChatIdAndUserId(tgMessageId: Long, tgChatId: Long, userId: Long): Boolean
 
+    // ─── Для admin: все лиды без фильтра по userId ────────────────────────────
+
+    fun findAllByOrderByFoundAtDesc(pageable: Pageable): Page<Lead>
+
+    fun findByStatusOrderByFoundAtDesc(status: LeadStatus, pageable: Pageable): Page<Lead>
+
+    // ─── Для admin: детали пользователя (последние лиды) ─────────────────────
 
     @Query("""
         SELECT l FROM Lead l
@@ -50,6 +57,9 @@ interface ChatSubscriptionRepository : JpaRepository<ChatSubscription, Long> {
 
     fun findByUserIdAndIsActiveTrue(userId: Long): List<ChatSubscription>
 
+    // ─── Для admin: все подписки пользователя (включая неактивные) ───────────
+    fun findByUserId(userId: Long): List<ChatSubscription>
+
     fun findByUserIdAndChatLink(userId: Long, chatLink: String): ChatSubscription?
 
     fun findByUserIdAndChatLinkAndIsActiveTrue(userId: Long, chatLink: String): ChatSubscription?
@@ -64,6 +74,9 @@ interface ChatSubscriptionRepository : JpaRepository<ChatSubscription, Long> {
 interface KeywordRepository : JpaRepository<Keyword, Long> {
 
     fun findByUserIdAndIsActiveTrue(userId: Long): List<Keyword>
+
+
+    fun findByUserId(userId: Long): List<Keyword>
 
     fun findByUserIdAndKeywordAndIsActiveTrue(userId: Long, keyword: String): Keyword?
 

@@ -73,6 +73,72 @@ export interface AdminUserDto {
     createdAt:          string | null
 }
 
+export interface AdminChatDto {
+    id:        number
+    chatLink:  string
+    chatTitle: string
+    isActive:  boolean
+    createdAt: string
+}
+
+export interface AdminKeywordDto {
+    id:       number
+    keyword:  string
+    variants: string[]
+    isActive: boolean
+}
+
+export interface AdminLeadDto {
+    id:             number
+    userId:         number
+    userEmail:      string
+    chatTitle:      string
+    chatLink:       string
+    authorName:     string
+    authorUsername: string
+    messageText:    string
+    messageLink:    string
+    matchedKeyword: string
+    status:         string
+    aiValid:        boolean | null
+    aiReason:       string | null
+    foundAt:        string
+}
+
+export interface AdminLeadPageDto {
+    content:       AdminLeadDto[]
+    totalElements: number
+    totalPages:    number
+    page:          number
+    size:          number
+}
+
+export interface AdminUserDetailDto {
+    id:                     number
+    email:                  string
+    firstName:              string | null
+    telegramId:             number | null
+    telegramUsername:       string | null
+    telegramLinkedAt:       string | null
+    emailVerified:          boolean
+    isActive:               boolean
+    role:                   string
+    subscriptionStatus:     string | null
+    subscriptionPlan:       string | null
+    leadsCount:             number
+    createdAt:              string | null
+    updatedAt:              string | null
+    businessContext:        string | null
+    respondToServiceOffers: boolean
+    chats:                  AdminChatDto[]
+    keywords:               AdminKeywordDto[]
+    recentLeads:            AdminLeadDto[]
+    leadsNew:               number
+    leadsViewed:            number
+    leadsReplied:           number
+    leadsIgnored:           number
+}
+
 export interface PurchaseResponse {
     plan:       string
     expiresAt:  string
@@ -175,7 +241,6 @@ export const authApi = {
         })
     },
 
-
     forgotPassword(email: string): Promise<{ message: string }> {
         return request('/api/v1/auth/forgot-password', {
             method: 'POST',
@@ -231,11 +296,27 @@ export const adminApi = {
     getUser(id: number): Promise<AdminUserDto> {
         return request(`/api/v1/admin/users/${id}`)
     },
+    getUserDetails(id: number): Promise<AdminUserDetailDto> {
+        return request(`/api/v1/admin/users/${id}/details`)
+    },
     setRole(id: number, role: string): Promise<AdminUserDto> {
         return request(`/api/v1/admin/users/${id}/role`, {
             method: 'POST',
             body:   JSON.stringify({ role }),
         })
+    },
+    getAllLeads(params: {
+        userId?: number
+        status?: string
+        page?: number
+        size?: number
+    } = {}): Promise<AdminLeadPageDto> {
+        const q = new URLSearchParams()
+        if (params.userId != null) q.set('userId', String(params.userId))
+        if (params.status)         q.set('status', params.status)
+        if (params.page   != null) q.set('page',   String(params.page))
+        if (params.size   != null) q.set('size',   String(params.size))
+        return request(`/api/v1/admin/leads?${q}`)
     },
 }
 
