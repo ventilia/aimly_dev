@@ -4,10 +4,10 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="a461964d-f6a3-4e0b-a3fa-4fab913d5a3e" name="Changes" comment="админпанель поменять (dev)">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    <list default="true" id="a461964d-f6a3-4e0b-a3fa-4fab913d5a3e" name="Changes" comment="админ панель лиды (dev)">
       <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/admin/Admincontroller.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/admin/Admincontroller.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/Repositories.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/Repositories.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/TgstatSearchController.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/TgstatSearchController.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/user/User.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/user/User.kt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/frontend/src/api/auth.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/api/auth.ts" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/frontend/src/pages/AdminPanel.module.css" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/pages/AdminPanel.module.css" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/frontend/src/pages/AdminPanel.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/pages/AdminPanel.tsx" afterDir="false" />
@@ -147,7 +147,7 @@
       <workItem from="1774457194471" duration="311000" />
       <workItem from="1774531551706" duration="1547000" />
       <workItem from="1774561409222" duration="2841000" />
-      <workItem from="1774713234869" duration="5327000" />
+      <workItem from="1774713234869" duration="6917000" />
     </task>
     <task id="LOCAL-00001" summary="Fix version">
       <option name="closed" value="true" />
@@ -493,7 +493,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774724086182</updated>
     </task>
-    <option name="localTasksCounter" value="44" />
+    <task id="LOCAL-00044" summary="админ панель лиды (dev)">
+      <option name="closed" value="true" />
+      <created>1774727172855</created>
+      <option name="number" value="00044" />
+      <option name="presentableId" value="LOCAL-00044" />
+      <option name="project" value="LOCAL" />
+      <updated>1774727172855</updated>
+    </task>
+    <option name="localTasksCounter" value="45" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -555,6 +563,7 @@
     <MESSAGE value="забыли пароль, проверка на гугл, фикс рефералки" />
     <MESSAGE value="забыли пароль, проверка на гугл, фикс рефералки1 (dev)" />
     <MESSAGE value="админпанель поменять (dev)" />
-    <option name="LAST_COMMIT_MESSAGE" value="админпанель поменять (dev)" />
+    <MESSAGE value="админ панель лиды (dev)" />
+    <option name="LAST_COMMIT_MESSAGE" value="админ панель лиды (dev)" />
   </component>
 </project>

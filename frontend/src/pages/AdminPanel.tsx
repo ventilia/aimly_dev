@@ -5,6 +5,7 @@ import {
     adminApi, notificationsApi,
     type AdminUserDto, type NotificationDto,
     type AdminUserDetailDto, type AdminLeadDto,
+    type AdminChatSearchResultDto,
 } from '../api/auth'
 import { adminSubsApi, type SubscriptionInfo } from '../api/leads'
 import { useAuthContext } from '../context/AuthContext'
@@ -24,7 +25,7 @@ const TABS: { id: Tab; label: { ru: string; en: string } }[] = [
 
 const PLANS    = ['START', 'BUSINESS', 'TRIAL']
 const STATUSES = ['ACTIVE', 'TRIAL', 'INACTIVE']
-const LEAD_STATUSES = ['', 'NEW', 'VIEWED', 'REPLIED', 'IGNORED']
+const LEAD_STATUSES = ['NEW', 'VIEWED', 'REPLIED', 'IGNORED'] as const
 
 type SortKey = 'id' | 'firstName' | 'email' | 'role' | 'leadsCount' | 'createdAt'
 type SortDir = 'asc' | 'desc'
@@ -99,6 +100,16 @@ function AiBadge({ valid, ru }: { valid: boolean | null; ru: boolean }) {
     return <span className={s.aiInvalid}>{ru ? 'Нет' : 'No'}</span>
 }
 
+function parseJsonList<T>(raw: string | null | undefined): T[] {
+    if (!raw) return []
+    try {
+        const parsed = JSON.parse(raw)
+        return Array.isArray(parsed) ? (parsed as T[]) : []
+    } catch {
+        return []
+    }
+}
+
 function UserDetailModal({
                              userId,
                              lang,
@@ -113,13 +124,26 @@ function UserDetailModal({
     const [loading, setLoading] = useState(true)
     const [error,   setError]   = useState('')
 
+    const lastSearchQueries = parseJsonList<string>(detail?.lastChatSearchQueriesJson)
+    const lastSearchResults = parseJsonList<AdminChatSearchResultDto>(detail?.lastChatSearchResultsJson)
+
     useEffect(() => {
-        setLoading(true)
-        setError('')
-        adminApi.getUserDetails(userId)
-            .then(setDetail)
-            .catch(e => setError(e instanceof Error ? e.message : 'Ошибка'))
-            .finally(() => setLoading(false))
+        let alive = true
+
+        void (async () => {
+            try {
+                const data = await adminApi.getUserDetails(userId)
+                if (alive) setDetail(data)
+            } catch (e) {
+                if (alive) setError(e instanceof Error ? e.message : 'Ошибка')
+            } finally {
+                if (alive) setLoading(false)
+            }
+        })()
+
+        return () => {
+            alive = false
+        }
     }, [userId])
 
     // Закрытие по Escape
@@ -265,6 +289,74 @@ function UserDetailModal({
                                           </span>
                                     }
                                 </div>
+                            </div>
+
+                            {/* ── Последний поиск чатов ── */}
+                            <div className={s.detailSection}>
+                                <p className={s.detailSectionTitle}>
+                                    🔎 {ru ? 'Последний поиск чатов' : 'Last chat search'}
+                                    <span>{detail.lastChatSearchAt ? fmtDatetime(detail.lastChatSearchAt, ru) : '—'}</span>
+                                </p>
+
+                                {detail.lastChatSearchQuery ? (
+                                    <div className={s.detailSearchBlock}>
+                                        <div className={s.detailSearchMetaGrid}>
+                                            <div className={s.detailSearchMetaItem}>
+                                                <span className={s.detailFieldLabel}>{ru ? 'Запрос' : 'Query'}</span>
+                                                <span className={s.detailFieldValue}>{detail.lastChatSearchQuery}</span>
+                                            </div>
+                                            <div className={s.detailSearchMetaItem}>
+                                                <span className={s.detailFieldLabel}>{ru ? 'Тип' : 'Type'}</span>
+                                                <span className={s.detailFieldValue}>
+                                                    {detail.lastChatSearchPeerType || 'all'}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {lastSearchQueries.length > 0 && (
+                                            <div style={{ marginTop: 14 }}>
+                                                <div className={s.detailSectionSubtitle}>{ru ? 'Сгенерированные запросы' : 'Generated queries'}</div>
+                                                <div className={s.detailTagsWrap}>
+                                                    {lastSearchQueries.map((q, idx) => (
+                                                        <span key={`${q}-${idx}`} className={s.detailTag}>{q}</span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {lastSearchResults.length > 0 && (
+                                            <div style={{ marginTop: 14 }}>
+                                                <div className={s.detailSectionSubtitle}>{ru ? 'Что пришло' : 'What came back'}</div>
+                                                <div className={s.detailSearchResults}>
+                                                    {lastSearchResults.map((item, idx) => (
+                                                        <a
+                                                            key={`${item.link}-${idx}`}
+                                                            href={item.link}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className={s.detailSearchCard}
+                                                        >
+                                                            <div className={s.detailSearchCardHead}>
+                                                                <strong>{item.title}</strong>
+                                                                <span>{item.peerType}</span>
+                                                            </div>
+                                                            <div className={s.detailSearchCardMeta}>
+                                                                {item.username ? `@${item.username}` : '—'} · {item.participantsCount}
+                                                            </div>
+                                                            {item.description && (
+                                                                <div className={s.detailSearchCardText}>{item.description}</div>
+                                                            )}
+                                                        </a>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <span className={s.detailAiEmpty}>
+                                        {ru ? 'Поисковая история ещё пустая' : 'No search history yet'}
+                                    </span>
+                                )}
                             </div>
 
                             {/* ── Чаты ── */}
@@ -729,7 +821,7 @@ function LeadsTab({ lang }: { lang: Lang }) {
                 />
                 <select className={s.leadsFilterSelect} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
                     <option value="">{ru ? 'Все статусы' : 'All statuses'}</option>
-                    {['NEW', 'VIEWED', 'REPLIED', 'IGNORED'].map(st => (
+                    {LEAD_STATUSES.map(st => (
                         <option key={st} value={st}>{st}</option>
                     ))}
                 </select>
@@ -1401,6 +1493,7 @@ export default function AdminPanel({ lang, setLang }: Props) {
             {/* Детали пользователя — модалка */}
             {detailUserId !== null && (
                 <UserDetailModal
+                    key={detailUserId}
                     userId={detailUserId}
                     lang={lang}
                     onClose={() => setDetailUserId(null)}

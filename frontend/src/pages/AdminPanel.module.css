@@ -1141,3 +1141,96 @@
     .usersTable td { padding: 8px 8px; font-size: 11px; }
     .cellEmail { max-width: 120px; }
 }
+
+/* ─── Search history in user details ─────────────────────────────────────── */
+
+.detailSectionSubtitle {
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .6px;
+    color: var(--c-ink-3);
+}
+
+.detailSearchBlock {
+    background: var(--c-bg);
+    border: 1px solid var(--c-border);
+    border-radius: 12px;
+    padding: 14px 16px;
+}
+
+.detailSearchMetaGrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.detailSearchMetaItem {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.detailSearchResults {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
+}
+
+.detailSearchCard {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    text-decoration: none;
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: 12px;
+    padding: 12px 14px;
+    transition: border-color .15s, transform .15s, box-shadow .15s;
+}
+
+.detailSearchCard:hover {
+    border-color: var(--c-accent);
+    transform: translateY(-1px);
+    box-shadow: 0 10px 24px rgba(0,0,0,.06);
+}
+
+.detailSearchCardHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--c-ink);
+}
+
+.detailSearchCardHead strong {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--c-ink);
+}
+
+.detailSearchCardHead span {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--c-ink-3);
+    letter-spacing: .5px;
+}
+
+.detailSearchCardMeta {
+    font-size: 11px;
+    color: var(--c-ink-3);
+}
+
+.detailSearchCardText {
+    font-size: 12px;
+    color: var(--c-ink-2);
+    line-height: 1.5;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+}

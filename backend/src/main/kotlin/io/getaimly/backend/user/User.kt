@@ -71,6 +71,21 @@ class User(
     @Column(name = "respond_to_service_offers", nullable = false)
     var respondToServiceOffers: Boolean = false,
 
+    @Column(name = "last_chat_search_query", columnDefinition = "TEXT")
+    var lastChatSearchQuery: String? = null,
+
+    @Column(name = "last_chat_search_at")
+    var lastChatSearchAt: LocalDateTime? = null,
+
+    @Column(name = "last_chat_search_peer_type")
+    var lastChatSearchPeerType: String? = null,
+
+    @Column(name = "last_chat_search_queries_json", columnDefinition = "TEXT")
+    var lastChatSearchQueriesJson: String? = null,
+
+    @Column(name = "last_chat_search_results_json", columnDefinition = "TEXT")
+    var lastChatSearchResultsJson: String? = null,
+
     @Column(name = "created_at", nullable = true, updatable = false)
     val createdAt: LocalDateTime? = LocalDateTime.now(),
 

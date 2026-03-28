@@ -105,6 +105,15 @@ export interface AdminLeadDto {
     foundAt:        string
 }
 
+export interface AdminChatSearchResultDto {
+    title:             string
+    username:          string | null
+    description:       string | null
+    participantsCount: number
+    link:              string
+    peerType:          string
+}
+
 export interface AdminLeadPageDto {
     content:       AdminLeadDto[]
     totalElements: number
@@ -114,29 +123,34 @@ export interface AdminLeadPageDto {
 }
 
 export interface AdminUserDetailDto {
-    id:                     number
-    email:                  string
-    firstName:              string | null
-    telegramId:             number | null
-    telegramUsername:       string | null
-    telegramLinkedAt:       string | null
-    emailVerified:          boolean
-    isActive:               boolean
-    role:                   string
-    subscriptionStatus:     string | null
-    subscriptionPlan:       string | null
-    leadsCount:             number
-    createdAt:              string | null
-    updatedAt:              string | null
-    businessContext:        string | null
-    respondToServiceOffers: boolean
-    chats:                  AdminChatDto[]
-    keywords:               AdminKeywordDto[]
-    recentLeads:            AdminLeadDto[]
-    leadsNew:               number
-    leadsViewed:            number
-    leadsReplied:           number
-    leadsIgnored:           number
+    id:                         number
+    email:                      string
+    firstName:                  string | null
+    telegramId:                 number | null
+    telegramUsername:           string | null
+    telegramLinkedAt:           string | null
+    emailVerified:              boolean
+    isActive:                   boolean
+    role:                       string
+    subscriptionStatus:         string | null
+    subscriptionPlan:           string | null
+    leadsCount:                 number
+    createdAt:                  string | null
+    updatedAt:                  string | null
+    businessContext:            string | null
+    respondToServiceOffers:     boolean
+    lastChatSearchQuery:        string | null
+    lastChatSearchAt:           string | null
+    lastChatSearchPeerType:     string | null
+    lastChatSearchQueriesJson:  string | null
+    lastChatSearchResultsJson:   string | null
+    chats:                      AdminChatDto[]
+    keywords:                   AdminKeywordDto[]
+    recentLeads:                AdminLeadDto[]
+    leadsNew:                   number
+    leadsViewed:                number
+    leadsReplied:               number
+    leadsIgnored:               number
 }
 
 export interface PurchaseResponse {

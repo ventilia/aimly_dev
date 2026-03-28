@@ -54,6 +54,12 @@ data class AdminUserDetailDto(
     // AI-профиль
     val businessContext: String?,
     val respondToServiceOffers: Boolean,
+    // Последний поиск чатов
+    val lastChatSearchQuery: String?,
+    val lastChatSearchAt: String?,
+    val lastChatSearchPeerType: String?,
+    val lastChatSearchQueriesJson: String?,
+    val lastChatSearchResultsJson: String?,
     // Чаты и ключевые слова
     val chats: List<AdminChatDto>,
     val keywords: List<AdminKeywordDto>,
@@ -207,6 +213,11 @@ class AdminController(
             updatedAt               = target.updatedAt?.toString(),
             businessContext         = target.businessContext,
             respondToServiceOffers  = target.respondToServiceOffers,
+            lastChatSearchQuery     = target.lastChatSearchQuery,
+            lastChatSearchAt        = target.lastChatSearchAt?.toString(),
+            lastChatSearchPeerType  = target.lastChatSearchPeerType,
+            lastChatSearchQueriesJson = target.lastChatSearchQueriesJson,
+            lastChatSearchResultsJson = target.lastChatSearchResultsJson,
             chats                   = chats,
             keywords                = keywords,
             recentLeads             = recentLeads,

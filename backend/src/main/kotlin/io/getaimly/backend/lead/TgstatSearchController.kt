@@ -1,11 +1,15 @@
 package io.getaimly.backend.lead
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import io.getaimly.backend.user.User
+import io.getaimly.backend.user.UserRepository
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.bind.annotation.*
+import java.time.LocalDateTime
 
 
 data class TgstatSearchRequest(
@@ -32,10 +36,13 @@ data class TgstatSearchResponse(
 @RequestMapping("/api/v1/chats/search")
 class TgstatSearchController(
     private val chatSearchService: ChatSearchService,
+    private val userRepository: UserRepository,
+    private val objectMapper: ObjectMapper,
 ) {
     private val log = LoggerFactory.getLogger(TgstatSearchController::class.java)
 
     @PostMapping
+    @Transactional
     fun search(
         @AuthenticationPrincipal user: User,
         @RequestBody req: TgstatSearchRequest,
@@ -67,6 +74,15 @@ class TgstatSearchController(
 
         return try {
             val searchResult = chatSearchService.search(inputText, peerType)
+
+            val managedUser = userRepository.findById(user.id).orElse(user)
+            managedUser.lastChatSearchQuery = inputText
+            managedUser.lastChatSearchAt = LocalDateTime.now()
+            managedUser.lastChatSearchPeerType = peerType ?: "all"
+            managedUser.lastChatSearchQueriesJson = objectMapper.writeValueAsString(searchResult.queries)
+            managedUser.lastChatSearchResultsJson = objectMapper.writeValueAsString(searchResult.results.take(10))
+            userRepository.save(managedUser)
+
             log.info("[CHATS] Результаты TGStat: userId=${user.id} email=${user.email} найдено=${searchResult.results.size} query=\"${inputText.take(60)}\"")
             ResponseEntity.ok(
                 TgstatSearchResponse(
