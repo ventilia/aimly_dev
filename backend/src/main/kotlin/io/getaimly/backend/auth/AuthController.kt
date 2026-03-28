@@ -108,6 +108,22 @@ class AuthController(
                     )
                 )
             }
+
+            // Аккаунт создан через Google OAuth — пароля нет.
+            // Код уже отправлен на email в AuthService.login().
+            // Возвращаем pendingVerification = true — фронтенд покажет
+            // экран ввода кода, который уже умеет обрабатывать этот случай.
+            // JWT-куку не ставим: пользователь не аутентифицирован до ввода кода.
+            is LoginResult.NoPassword -> {
+                ResponseEntity.ok(
+                    LoginResponse(
+                        pendingVerification = true,
+                        email               = result.email,
+                        tempToken           = null,
+                        auth                = null,
+                    )
+                )
+            }
         }
     }
 
@@ -150,10 +166,6 @@ class AuthController(
     }
 
 
-    /**
-     * Шаг 1 сброса пароля: отправить код на email (и в TG если привязан).
-     * Публичный эндпоинт — JWT не нужен.
-     */
     @PostMapping("/forgot-password")
     fun forgotPassword(
         @Valid @RequestBody request: ForgotPasswordRequest,
@@ -161,11 +173,6 @@ class AuthController(
         ResponseEntity.ok(authService.requestPasswordReset(request.email))
 
 
-    /**
-     * Шаг 2 сброса пароля: проверить код и установить новый пароль.
-     * После успешной смены — устанавливает куку и возвращает сессию (автологин).
-     * Публичный эндпоинт — JWT не нужен.
-     */
     @PostMapping("/reset-password")
     fun resetPassword(
         @Valid @RequestBody request: ResetPasswordRequest,
