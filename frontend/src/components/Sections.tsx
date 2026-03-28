@@ -289,7 +289,9 @@ export function Pricing({ lang }: { lang: Lang }) {
     }
 
     const handleTrialClick = () => {
+        // Блокируем только реальные загрузочные состояния
         if (botLoading || checkingTrial) return
+        // Если не авторизован — открываем модалку регистрации
         if (!user) {
             setShowAuthModal(true)
             return
@@ -298,9 +300,16 @@ export function Pricing({ lang }: { lang: Lang }) {
         openBotForTrial()
     }
 
+    // После успешной авторизации/регистрации — автоматически открываем бота
     const handleAuthSuccess = () => {
         setShowAuthModal(false)
         setTimeout(openBotForTrial, 300)
+    }
+
+    const btnLabel = () => {
+        if (checkingTrial || botLoading) return '...'
+        if (!user) return ru ? 'Войти для активации' : 'Sign in to activate'
+        return ru ? 'Попробовать 5 дней бесплатно' : 'Try 5 days free'
     }
 
     return (
@@ -369,18 +378,17 @@ export function Pricing({ lang }: { lang: Lang }) {
                                 {ru ? 'Триал уже активирован' : 'Trial already activated'}
                             </button>
                         ) : (
+                            /*
+                             * ИСПРАВЛЕНИЕ: убран !user из disabled.
+                             * Кнопка всегда кликабельна (кроме loading-состояний).
+                             * handleTrialClick сам откроет AuthModal если пользователь не авторизован.
+                             */
                             <button
                                 onClick={handleTrialClick}
-                                disabled={botLoading || checkingTrial || !user}
+                                disabled={botLoading || checkingTrial}
                                 className={`${s.pricingCta} ${s.pricingCtaGhost}`}
                             >
-                                {checkingTrial
-                                    ? '...'
-                                    : botLoading
-                                        ? '...'
-                                        : !user
-                                            ? (ru ? 'Войти для активации' : 'Sign in to activate')
-                                            : (ru ? 'Попробовать 5 дней бесплатно' : 'Try 5 days free')}
+                                {btnLabel()}
                             </button>
                         )}
                     </div>
