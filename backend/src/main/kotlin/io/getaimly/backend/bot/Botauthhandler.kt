@@ -61,8 +61,6 @@ class BotAuthHandler(
         }
 
         if (existing != null) {
-            // Пользователь найден в БД по telegramId — проверяем, подтверждён ли email.
-            // Если нет (например, регистрация была прервана) — предлагаем ввести код.
             if (!existing.emailVerified) {
                 log.info("[BOT][AUTH] /start: $tgUser найден, но email не подтверждён → userId=${existing.id} email=${existing.email}")
                 sessions[chatId] = UserSession(
@@ -86,7 +84,6 @@ class BotAuthHandler(
                 return
             }
             log.info("[BOT][AUTH] /start: $tgUser уже привязан → userId=${existing.id} email=${existing.email} план=${existing.subscriptionPlan} статус=${existing.subscriptionStatus}")
-            // FIX: передаём from.id как tgUserId, а не chatId
             showMainMenu(chatId, existing.firstName, from.id)
         } else {
             log.info("[BOT][AUTH] /start: $tgUser — не авторизован, показываем приветствие")
@@ -248,11 +245,6 @@ class BotAuthHandler(
         )
     }
 
-    /**
-     * FIX: добавлен параметр tgUserId (реальный Telegram ID пользователя).
-     * Раньше использовался chatId для поиска пользователя, что неверно —
-     * chatId и telegramId совпадают только случайно в личных чатах.
-     */
     fun showMainMenu(chatId: Long, name: String?, tgUserId: Long = chatId) {
         val user       = userRepository.findByTelegramId(tgUserId).orElse(null)
         val newCount   = user?.let { leadRepository.countByUserIdAndStatus(it.id, LeadStatus.NEW) } ?: 0
@@ -316,7 +308,12 @@ class BotAuthHandler(
         sender.editText(
             chatId, msgId,
             "🔐 Вход в аккаунт\n\nВведите email от вашего аккаунта getaimly.io:",
-            markup = keyboard(row(btn("❌ Отмена", "auth:cancel"))),
+            markup = keyboard(
+                row(
+                    btn("🔑 Забыл пароль", "auth:forgot_password"),
+                    btn("❌ Отмена",        "auth:cancel"),
+                ),
+            ),
         )
     }
 
@@ -332,8 +329,90 @@ class BotAuthHandler(
 
         log.info("[BOT][AUTH] Email введён (вход): chatId=$chatId email=\"$email\"")
         session.email = email
-        session.step  = BotStep.WAITING_PASSWORD
-        sender.sendText(chatId, "🔑 Введите пароль:")
+
+        // ── Проверяем наличие пароля до перехода на шаг WAITING_PASSWORD ──────
+        // Если аккаунт создан через Google OAuth — пароля нет. Предлагаем два
+        // варианта: войти по одноразовому коду на email или привязать через веб.
+        val user = userRepository.findByEmail(email).orElse(null)
+        if (user != null && user.password.isNullOrBlank()) {
+            log.info("[BOT][AUTH] OAuth-аккаунт без пароля при входе: chatId=$chatId email=\"$email\" userId=${user.id}")
+
+            // Отправляем код заранее, чтобы пользователь не ждал после нажатия кнопки
+            runCatching { authService.resendVerificationCode(user.id) }.onFailure {
+                // Если код уже свежий — ничего страшного, он просто получит старый
+                log.debug("[BOT][AUTH] Код уже отправлен или ошибка: ${it.message}")
+            }
+
+            session.pendingVerificationUserId = user.id
+            // Остаёмся на шаге WAITING_EMAIL — шаг пароля пропускаем полностью.
+            // При нажатии кнопки «Войти по коду» переведём в WAITING_LOGIN_CODE.
+
+            sender.sendText(
+                chatId,
+                "🔑 Ваш аккаунт создан через Google\n\n" +
+                        "Пароль для входа через бота не задан.\n\n" +
+                        "Выберите способ входа:\n\n" +
+                        "📧 *Войти по коду* — получите одноразовый код на $email\n\n" +
+                        "🌐 *Привязать через сайт* — войдите на $SITE_URL через Google, " +
+                        "затем в Профиле нажмите «Привязать Telegram»",
+                markup = keyboard(
+                    row(btn("📧 Войти по коду на email", "auth:login_by_code")),
+                    row(btn("❌ Отмена", "auth:cancel_msg")),
+                ),
+                parseMarkdown = true,
+            )
+            return
+        }
+
+        session.step = BotStep.WAITING_PASSWORD
+        sender.sendText(
+            chatId,
+            "🔑 Введите пароль:",
+            markup = keyboard(row(btn("🔑 Забыл пароль", "auth:forgot_password"))),
+        )
+    }
+
+    /**
+     * Пользователь нажал «Войти по коду на email».
+     * Переводим сессию в шаг WAITING_LOGIN_CODE и просим ввести код.
+     */
+    fun startLoginByCodeFlow(chatId: Long, msgId: Int) {
+        val session = sessions[chatId]
+        val email   = session?.email
+        val userId  = session?.pendingVerificationUserId
+
+        if (session == null || email == null || userId == null) {
+            log.warn("[BOT][AUTH] startLoginByCodeFlow: сессия устарела chatId=$chatId")
+            sender.editText(
+                chatId, msgId,
+                "Сессия устарела. Начните вход заново:",
+                markup = keyboard(row(btn("🔐 Войти", "auth:login"))),
+            )
+            return
+        }
+
+        log.info("[BOT][AUTH] Вход по коду на email: chatId=$chatId email=\"$email\" userId=$userId")
+
+        // Отправляем свежий код
+        runCatching { authService.resendVerificationCode(userId) }.onFailure {
+            log.debug("[BOT][AUTH] Код уже свежий или ошибка resend: ${it.message}")
+        }
+
+        session.step = BotStep.WAITING_LOGIN_CODE
+
+        sender.editText(
+            chatId, msgId,
+            "📧 *Код отправлен*\n\n" +
+                    "На адрес $email отправлен 6-значный код для входа.\n\n" +
+                    "Введите код из письма:",
+            markup = keyboard(
+                row(
+                    btn("🔄 Выслать код повторно", "auth:resend_code"),
+                    btn("❌ Отмена", "auth:cancel"),
+                ),
+            ),
+            parseMarkdown = true,
+        )
     }
 
     fun handleWaitingPassword(chatId: Long, text: String, from: User) {
@@ -376,13 +455,11 @@ class BotAuthHandler(
                             log.info("[BOT][AUTH] После входа → переход к оплате: userId=${result.auth.userId} email=$email")
                             paymentHandler.sendPaymentMessage(chatId, from.id)
                         }
-                        // FIX: передаём from.id как tgUserId
                         else -> showMainMenu(chatId, name, from.id)
                     }
                 }
 
                 is LoginResult.PendingVerification -> {
-                    // Email не подтверждён — запрашиваем код из письма
                     session.step                      = BotStep.WAITING_LOGIN_CODE
                     session.pendingVerificationUserId = userRepository.findByEmail(email).orElse(null)?.id
 
@@ -392,6 +469,32 @@ class BotAuthHandler(
                         chatId,
                         "📧 Подтверждение email\n\n" +
                                 "На адрес $email отправлен код подтверждения.\n\n" +
+                                "Введите 6-значный код из письма:",
+                        markup = keyboard(
+                            row(
+                                btn("🔄 Выслать код повторно", "auth:resend_code"),
+                                btn("❌ Отмена", "auth:cancel"),
+                            ),
+                        ),
+                    )
+                }
+
+                // ── Race condition: между handleWaitingEmail и handleWaitingPassword
+                // пользователь успел удалить пароль (крайне маловероятно, но обрабатываем).
+                is LoginResult.NoPassword -> {
+                    log.warn("[BOT][AUTH] NoPassword в handleWaitingPassword (race condition): $tgUser email=$email userId=${result.userId}")
+
+                    runCatching { authService.resendVerificationCode(result.userId) }.onFailure {
+                        log.debug("[BOT][AUTH] Код уже свежий: ${it.message}")
+                    }
+
+                    session.step                      = BotStep.WAITING_LOGIN_CODE
+                    session.pendingVerificationUserId = result.userId
+
+                    sender.sendText(
+                        chatId,
+                        "🔑 Ваш аккаунт создан через Google\n\n" +
+                                "Пароль не задан. На $email отправлен одноразовый код для входа.\n\n" +
                                 "Введите 6-значный код из письма:",
                         markup = keyboard(
                             row(
@@ -420,20 +523,12 @@ class BotAuthHandler(
                 "❌ $msg",
                 markup = keyboard(
                     row(btn("🔄 Попробовать снова", "auth:login"), btn("❌ Отмена", "auth:cancel_msg")),
+                    row(btn("🔑 Забыл пароль", "auth:forgot_password")),
                 ),
             )
         }
     }
 
-    /**
-     * Обработка кода подтверждения email.
-     * Используется в двух сценариях:
-     *  1. Вход с неподтверждённым email (уже существующий аккаунт).
-     *  2. Новая регистрация через бота — после ввода пароля.
-     *
-     * В случае регистрации дополнительно вызывается [AuthService.verifyEmailViaTelegram],
-     * которая выдаёт trial и применяет реферальный код.
-     */
     fun handleWaitingLoginCode(chatId: Long, code: String, from: User) {
         val session = sessions[chatId] ?: return
         val userId  = session.pendingVerificationUserId
@@ -470,9 +565,6 @@ class BotAuthHandler(
 
         log.info("[BOT][AUTH] Попытка верификации кода: $tgUser userId=$userId email=$email")
 
-        // Определяем: это регистрация через бота или вход с неподтверждённым email?
-        // Признак регистрации — у пользователя ещё не подтверждён email,
-        // и telegramId уже выставлен (мы выставили его при registerViaTelegram).
         val userEntity = userRepository.findById(userId).orElse(null)
         val isNewRegistration = userEntity != null && !userEntity.emailVerified
 
@@ -483,10 +575,6 @@ class BotAuthHandler(
         }
     }
 
-    /**
-     * Верификация при регистрации через бота.
-     * После успешного подтверждения — выдаётся trial, реферальный бонус, показывается меню.
-     */
     private fun handleRegistrationVerification(
         chatId:  Long,
         userId:  Long,
@@ -508,7 +596,7 @@ class BotAuthHandler(
             is VerifyViaTelegramResult.Success,
             is VerifyViaTelegramResult.AlreadyVerified -> {
                 val user = when (result) {
-                    is VerifyViaTelegramResult.Success        -> result.user
+                    is VerifyViaTelegramResult.Success         -> result.user
                     is VerifyViaTelegramResult.AlreadyVerified -> result.user
                     else -> return
                 }
@@ -530,7 +618,6 @@ class BotAuthHandler(
                         log.info("[BOT][AUTH] После регистрации → переход к оплате: userId=$userId email=$email")
                         paymentHandler.sendPaymentMessage(chatId, from.id)
                     }
-                    // FIX: передаём from.id как tgUserId
                     else -> showMainMenu(chatId, name, from.id)
                 }
             }
@@ -575,10 +662,6 @@ class BotAuthHandler(
         }
     }
 
-    /**
-     * Верификация при входе с неподтверждённым email (уже существующий аккаунт).
-     * После успешного подтверждения — привязывает Telegram (если нужно) и открывает меню.
-     */
     private fun handleLoginVerification(
         chatId:  Long,
         userId:  Long,
@@ -610,14 +693,13 @@ class BotAuthHandler(
             }
 
             sessions.remove(chatId)
-            sender.sendText(chatId, "✅ Email подтверждён! Добро пожаловать, $name!\n\nТеперь лиды будут приходить сюда.")
+            sender.sendText(chatId, "✅ Вход выполнен! Добро пожаловать, $name!\n\nТеперь лиды будут приходить сюда.")
 
             when (session.pendingAction) {
                 "pay" -> {
                     log.info("[BOT][AUTH] После верификации входа → переход к оплате: userId=$userId email=$email")
                     paymentHandler.sendPaymentMessage(chatId, from.id)
                 }
-                // FIX: передаём from.id как tgUserId
                 else -> showMainMenu(chatId, name, from.id)
             }
         }.onFailure { e ->
@@ -642,9 +724,6 @@ class BotAuthHandler(
         }
     }
 
-    /**
-     * Повторная отправка кода верификации email.
-     */
     fun resendVerificationCode(chatId: Long, msgId: Int) {
         val session = sessions[chatId]
         if (session == null || session.step != BotStep.WAITING_LOGIN_CODE) {
@@ -789,7 +868,6 @@ class BotAuthHandler(
             referralCode     = refCode,
         )) {
             is RegisterViaTelegramResult.PendingEmailVerification -> {
-                // Аккаунт создан — ждём кода из письма
                 sessions[chatId] = session.copy(
                     step                      = BotStep.WAITING_LOGIN_CODE,
                     email                     = result.email,
@@ -812,8 +890,6 @@ class BotAuthHandler(
             }
 
             is RegisterViaTelegramResult.Success -> {
-                // Этот кейс теперь не должен достигаться в нормальном потоке,
-                // но оставляем на случай если логика изменится (emailVerified=true).
                 val name = result.user.firstName?.takeIf { it.isNotBlank() } ?: email.split("@").first()
                 log.info("[BOT][AUTH] ✅ Регистрация через бота (без верификации): $tgUser userId=${result.user.id} email=$email")
                 sessions.remove(chatId)
@@ -823,7 +899,6 @@ class BotAuthHandler(
                     "✅ Аккаунт создан!\n\nДобро пожаловать, $name!\n\n" +
                             "Вы можете войти на сайте getaimly.io с этим email и паролем.",
                 )
-                // FIX: передаём from.id как tgUserId
                 showMainMenu(chatId, name, from.id)
             }
 
@@ -846,9 +921,246 @@ class BotAuthHandler(
                 log.warn("[BOT][AUTH] TG уже привязан при регистрации: $tgUser")
                 sessions.remove(chatId)
                 val linked = userRepository.findByTelegramId(from.id).orElse(null)
-                // FIX: передаём from.id как tgUserId
                 showMainMenu(chatId, linked?.firstName, from.id)
             }
+        }
+    }
+
+
+    // ─── СБРОС ПАРОЛЯ ─────────────────────────────────────────────────────────────
+
+    /**
+     * Начало flow сброса пароля. Запрашивает email.
+     * Вызывается по кнопке «Забыл пароль» из экрана входа.
+     */
+    fun startForgotPasswordFlow(chatId: Long, msgId: Int) {
+        log.info("[BOT][AUTH] Начало сброса пароля: chatId=$chatId")
+        sessions[chatId] = UserSession(
+            step  = BotStep.WAITING_RESET_EMAIL,
+            msgId = msgId,
+        )
+        sender.editText(
+            chatId, msgId,
+            "🔑 Сброс пароля\n\nВведите email от вашего аккаунта:",
+            markup = keyboard(row(btn("❌ Отмена", "auth:cancel"))),
+        )
+    }
+
+    /**
+     * Получили email для сброса пароля — вызываем requestPasswordReset,
+     * переходим к ожиданию кода.
+     */
+    fun handleWaitingResetEmail(chatId: Long, text: String) {
+        val session = sessions[chatId] ?: return
+        val email   = text.lowercase().trim()
+
+        if (!email.contains('@') || !email.contains('.')) {
+            sender.sendText(chatId, "⚠️ Некорректный формат email.\n\nПопробуйте ещё раз:")
+            return
+        }
+
+        log.info("[BOT][AUTH] Email для сброса пароля: chatId=$chatId email=\"$email\"")
+
+        // Отправляем код всегда с одним и тем же ответом (чтобы не раскрывать наличие email в БД)
+        runCatching {
+            authService.requestPasswordReset(email)
+        }.onFailure { e ->
+            if (e is TooManyRequestsException) {
+                sender.sendText(chatId, "⚠️ ${e.message}")
+                return
+            }
+            log.warn("[BOT][AUTH] Ошибка при запросе сброса пароля: chatId=$chatId причина=${e.message}")
+        }
+
+        session.resetEmail = email
+        session.step       = BotStep.WAITING_RESET_CODE
+
+        sender.sendText(
+            chatId,
+            "📧 Если этот email зарегистрирован в AIMLY, на него отправлен 6-значный код.\n\n" +
+                    "Введите код из письма (действителен 15 минут):",
+            markup = keyboard(
+                row(
+                    btn("🔄 Выслать код повторно", "auth:resend_reset_code"),
+                    btn("❌ Отмена", "auth:cancel"),
+                ),
+            ),
+        )
+    }
+
+    /**
+     * Получили код из письма — сохраняем, переходим к вводу нового пароля.
+     */
+    fun handleWaitingResetCode(chatId: Long, code: String) {
+        val session = sessions[chatId] ?: return
+        val trimmed = code.trim()
+
+        if (!trimmed.matches(Regex("\\d{6}"))) {
+            sender.sendText(
+                chatId,
+                "⚠️ Код должен состоять из 6 цифр.\n\nПопробуйте ещё раз:",
+                markup = keyboard(
+                    row(
+                        btn("🔄 Выслать код повторно", "auth:resend_reset_code"),
+                        btn("❌ Отмена", "auth:cancel"),
+                    ),
+                ),
+            )
+            return
+        }
+
+        log.info("[BOT][AUTH] Код сброса пароля получен: chatId=$chatId")
+        // Сохраняем код в pendingAction — временно используем это поле для хранения кода сброса
+        session.pendingAction = trimmed
+        session.step          = BotStep.WAITING_RESET_NEW_PASSWORD
+
+        sender.sendText(
+            chatId,
+            "🔑 Введите новый пароль:\n\n" +
+                    "Требования:\n" +
+                    "• минимум $MIN_PASSWORD_LENGTH символов\n" +
+                    "• строчные и заглавные латинские буквы\n" +
+                    "• хотя бы одна цифра",
+        )
+    }
+
+    /**
+     * Получили новый пароль — валидируем, просим подтверждение.
+     */
+    fun handleWaitingResetNewPassword(chatId: Long, text: String) {
+        val session  = sessions[chatId] ?: return
+        val password = text.trim()
+
+        val error = validatePassword(password)
+        if (error != null) {
+            sender.sendText(chatId, "⚠️ $error\n\nВведите пароль ещё раз:")
+            return
+        }
+
+        session.resetNewPassword = password
+        session.step             = BotStep.WAITING_RESET_NEW_PASSWORD_CONFIRM
+        sender.sendText(chatId, "🔑 Повторите новый пароль:")
+    }
+
+    /**
+     * Подтверждение нового пароля — вызываем resetPassword.
+     */
+    fun handleWaitingResetNewPasswordConfirm(chatId: Long, text: String, from: User) {
+        val session  = sessions[chatId] ?: return
+        val confirm  = text.trim()
+        val newPwd   = session.resetNewPassword ?: return
+        val code     = session.pendingAction    ?: return  // код сброса хранится в pendingAction
+        val tgUser   = "${from.firstName} (@${from.userName ?: "—"}, tgId=${from.id})"
+
+        if (newPwd != confirm) {
+            session.step             = BotStep.WAITING_RESET_NEW_PASSWORD
+            session.resetNewPassword = null
+            sender.sendText(chatId, "❌ Пароли не совпадают.\n\nВведите новый пароль заново:")
+            return
+        }
+
+        log.info("[BOT][AUTH] Попытка сброса пароля: $tgUser")
+
+        runCatching {
+            authService.resetPassword(
+                io.getaimly.backend.auth.dto.ResetPasswordRequest(
+                    code            = code,
+                    newPassword     = newPwd,
+                    confirmPassword = confirm,
+                )
+            )
+        }.onSuccess { authResponse ->
+            log.info("[BOT][AUTH] ✅ Пароль успешно сброшен: $tgUser email=${authResponse.email}")
+            sessions.remove(chatId)
+
+            // Привязываем Telegram если ещё не привязан
+            if (!authResponse.telegramLinked) {
+                authService.linkTelegramDirect(authResponse.userId, from.id, from.userName)
+                log.info("[BOT][AUTH] Telegram привязан после сброса пароля: userId=${authResponse.userId} tgId=${from.id}")
+            }
+
+            val name = authResponse.firstName?.takeIf { it.isNotBlank() } ?: authResponse.email.split("@").first()
+            sender.sendText(
+                chatId,
+                "✅ Пароль успешно изменён!\n\n" +
+                        "Теперь вы можете войти на сайте getaimly.io с новым паролем.",
+            )
+            showMainMenu(chatId, name, from.id)
+        }.onFailure { e ->
+            val msg = when (e) {
+                is BadRequestException -> e.message ?: "Неверный или истёкший код"
+                else -> {
+                    log.error("[BOT][AUTH] Ошибка сброса пароля: $tgUser", e)
+                    "Произошла ошибка. Попробуйте позже."
+                }
+            }
+            log.warn("[BOT][AUTH] Ошибка сброса пароля: $tgUser причина=${e.message}")
+            sessions.remove(chatId)
+            sender.sendText(
+                chatId,
+                "❌ $msg\n\nНачните процедуру сброса пароля заново:",
+                markup = keyboard(row(btn("🔑 Сбросить пароль", "auth:forgot_password"))),
+            )
+        }
+    }
+
+    /**
+     * Повторная отправка кода сброса пароля.
+     */
+    fun resendResetCode(chatId: Long, msgId: Int) {
+        val session = sessions[chatId]
+        if (session == null || session.step != BotStep.WAITING_RESET_CODE) {
+            log.warn("[BOT][AUTH] Попытка resend reset code без активной сессии: chatId=$chatId")
+            sender.editText(
+                chatId, msgId,
+                "Сессия устарела. Начните сброс пароля заново:",
+                markup = keyboard(row(btn("🔑 Сбросить пароль", "auth:forgot_password"))),
+            )
+            return
+        }
+
+        val email = session.resetEmail
+        if (email == null) {
+            sessions.remove(chatId)
+            sender.editText(
+                chatId, msgId,
+                "Сессия устарела. Начните сброс пароля заново:",
+                markup = keyboard(row(btn("🔑 Сбросить пароль", "auth:forgot_password"))),
+            )
+            return
+        }
+
+        log.info("[BOT][AUTH] Повторная отправка кода сброса пароля: chatId=$chatId email=$email")
+
+        runCatching {
+            authService.requestPasswordReset(email)
+        }.onSuccess {
+            sender.editText(
+                chatId, msgId,
+                "📧 Новый код отправлен на $email\n\nВведите 6-значный код из письма:",
+                markup = keyboard(
+                    row(
+                        btn("🔄 Выслать код повторно", "auth:resend_reset_code"),
+                        btn("❌ Отмена", "auth:cancel"),
+                    ),
+                ),
+            )
+        }.onFailure { e ->
+            val msg = when (e) {
+                is TooManyRequestsException -> e.message ?: "Слишком много запросов"
+                else -> "Не удалось отправить код. Попробуйте позже."
+            }
+            log.warn("[BOT][AUTH] Ошибка повторной отправки кода сброса: chatId=$chatId причина=${e.message}")
+            sender.editText(
+                chatId, msgId,
+                "⚠️ $msg",
+                markup = keyboard(
+                    row(
+                        btn("🔄 Выслать код повторно", "auth:resend_reset_code"),
+                        btn("❌ Отмена", "auth:cancel"),
+                    ),
+                ),
+            )
         }
     }
 

@@ -15,6 +15,12 @@ enum class BotStep {
     WAITING_REG_PASSWORD,
     WAITING_REG_PASSWORD_CONFIRM,
 
+    // ── Сброс пароля через бот ────────────────────────────────────────────
+    WAITING_RESET_EMAIL,
+    WAITING_RESET_CODE,
+    WAITING_RESET_NEW_PASSWORD,
+    WAITING_RESET_NEW_PASSWORD_CONFIRM,
+
     // ── Управление чатами ─────────────────────────────────────────────────
     WAITING_CHAT_LINK,
 
@@ -41,6 +47,10 @@ data class UserSession(
     var regPassword: String? = null,
 
     var pendingVerificationUserId: Long? = null,
+
+    // ── Сброс пароля ──────────────────────────────────────────────────────
+    var resetEmail:       String? = null,
+    var resetNewPassword: String? = null,
 
     var aiKeywordSuggestions: List<String> = emptyList(),
     var aiKeywordPage: Int = 0,

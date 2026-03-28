@@ -204,6 +204,7 @@ class AuthService(
         return VerifyViaTelegramResult.Success(user)
     }
 
+
     /**
      * Завершение регистрации через бота после подтверждения email:
      * выдача trial и применение реферального кода.
@@ -303,6 +304,15 @@ class AuthService(
         if (user == null) {
             log.warn("[AUTH] Пользователь не найден: email=$key ip=$ipAddress")
             throw UnauthorizedException("Аккаунт с таким email не найден")
+        }
+
+        // ── Аккаунт создан через Google OAuth — пароля нет ────────────────────
+        // Вместо проверки пароля отправляем одноразовый код на email.
+        // Бот покажет пользователю два варианта: войти по коду или привязать через веб.
+        if (user.password.isNullOrBlank()) {
+            log.info("[AUTH] Попытка входа в OAuth-аккаунт без пароля: userId=${user.id} email=$key ip=$ipAddress")
+            sendVerificationCode(user)
+            return LoginResult.NoPassword(userId = user.id, email = user.email)
         }
 
         val passwordValid = passwordEncoder.matches(request.password, user.password)
@@ -623,6 +633,12 @@ class AuthService(
 sealed class LoginResult {
     data class Success(val auth: AuthResponse) : LoginResult()
     data class PendingVerification(val token: String, val email: String) : LoginResult()
+
+    /**
+     * Аккаунт создан через Google OAuth — пароля нет.
+     * На email уже отправлен одноразовый код для входа.
+     */
+    data class NoPassword(val userId: Long, val email: String) : LoginResult()
 }
 
 

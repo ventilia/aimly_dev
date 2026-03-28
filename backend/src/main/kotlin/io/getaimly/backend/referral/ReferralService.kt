@@ -1,6 +1,6 @@
-/// --- FILE: C:\Users\vent\aimly_dev\backend\src\main\kotlin\io\getaimly\backend\referral\ReferralService.kt --- ///
 package io.getaimly.backend.referral
 
+import io.getaimly.backend.subscription.SubscriptionExpiry
 import io.getaimly.backend.subscription.SubscriptionExpiryRepository
 import io.getaimly.backend.user.User
 import io.getaimly.backend.user.UserRepository
@@ -29,7 +29,7 @@ class ReferralService(
     private val log = LoggerFactory.getLogger(ReferralService::class.java)
 
     companion object {
-        // ✅ TWO-SIDED: 7 дней обоим
+        // TWO-SIDED: 7 дней обоим
         const val BONUS_DAYS_PER_REFERRAL = 7
     }
 
@@ -80,10 +80,20 @@ class ReferralService(
         log.info("[REFERRAL] Активация зарегистрирована: referrerId=${refCodeEntity.user.id} refereeId=${referee.id} code=$referrerCode")
     }
 
-    // ✅ TWO-SIDED: бонус получают ОБА
+    /**
+     * Начисляет бонусные дни обоим (реферреру и рефери) при первой оплате рефери.
+     *
+     * ВАЖНО: если у пользователя ещё нет записи в subscription_expiry
+     * (например, у него ручная ACTIVE подписка без Tribute), запись создаётся
+     * с нулевым expiresAt — бонус сохраняется в буфере и будет применён при
+     * следующем продлении подписки через scheduler.
+     */
     @Transactional
     fun grantBonusIfEligible(referee: User): Boolean {
-        val activation = referralActivationRepository.findByRefereeId(referee.id) ?: return false
+        val activation = referralActivationRepository.findByRefereeId(referee.id) ?: run {
+            log.debug("[REFERRAL] Нет реферральной активации для refereeId=${referee.id}")
+            return false
+        }
         if (activation.bonusGranted) {
             log.debug("[REFERRAL] Бонус уже начислен: refereeId=${referee.id} referrerId=${activation.referrer.id}")
             return false
@@ -91,25 +101,46 @@ class ReferralService(
 
         val referrer = activation.referrer
 
-        // ─── Бонус рефереру ───────────────────────────────────────────────
+        // ─── Бонус рефереру ───────────────────────────────────────────────────
         val referrerExpiry = expiryRepository.findByUserId(referrer.id)
-        if (referrerExpiry != null) {
+            ?: run {
+                // Создаём запись если её нет — бонус накапливается в буфере
+                log.info(
+                    "[REFERRAL] Запись subscription_expiry не найдена для реферрера referrerId=${referrer.id} " +
+                            "— создаём с bonusDaysBuffer=$BONUS_DAYS_PER_REFERRAL"
+                )
+                SubscriptionExpiry(
+                    user             = referrer,
+                    expiresAt        = LocalDateTime.now(), // будет перезаписан при оплате
+                    bonusDaysBuffer  = BONUS_DAYS_PER_REFERRAL,
+                ).also { expiryRepository.save(it) }
+            }
+
+        if (referrerExpiry.bonusDaysBuffer == 0 || referrerExpiry.id != 0L) {
+            // Запись уже существовала — просто добавляем дни
             referrerExpiry.bonusDaysBuffer += BONUS_DAYS_PER_REFERRAL
             expiryRepository.save(referrerExpiry)
-            log.info(
-                "[REFERRAL] ✅ Бонус рефереру: referrerId=${referrer.id} email=${referrer.email} " +
-                "+${BONUS_DAYS_PER_REFERRAL} дней буфер=${referrerExpiry.bonusDaysBuffer}"
-            )
         }
+        // (иначе запись была создана выше уже с нужным буфером)
 
-        // ─── Бонус рефери (TWO-SIDED) ────────────────────────────────────
+        log.info(
+            "[REFERRAL] ✅ Бонус рефереру: referrerId=${referrer.id} email=${referrer.email} " +
+                    "+${BONUS_DAYS_PER_REFERRAL} дней буфер=${referrerExpiry.bonusDaysBuffer}"
+        )
+
+        // ─── Бонус рефери (TWO-SIDED) ─────────────────────────────────────────
         val refereeExpiry = expiryRepository.findByUserId(referee.id)
         if (refereeExpiry != null) {
             refereeExpiry.bonusDaysBuffer += BONUS_DAYS_PER_REFERRAL
             expiryRepository.save(refereeExpiry)
             log.info(
                 "[REFERRAL] ✅ Бонус рефери: refereeId=${referee.id} email=${referee.email} " +
-                "+${BONUS_DAYS_PER_REFERRAL} дней буфер=${refereeExpiry.bonusDaysBuffer}"
+                        "+${BONUS_DAYS_PER_REFERRAL} дней буфер=${refereeExpiry.bonusDaysBuffer}"
+            )
+        } else {
+            log.warn(
+                "[REFERRAL] Запись subscription_expiry не найдена для рефери refereeId=${referee.id} " +
+                        "— бонус рефери не начислен (нет активной подписки)"
             )
         }
 
@@ -118,8 +149,8 @@ class ReferralService(
         referralActivationRepository.save(activation)
 
         log.info(
-            "[REFERRAL] ✅ TWO-SIDED бонус начислен обоим: " +
-            "referrer=${referrer.email} referee=${referee.email} +${BONUS_DAYS_PER_REFERRAL} дней каждому"
+            "[REFERRAL] ✅ TWO-SIDED бонус начислен: " +
+                    "referrer=${referrer.email} referee=${referee.email} +${BONUS_DAYS_PER_REFERRAL} дней каждому"
         )
         return true
     }

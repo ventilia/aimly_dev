@@ -177,7 +177,9 @@ class AimlyBot(
         val session = sessions[chatId]
         val isPasswordStep = session?.step == BotStep.WAITING_PASSWORD ||
                 session?.step == BotStep.WAITING_REG_PASSWORD ||
-                session?.step == BotStep.WAITING_REG_PASSWORD_CONFIRM
+                session?.step == BotStep.WAITING_REG_PASSWORD_CONFIRM ||
+                session?.step == BotStep.WAITING_RESET_NEW_PASSWORD ||
+                session?.step == BotStep.WAITING_RESET_NEW_PASSWORD_CONFIRM
         if (isPasswordStep) {
             log.info("[BOT][MSG] $tgUser → [ПАРОЛЬ СКРЫТ]")
         } else {
@@ -220,7 +222,6 @@ class AimlyBot(
 
             else -> {
                 val user = userRepository.findByTelegramId(from.id).orElse(null)
-                // FIX: передаём from.id как tgUserId, а не chatId
                 if (user != null) authHandler.showMainMenu(chatId, user.firstName, from.id)
                 else authHandler.showWelcome(chatId, from.firstName)
             }
@@ -237,13 +238,18 @@ class AimlyBot(
             // ── Вход ──────────────────────────────────────────────────────────
             BotStep.WAITING_EMAIL      -> authHandler.handleWaitingEmail(chatId, text)
             BotStep.WAITING_PASSWORD   -> authHandler.handleWaitingPassword(chatId, text, from)
-            // Ввод кода подтверждения email при входе через бота
             BotStep.WAITING_LOGIN_CODE -> authHandler.handleWaitingLoginCode(chatId, text, from)
 
             // ── Регистрация через бота ────────────────────────────────────────
             BotStep.WAITING_REG_EMAIL            -> authHandler.handleWaitingRegEmail(chatId, text)
             BotStep.WAITING_REG_PASSWORD         -> authHandler.handleWaitingRegPassword(chatId, text)
             BotStep.WAITING_REG_PASSWORD_CONFIRM -> authHandler.handleWaitingRegPasswordConfirm(chatId, text, from)
+
+            // ── Сброс пароля ──────────────────────────────────────────────────
+            BotStep.WAITING_RESET_EMAIL                -> authHandler.handleWaitingResetEmail(chatId, text)
+            BotStep.WAITING_RESET_CODE                 -> authHandler.handleWaitingResetCode(chatId, text)
+            BotStep.WAITING_RESET_NEW_PASSWORD         -> authHandler.handleWaitingResetNewPassword(chatId, text)
+            BotStep.WAITING_RESET_NEW_PASSWORD_CONFIRM -> authHandler.handleWaitingResetNewPasswordConfirm(chatId, text, from)
 
             // ── Прочие шаги ───────────────────────────────────────────────────
             BotStep.WAITING_CHAT_LINK            -> chatsHandler.handleChatLinkInput(chatId, text, from)
@@ -291,6 +297,12 @@ class AimlyBot(
             // ── Повторная отправка кода верификации email ─────────────────────
             data == "auth:resend_code" -> authHandler.resendVerificationCode(chatId, msgId)
 
+            // ── Сброс пароля: кнопка «Забыл пароль» ──────────────────────────
+            data == "auth:forgot_password" -> authHandler.startForgotPasswordFlow(chatId, msgId)
+
+            // ── Сброс пароля: повторная отправка кода ─────────────────────────
+            data == "auth:resend_reset_code" -> authHandler.resendResetCode(chatId, msgId)
+
             // ── Отмена — редактируем существующее сообщение ───────────────────
             data == "auth:cancel"    -> {
                 sessions.remove(chatId)
@@ -309,7 +321,7 @@ class AimlyBot(
 
             data == "auth:retry"     -> authHandler.startLoginFlow(chatId, msgId)
             data == "auth:retry_pay" -> authHandler.startLoginFlow(chatId, msgId, pendingAction = "pay")
-
+            data == "auth:login_by_code" -> authHandler.startLoginByCodeFlow(chatId, msgId)
             data == "menu:back"     -> authHandler.showMainMenuEdit(chatId, msgId, from)
             data == "menu:leads"    -> leadsHandler.showLeadsMenu(chatId, from.id, msgId)
             data == "menu:chats"    -> chatsHandler.showChats(chatId, msgId, from.id)
