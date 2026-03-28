@@ -1,26 +1,30 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Lang } from '../i18n/translations'
-import SubscriptionsTab from '../dashboard/SubscriptionsTab'
 import {
     adminApi, notificationsApi,
     type AdminUserDto, type NotificationDto,
 } from '../api/auth'
+import { adminSubsApi, type SubscriptionInfo } from '../api/leads'
 import { useAuthContext } from '../context/AuthContext'
 import s from './AdminPanel.module.css'
 
 interface Props { lang: Lang; setLang: (l: Lang) => void }
 
-type Tab = 'overview' | 'users' | 'subscriptions' | 'userbot' | 'notifications'
+// Вкладка «subscriptions» удалена — управление подписками перенесено в «users»
+type Tab = 'overview' | 'users' | 'userbot' | 'notifications'
 
 const TABS: { id: Tab; label: { ru: string; en: string } }[] = [
     { id: 'overview',      label: { ru: 'Обзор',        en: 'Overview'      } },
     { id: 'users',         label: { ru: 'Пользователи', en: 'Users'         } },
-    { id: 'subscriptions', label: { ru: 'Подписки',     en: 'Subscriptions' } },
     { id: 'userbot',       label: { ru: 'Userbot',      en: 'Userbot'       } },
     { id: 'notifications', label: { ru: 'Уведомления',  en: 'Notifications' } },
 ]
 
+const PLANS    = ['START', 'BUSINESS', 'TRIAL']
+const STATUSES = ['ACTIVE', 'TRIAL', 'INACTIVE']
+
+// ─── Типы сортировки таблицы пользователей ────────────────────────────────────
 type SortKey = 'id' | 'firstName' | 'email' | 'role' | 'leadsCount' | 'createdAt'
 type SortDir = 'asc' | 'desc'
 
@@ -40,6 +44,321 @@ function sortUsers(users: AdminUserDto[], key: SortKey, dir: SortDir): AdminUser
     })
 }
 
+// ─── Вспомогательный цвет статуса подписки ───────────────────────────────────
+function statusColor(st: string | null) {
+    if (st === 'ACTIVE') return '#10b981'
+    if (st === 'TRIAL')  return '#f59e0b'
+    return '#6b7280'
+}
+
+interface Msg { text: string; ok: boolean }
+
+// ─── Тип для «объединённой» строки: пользователь + данные подписки ────────────
+type UserWithSub = AdminUserDto & {
+    subStatus:    string | null
+    subPlan:      string | null
+    subExpiresAt: string | null
+}
+
+// ─── Таблица пользователей с управлением подписками ──────────────────────────
+function UsersTable({
+                        users,
+                        subs,
+                        lang,
+                        currentUserId,
+                        onRoleChange,
+                        onSubChange,
+                    }: {
+    users:         AdminUserDto[]
+    subs:          SubscriptionInfo[]
+    lang:          Lang
+    currentUserId: number
+    onRoleChange:  (id: number, role: string) => void
+    onSubChange:   () => void
+}) {
+    const [changing,       setChanging]       = useState<number | null>(null)
+    const [working,        setWorking]        = useState<number | null>(null)
+    // Сортировка: по умолчанию — новые сначала
+    const [sortKey,        setSortKey]        = useState<SortKey>('createdAt')
+    const [sortDir,        setSortDir]        = useState<SortDir>('desc')
+
+    // Инлайн-редактирование тарифа/статуса
+    const [editPlanId,      setEditPlanId]      = useState<number | null>(null)
+    const [editPlanValue,   setEditPlanValue]   = useState('START')
+    const [editStatusValue, setEditStatusValue] = useState('ACTIVE')
+
+    // Инлайн-редактирование срока
+    const [editExpiryId,   setEditExpiryId]   = useState<number | null>(null)
+    const [editExpiryDays, setEditExpiryDays] = useState('30')
+
+    const ru = lang === 'ru'
+
+    const handleSort = (key: SortKey) => {
+        if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+        else { setSortKey(key); setSortDir('asc') }
+    }
+
+    const arrow = (key: SortKey) =>
+        sortKey === key
+            ? <span className={s.sortArrow}>{sortDir === 'asc' ? ' ↑' : ' ↓'}</span>
+            : <span className={s.sortArrowInactive}> ↕</span>
+
+    const Th = ({ col, label }: { col: SortKey; label: string }) => (
+        <th className={s.thSortable} onClick={() => handleSort(col)}>{label}{arrow(col)}</th>
+    )
+
+    // Переключение роли
+    const handleToggleRole = async (u: AdminUserDto) => {
+        if (u.id === currentUserId && u.role === 'ADMIN') {
+            alert(ru ? 'Нельзя снять роль у себя' : 'Cannot remove your own ADMIN role')
+            return
+        }
+        const newRole = u.role === 'ADMIN' ? 'USER' : 'ADMIN'
+        setChanging(u.id)
+        try {
+            await adminApi.setRole(u.id, newRole)
+            onRoleChange(u.id, newRole)
+        } catch (e: unknown) {
+            alert(e instanceof Error ? e.message : 'Ошибка')
+        } finally {
+            setChanging(null)
+        }
+    }
+
+    // Отозвать подписку
+    const handleRevoke = async (userId: number) => {
+        if (!confirm(ru ? 'Отозвать подписку?' : 'Revoke subscription?')) return
+        setWorking(userId)
+        try { await adminSubsApi.revoke(userId); onSubChange() }
+        catch (e: unknown) { alert(e instanceof Error ? e.message : 'Ошибка') }
+        finally { setWorking(null) }
+    }
+
+    // Сохранить тариф/статус
+    const handleEditPlan = async (userId: number) => {
+        setWorking(userId)
+        try {
+            await adminSubsApi.changePlan(userId, editPlanValue || 'START')
+            if (editStatusValue === 'INACTIVE') await adminSubsApi.revoke(userId)
+            setEditPlanId(null)
+            onSubChange()
+        } catch (e: unknown) { alert(e instanceof Error ? e.message : 'Ошибка') }
+        finally { setWorking(null) }
+    }
+
+    // Сохранить срок
+    const handleEditExpiry = async (userId: number, currentPlan: string | null) => {
+        const plan = currentPlan ?? 'START'
+        const days = Number(editExpiryDays) || 30
+        setWorking(userId)
+        try { await adminSubsApi.setExpiry(userId, plan, days); setEditExpiryId(null); onSubChange() }
+        catch (e: unknown) { alert(e instanceof Error ? e.message : 'Ошибка') }
+        finally { setWorking(null) }
+    }
+
+    // Объединяем данные пользователей с подписками
+    const subsMap = new Map(subs.map(sub => [sub.userId, sub]))
+
+    const merged: UserWithSub[] = users.map(u => {
+        const sub = subsMap.get(u.id)
+        return {
+            ...u,
+            subStatus:    sub?.status    ?? u.subscriptionStatus ?? null,
+            subPlan:      sub?.plan      ?? u.subscriptionPlan   ?? null,
+            subExpiresAt: sub?.expiresAt ?? null,
+        }
+    })
+
+    const sorted = sortUsers(merged as unknown as AdminUserDto[], sortKey, sortDir) as unknown as UserWithSub[]
+
+    const inlineInput: React.CSSProperties = {
+        height: 28, padding: '0 8px', fontSize: 12,
+        border: '1px solid var(--c-border)', borderRadius: 6,
+        background: 'var(--c-bg)', color: 'var(--c-ink)',
+        fontFamily: 'inherit', outline: 'none',
+    }
+
+    return (
+        <div className={s.tableWrapper}>
+            <table className={s.usersTable}>
+                <thead>
+                <tr>
+                    <Th col="id"         label="ID" />
+                    <Th col="firstName"  label={ru ? 'Имя'      : 'Name'} />
+                    <Th col="email"      label="Email" />
+                    <Th col="role"       label={ru ? 'Роль'     : 'Role'} />
+                    <Th col="leadsCount" label={ru ? 'Лиды'     : 'Leads'} />
+                    <Th col="createdAt"  label={ru ? 'Создан'   : 'Created'} />
+                    <th>{ru ? 'Тариф / Статус' : 'Plan / Status'}</th>
+                    <th>{ru ? 'Истекает' : 'Expires'}</th>
+                    <th>{ru ? 'Telegram' : 'Telegram'}</th>
+                    <th>{ru ? 'Действия' : 'Actions'}</th>
+                </tr>
+                </thead>
+                <tbody>
+                {sorted.map(u => (
+                    <tr key={u.id} className={!u.isActive ? s.rowInactive : ''}>
+                        <td className={s.cellId}>{u.id}</td>
+                        <td>{u.firstName ?? '—'}</td>
+                        <td className={s.cellEmail}>{u.email}</td>
+                        <td>
+                            <span className={u.role === 'ADMIN' ? s.badgeAdmin : s.badgeUser}>
+                                {u.role}
+                            </span>
+                        </td>
+                        <td className={s.cellNum}>{u.leadsCount}</td>
+                        <td className={s.cellDate}>
+                            {u.createdAt ? new Date(u.createdAt).toLocaleDateString(ru ? 'ru-RU' : 'en-US') : '—'}
+                        </td>
+
+                        {/* ── Тариф + Статус (инлайн-редактирование) ── */}
+                        <td>
+                            {editPlanId === u.id ? (
+                                <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+                                    <select
+                                        value={editPlanValue}
+                                        onChange={e => setEditPlanValue(e.target.value)}
+                                        style={{ ...inlineInput, width: 90 }}
+                                    >
+                                        {['START', 'BUSINESS'].map(p => <option key={p} value={p}>{p}</option>)}
+                                    </select>
+                                    <select
+                                        value={editStatusValue}
+                                        onChange={e => setEditStatusValue(e.target.value)}
+                                        style={{ ...inlineInput, width: 95 }}
+                                    >
+                                        {STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
+                                    </select>
+                                    <button
+                                        className={s.actionBtn}
+                                        onClick={() => handleEditPlan(u.id)}
+                                        disabled={working === u.id}
+                                        style={{ padding: '3px 8px', fontSize: 11 }}
+                                    >
+                                        {working === u.id ? '…' : '✔'}
+                                    </button>
+                                    <button
+                                        className={s.actionBtn}
+                                        onClick={() => setEditPlanId(null)}
+                                        style={{ padding: '3px 8px', fontSize: 11, background: 'var(--c-surface)' }}
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+                            ) : (
+                                <div
+                                    style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
+                                    onClick={() => {
+                                        setEditPlanId(u.id)
+                                        setEditPlanValue(u.subPlan || 'START')
+                                        setEditStatusValue(u.subStatus || 'ACTIVE')
+                                    }}
+                                >
+                                    {u.subStatus ? (
+                                        <span style={{ fontWeight: 600, fontSize: 12, color: statusColor(u.subStatus) }}>
+                                            {u.subStatus}{u.subPlan ? ` / ${u.subPlan}` : ''}
+                                        </span>
+                                    ) : (
+                                        <span className={s.badgeNone}>—</span>
+                                    )}
+                                    <span style={{ fontSize: 10, color: 'var(--c-ink-3)' }}>✎</span>
+                                </div>
+                            )}
+                        </td>
+
+                        {/* ── Срок истечения (инлайн-редактирование) ── */}
+                        <td>
+                            {editExpiryId === u.id ? (
+                                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                                    <input
+                                        type="number"
+                                        value={editExpiryDays}
+                                        onChange={e => setEditExpiryDays(e.target.value)}
+                                        style={{ ...inlineInput, width: 60 }}
+                                    />
+                                    <span style={{ fontSize: 11, color: 'var(--c-ink-3)' }}>
+                                        {ru ? 'дн.' : 'd.'}
+                                    </span>
+                                    <button
+                                        className={s.actionBtn}
+                                        onClick={() => handleEditExpiry(u.id, u.subPlan)}
+                                        disabled={working === u.id}
+                                        style={{ padding: '3px 8px', fontSize: 11 }}
+                                    >
+                                        {working === u.id ? '…' : '✔'}
+                                    </button>
+                                    <button
+                                        className={s.actionBtn}
+                                        onClick={() => setEditExpiryId(null)}
+                                        style={{ padding: '3px 8px', fontSize: 11, background: 'var(--c-surface)' }}
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+                            ) : (
+                                <div
+                                    style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
+                                    onClick={() => { setEditExpiryId(u.id); setEditExpiryDays('30') }}
+                                >
+                                    <span style={{ fontSize: 12 }}>
+                                        {u.subExpiresAt
+                                            ? new Date(u.subExpiresAt).toLocaleDateString(
+                                                ru ? 'ru-RU' : 'en-US',
+                                                { day: 'numeric', month: 'short', year: 'numeric' })
+                                            : '—'}
+                                    </span>
+                                    <span style={{ fontSize: 10, color: 'var(--c-ink-3)' }}>✎</span>
+                                </div>
+                            )}
+                        </td>
+
+                        {/* ── Telegram ── */}
+                        <td>
+                            {u.telegramId
+                                ? <span className={s.badgeTg}>✓ {u.telegramUsername ? `@${u.telegramUsername}` : u.telegramId}</span>
+                                : <span className={s.badgeNone}>—</span>
+                            }
+                        </td>
+
+                        {/* ── Действия ── */}
+                        <td>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                <button
+                                    className={s.actionBtn}
+                                    onClick={() => handleToggleRole(u)}
+                                    disabled={changing === u.id}
+                                >
+                                    {changing === u.id ? '...' : u.role === 'ADMIN'
+                                        ? (ru ? 'Снять ADMIN' : 'Remove ADMIN')
+                                        : (ru ? 'ADMIN' : 'Make ADMIN')}
+                                </button>
+                                {u.subStatus && u.subStatus !== 'INACTIVE' && (
+                                    <button
+                                        className={s.actionBtn}
+                                        onClick={() => handleRevoke(u.id)}
+                                        disabled={working === u.id}
+                                        style={{
+                                            color:       '#ef4444',
+                                            borderColor: 'rgba(239,68,68,.3)',
+                                            background:  'rgba(239,68,68,.06)',
+                                        }}
+                                    >
+                                        {working === u.id ? '…' : ru ? 'Отозвать' : 'Revoke'}
+                                    </button>
+                                )}
+                            </div>
+                        </td>
+                    </tr>
+                ))}
+                </tbody>
+            </table>
+        </div>
+    )
+}
+
+
+
+// ─── Userbot ──────────────────────────────────────────────────────────────────
 interface UserbotSessionStats {
     sessionId:  number
     phone:      string
@@ -65,118 +384,6 @@ interface UserbotUserInfo {
     keywords:   string[]
 }
 
-
-
-function UsersTable({ users, lang, currentUserId, onRoleChange }: {
-    users:         AdminUserDto[]
-    lang:          Lang
-    currentUserId: number
-    onRoleChange:  (id: number, role: string) => void
-}) {
-    const [changing, setChanging] = useState<number | null>(null)
-    const [sortKey,  setSortKey]  = useState<SortKey>('id')
-    const [sortDir,  setSortDir]  = useState<SortDir>('asc')
-    const ru = lang === 'ru'
-
-    const handleSort = (key: SortKey) => {
-        if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-        else { setSortKey(key); setSortDir('asc') }
-    }
-
-    const arrow = (key: SortKey) =>
-        sortKey === key
-            ? <span className={s.sortArrow}>{sortDir === 'asc' ? ' ↑' : ' ↓'}</span>
-            : <span className={s.sortArrowInactive}> ↕</span>
-
-    const Th = ({ col, label }: { col: SortKey; label: string }) => (
-        <th className={s.thSortable} onClick={() => handleSort(col)}>{label}{arrow(col)}</th>
-    )
-
-    const handleToggleRole = async (u: AdminUserDto) => {
-        if (u.id === currentUserId && u.role === 'ADMIN') {
-            alert(ru ? 'Нельзя снять роль у себя' : 'Cannot remove your own ADMIN role')
-            return
-        }
-        const newRole = u.role === 'ADMIN' ? 'USER' : 'ADMIN'
-        setChanging(u.id)
-        try {
-            await adminApi.setRole(u.id, newRole)
-            onRoleChange(u.id, newRole)
-        } catch (e: unknown) {
-            alert(e instanceof Error ? e.message : 'Ошибка')
-        } finally {
-            setChanging(null)
-        }
-    }
-
-    const sorted = sortUsers(users, sortKey, sortDir)
-
-    return (
-        <div className={s.tableWrapper}>
-            <table className={s.usersTable}>
-                <thead>
-                <tr>
-                    <Th col="id"         label="ID" />
-                    <Th col="firstName"  label={ru ? 'Имя'      : 'Name'} />
-                    <Th col="email"      label="Email" />
-                    <Th col="role"       label={ru ? 'Роль'     : 'Role'} />
-                    <Th col="leadsCount" label={ru ? 'Лиды'     : 'Leads'} />
-                    <Th col="createdAt"  label={ru ? 'Создан'   : 'Created'} />
-                    <th>{ru ? 'Подписка' : 'Subscription'}</th>
-                    <th>{ru ? 'Telegram' : 'Telegram'}</th>
-                    <th>{ru ? 'Действие' : 'Action'}</th>
-                </tr>
-                </thead>
-                <tbody>
-                {sorted.map(u => (
-                    <tr key={u.id} className={!u.isActive ? s.rowInactive : ''}>
-                        <td className={s.cellId}>{u.id}</td>
-                        <td>{u.firstName ?? '—'}</td>
-                        <td className={s.cellEmail}>{u.email}</td>
-                        <td>
-                                <span className={u.role === 'ADMIN' ? s.badgeAdmin : s.badgeUser}>
-                                    {u.role}
-                                </span>
-                        </td>
-                        <td className={s.cellNum}>{u.leadsCount}</td>
-                        <td className={s.cellDate}>
-                            {u.createdAt ? new Date(u.createdAt).toLocaleDateString(ru ? 'ru-RU' : 'en-US') : '—'}
-                        </td>
-                        <td>
-                            {u.subscriptionStatus
-                                ? <span className={u.subscriptionStatus === 'ACTIVE' ? s.badgeActive : s.badgeTrial}>
-                                        {u.subscriptionStatus} {u.subscriptionPlan ? `/ ${u.subscriptionPlan}` : ''}
-                                      </span>
-                                : <span className={s.badgeNone}>—</span>
-                            }
-                        </td>
-                        <td>
-                            {u.telegramId
-                                ? <span className={s.badgeTg}>✓ {u.telegramUsername ? `@${u.telegramUsername}` : u.telegramId}</span>
-                                : <span className={s.badgeNone}>—</span>
-                            }
-                        </td>
-                        <td>
-                            <button
-                                className={s.actionBtn}
-                                onClick={() => handleToggleRole(u)}
-                                disabled={changing === u.id}
-                            >
-                                {changing === u.id ? '...' : u.role === 'ADMIN'
-                                    ? (ru ? 'Снять ADMIN' : 'Remove ADMIN')
-                                    : (ru ? 'Сделать ADMIN' : 'Make ADMIN')}
-                            </button>
-                        </td>
-                    </tr>
-                ))}
-                </tbody>
-            </table>
-        </div>
-    )
-}
-
-
-
 function UserbotTab({ lang }: { lang: Lang }) {
     const ru   = lang === 'ru'
     const BASE = import.meta.env.VITE_API_URL || ''
@@ -187,10 +394,8 @@ function UserbotTab({ lang }: { lang: Lang }) {
     const [error,        setError]        = useState('')
     const [expandedUser, setExpandedUser] = useState<number | null>(null)
 
-    // ─── Фильтрация пользователей ─────────────────────────────────────────────
     const [userSearch, setUserSearch] = useState('')
 
-    // ─── Удаление юзербота ────────────────────────────────────────────────────
     const [deletingSession, setDeletingSession] = useState<number | null>(null)
     const [deleteError,     setDeleteError]     = useState('')
 
@@ -227,7 +432,6 @@ function UserbotTab({ lang }: { lang: Lang }) {
 
     useEffect(() => { load() }, [load])
 
-    // ─── Удаление юзербота ────────────────────────────────────────────────────
     const handleDeleteSession = async (sessionId: number, phone: string) => {
         const confirmed = confirm(ru
             ? `Удалить юзербота #${sessionId} (${phone})?\n\nОн будет отключён от всех чатов и остановлен.`
@@ -254,7 +458,6 @@ function UserbotTab({ lang }: { lang: Lang }) {
         }
     }
 
-    // ─── Регистрация: шаг 1 ───────────────────────────────────────────────────
     const handleSendPhone = async () => {
         if (!phone.trim()) return
         setRegLoading(true)
@@ -281,7 +484,6 @@ function UserbotTab({ lang }: { lang: Lang }) {
         }
     }
 
-    // ─── Регистрация: шаг 2 ───────────────────────────────────────────────────
     const handleConfirmCode = async () => {
         if (!code.trim()) return
         setRegLoading(true)
@@ -316,7 +518,6 @@ function UserbotTab({ lang }: { lang: Lang }) {
         setTempId(''); setRegError(''); setRegSuccess('')
     }
 
-    // ─── Фильтрация пользователей ─────────────────────────────────────────────
     const filteredUsers = userSearch.trim()
         ? users.filter(u =>
             u.email.toLowerCase().includes(userSearch.toLowerCase()) ||
@@ -345,7 +546,6 @@ function UserbotTab({ lang }: { lang: Lang }) {
 
     return (
         <div className={s.subsTab}>
-            {/* ─── Заголовок ─── */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <h2 className={s.tabTitle} style={{ margin: 0 }}>
                     {ru ? 'Userbot сервис' : 'Userbot Service'}
@@ -355,7 +555,6 @@ function UserbotTab({ lang }: { lang: Lang }) {
                 </button>
             </div>
 
-            {/* ─── Статистика ─── */}
             <div className={s.statsGrid}>
                 {statCards.map(item => (
                     <div key={item.label} className={s.statCard}>
@@ -370,7 +569,6 @@ function UserbotTab({ lang }: { lang: Lang }) {
                 ))}
             </div>
 
-            {/* ─── Добавить аккаунт ─── */}
             <div className={s.subCard} style={{ marginTop: 20 }}>
                 <h3 className={s.subCardTitle} style={{ marginBottom: 12 }}>
                     {ru ? '➕ Добавить аккаунт юзербота' : '➕ Add userbot account'}
@@ -518,7 +716,6 @@ function UserbotTab({ lang }: { lang: Lang }) {
                 )}
             </div>
 
-            {/* ─── Аккаунты в пуле + кнопка удаления ─── */}
             {(stats?.perSession?.length ?? 0) > 0 && (
                 <>
                     <h3 className={s.subCardTitle} style={{ marginTop: 24 }}>
@@ -593,7 +790,6 @@ function UserbotTab({ lang }: { lang: Lang }) {
                 </>
             )}
 
-            {/* ─── Активные пользователи с фильтрацией ─── */}
             {users.length > 0 && (
                 <>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 24, flexWrap: 'wrap' }}>
@@ -607,7 +803,6 @@ function UserbotTab({ lang }: { lang: Lang }) {
                             )}
                         </h3>
 
-                        {/* Поиск по email / ID */}
                         <input
                             placeholder={ru ? 'Поиск по email или ID...' : 'Search by email or ID...'}
                             value={userSearch}
@@ -780,6 +975,7 @@ function UserbotTab({ lang }: { lang: Lang }) {
 
 
 
+// ─── Уведомления ─────────────────────────────────────────────────────────────
 function NotificationsTab({ lang }: { lang: Lang }) {
     const [title,       setTitle]       = useState('')
     const [body,        setBody]        = useState('')
@@ -902,6 +1098,7 @@ function NotificationsTab({ lang }: { lang: Lang }) {
 
 
 
+// ─── Главный компонент ────────────────────────────────────────────────────────
 export default function AdminPanel({ lang, setLang }: Props) {
     const { user, loading } = useAuthContext()
     const navigate = useNavigate()
@@ -909,13 +1106,23 @@ export default function AdminPanel({ lang, setLang }: Props) {
     const [users,        setUsers]        = useState<AdminUserDto[]>([])
     const [usersLoading, setUsersLoading] = useState(false)
 
+    // Данные подписок — загружаем вместе с пользователями
+    const [subs,        setSubs]        = useState<SubscriptionInfo[]>([])
+    const [subsLoading, setSubsLoading] = useState(false)
+
+    // Форма «Выдать / продлить подписку»
+    const [grantUserId,  setGrantUserId]  = useState('')
+    const [grantPlan,    setGrantPlan]    = useState('START')
+    const [grantStatus,  setGrantStatus]  = useState('ACTIVE')
+    const [grantDays,    setGrantDays]    = useState('30')
+    const [grantLoading, setGrantLoading] = useState(false)
+    const [grantMsg,     setGrantMsg]     = useState<Msg | null>(null)
 
     const [sidebarOpen, setSidebarOpen] = useState(false)
 
     useEffect(() => {
         if (!loading && (!user || user.role !== 'ADMIN')) navigate('/')
     }, [user, loading, navigate])
-
 
     useEffect(() => {
         const onResize = () => {
@@ -931,17 +1138,33 @@ export default function AdminPanel({ lang, setLang }: Props) {
             const data = await adminApi.getUsers()
             setUsers(data)
         } catch {
-            // dkddk
-
+            // ignore
         } finally {
             setUsersLoading(false)
         }
     }, [])
 
+    const fetchSubs = useCallback(async () => {
+        setSubsLoading(true)
+        try {
+            const data = await adminSubsApi.list()
+            setSubs(data)
+        } catch {
+            // ignore
+        } finally {
+            setSubsLoading(false)
+        }
+    }, [])
+
+    // Обновляем и пользователей, и подписки при переходе на вкладку
+    const fetchAll = useCallback(async () => {
+        await Promise.all([fetchUsers(), fetchSubs()])
+    }, [fetchUsers, fetchSubs])
+
     useEffect(() => {
         if (activeTab !== 'users') return
-        void fetchUsers()
-    }, [activeTab, fetchUsers])
+        void fetchAll()
+    }, [activeTab, fetchAll])
 
     if (loading || !user || user.role !== 'ADMIN') return null
 
@@ -950,6 +1173,34 @@ export default function AdminPanel({ lang, setLang }: Props) {
     const handleTabChange = (tab: Tab) => {
         setActiveTab(tab)
         setSidebarOpen(false)
+    }
+
+    // Выдать / продлить подписку
+    const handleGrant = async () => {
+        const userId = Number(grantUserId)
+        const days   = Number(grantDays)
+        if (!userId || userId <= 0) {
+            setGrantMsg({ text: ru ? 'Введите корректный ID' : 'Enter valid ID', ok: false })
+            return
+        }
+        if (!days || days <= 0) {
+            setGrantMsg({ text: ru ? 'Введите кол-во дней' : 'Enter valid days', ok: false })
+            return
+        }
+        setGrantLoading(true)
+        setGrantMsg(null)
+        try {
+            await adminSubsApi.grant(userId, grantPlan, days)
+            if (grantStatus === 'INACTIVE') await adminSubsApi.revoke(userId)
+            setGrantUserId('')
+            setGrantDays('30')
+            setGrantMsg({ text: ru ? 'Подписка выдана' : 'Subscription granted', ok: true })
+            await fetchSubs()
+        } catch (e: unknown) {
+            setGrantMsg({ text: e instanceof Error ? e.message : 'Ошибка', ok: false })
+        } finally {
+            setGrantLoading(false)
+        }
     }
 
     return (
@@ -961,7 +1212,6 @@ export default function AdminPanel({ lang, setLang }: Props) {
                     <span className={s.adminTag}>Admin</span>
                 </a>
 
-                {}
                 <button
                     className={`${s.burger} ${sidebarOpen ? s.burgerOpen : ''}`}
                     onClick={() => setSidebarOpen(v => !v)}
@@ -990,7 +1240,6 @@ export default function AdminPanel({ lang, setLang }: Props) {
                 </div>
             </header>
 
-            {}
             {sidebarOpen && (
                 <div className={s.mobileOverlay} onClick={() => setSidebarOpen(false)} />
             )}
@@ -1021,7 +1270,7 @@ export default function AdminPanel({ lang, setLang }: Props) {
 
                     {activeTab === 'users' && (
                         <div className={s.usersTab}>
-                            {}
+                            {/* ── Заголовок + кнопка обновления ── */}
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
                                 <h2 className={s.tabTitle}>
                                     {ru ? 'Пользователи' : 'Users'}
@@ -1029,31 +1278,87 @@ export default function AdminPanel({ lang, setLang }: Props) {
                                 </h2>
                                 <button
                                     className={s.grantBtn}
-                                    onClick={fetchUsers}
-                                    disabled={usersLoading}
+                                    onClick={fetchAll}
+                                    disabled={usersLoading || subsLoading}
                                     style={{ padding: '7px 16px' }}
                                 >
-                                    {usersLoading
+                                    {(usersLoading || subsLoading)
                                         ? (ru ? 'Загрузка...' : 'Loading...')
                                         : (ru ? 'Обновить' : 'Refresh')}
                                 </button>
                             </div>
+
+                            {/* ── Форма выдачи подписки ── */}
+                            <div className={s.subCard}>
+                                <h3 className={s.subCardTitle}>
+                                    {ru ? 'Выдать / продлить подписку' : 'Grant / Extend Subscription'}
+                                </h3>
+                                <div className={s.formRow}>
+                                    <input
+                                        className={s.formInput}
+                                        type="number"
+                                        placeholder={ru ? 'ID пользователя' : 'User ID'}
+                                        value={grantUserId}
+                                        onChange={e => setGrantUserId(e.target.value)}
+                                        style={{ width: 120 }}
+                                    />
+                                    <select
+                                        className={s.formSelect}
+                                        value={grantPlan}
+                                        onChange={e => setGrantPlan(e.target.value)}
+                                        style={{ width: 120 }}
+                                    >
+                                        {PLANS.map(p => <option key={p} value={p}>{p}</option>)}
+                                    </select>
+                                    <select
+                                        className={s.formSelect}
+                                        value={grantStatus}
+                                        onChange={e => setGrantStatus(e.target.value)}
+                                        style={{ width: 110 }}
+                                    >
+                                        {STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
+                                    </select>
+                                    <input
+                                        className={s.formInput}
+                                        type="number"
+                                        placeholder={ru ? 'Дней' : 'Days'}
+                                        value={grantDays}
+                                        onChange={e => setGrantDays(e.target.value)}
+                                        style={{ width: 80 }}
+                                    />
+                                    <button
+                                        className={s.grantBtn}
+                                        onClick={handleGrant}
+                                        disabled={grantLoading}
+                                    >
+                                        {grantLoading ? '...' : ru ? 'Выдать' : 'Grant'}
+                                    </button>
+                                </div>
+                                {grantMsg && (
+                                    <div className={grantMsg.ok ? s.formSuccess : s.formError}>
+                                        {grantMsg.text}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* ── Таблица пользователей ── */}
                             {usersLoading && users.length === 0 ? (
                                 <div className={s.loading}>...</div>
                             ) : (
                                 <UsersTable
                                     users={users}
+                                    subs={subs}
                                     lang={lang}
                                     currentUserId={user.id}
                                     onRoleChange={(id, role) =>
                                         setUsers(prev => prev.map(u => u.id === id ? { ...u, role } : u))
                                     }
+                                    onSubChange={fetchSubs}
                                 />
                             )}
                         </div>
                     )}
 
-                    {activeTab === 'subscriptions' && <SubscriptionsTab lang={lang} />}
                     {activeTab === 'userbot'       && <UserbotTab       lang={lang} />}
                     {activeTab === 'notifications' && <NotificationsTab lang={lang} />}
                 </main>
