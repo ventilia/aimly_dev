@@ -12,7 +12,6 @@ const txt = {
             leads:    'Лиды',
             chats:    'Чаты',
             keywords: 'Ключевые слова',
-            import:   'Импорт чата',
             profile:  'Профиль',
         },
         logout:     'Выход',
@@ -26,7 +25,6 @@ const txt = {
             leads:    'Leads',
             chats:    'Chats',
             keywords: 'Keywords',
-            import:   'Chat Import',
             profile:  'Profile',
         },
         logout:     'Sign out',
@@ -41,7 +39,6 @@ interface NavLabels {
     leads:    string
     chats:    string
     keywords: string
-    import:   string
     profile:  string
 }
 
@@ -50,7 +47,6 @@ const NAV_ITEMS = (l: NavLabels) => [
     { to: '/dashboard/leads',    label: l.leads,    exact: false },
     { to: '/dashboard/chats',    label: l.chats,    exact: false },
     { to: '/dashboard/keywords', label: l.keywords, exact: false },
-    { to: '/dashboard/import',   label: l.import,   exact: false },
     { to: '/dashboard/profile',  label: l.profile,  exact: false },
 ]
 

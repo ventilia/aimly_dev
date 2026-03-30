@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
-import { chatsApi, keywordsApi, type ChatSubscription } from '../api/leads.ts'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { chatsApi, keywordsApi, importApi, leadsApi, type ChatSubscription, type ImportResult, type Lead } from '../api/leads.ts'
 import { authApi } from '../api/auth'
 import { useAuthContext } from '../context/AuthContext'
+import { useNavigate } from 'react-router-dom'
 import s from './Chatspage.module.css'
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
@@ -88,6 +89,44 @@ function HashIcon() {
         </svg>
     )
 }
+function UploadIcon() {
+    return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+    )
+}
+function FileIcon() {
+    return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+        </svg>
+    )
+}
+function AlertIcon() {
+    return (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+    )
+}
+function ArrowRightIcon() {
+    return (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+        </svg>
+    )
+}
+function UserIcon() {
+    return (
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+        </svg>
+    )
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type PeerTypeFilter = 'all' | 'chat' | 'channel'
@@ -167,7 +206,67 @@ function formatCount(n: number): string {
     return String(n)
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+function formatBytes(bytes: number): string {
+    if (bytes < 1024)        return `${bytes} Б`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`
+    return `${(bytes / 1024 / 1024).toFixed(1)} МБ`
+}
+
+/**
+ * Умное форматирование даты:
+ * - Сегодня → «сегодня, 14:32»
+ * - Вчера   → «вчера, 09:15»
+ * - В этом году → «15 марта, 09:15»
+ * - Другой год → «15 мар 2023, 09:15»
+ */
+function formatLeadDate(iso: string): string {
+    try {
+        const d   = new Date(iso)
+        const now = new Date()
+
+        const startOfToday     = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+        const startOfYesterday = new Date(startOfToday.getTime() - 86_400_000)
+
+        const time = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+
+        if (d >= startOfToday) {
+            return `сегодня, ${time}`
+        }
+        if (d >= startOfYesterday) {
+            return `вчера, ${time}`
+        }
+
+        const sameYear = d.getFullYear() === now.getFullYear()
+        const datePart = sameYear
+            ? d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+            : d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })
+
+        return `${datePart}, ${time}`
+    } catch {
+        return iso
+    }
+}
+
+function formatChatDate(iso: string): string {
+    try {
+        const d   = new Date(iso)
+        const now = new Date()
+        const startOfToday     = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+        const startOfYesterday = new Date(startOfToday.getTime() - 86_400_000)
+
+        if (d >= startOfToday)     return 'сегодня'
+        if (d >= startOfYesterday) return 'вчера'
+
+        if (d.getFullYear() === now.getFullYear()) {
+            return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' })
+        }
+        return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' })
+    } catch {
+        return ''
+    }
+}
+
+// ─── Sub-components (AI search) ───────────────────────────────────────────────
 
 function StatusBadge({ active }: { active: boolean }) {
     return (
@@ -307,6 +406,265 @@ function PeerTypeSelector({ value, onChange, disabled }: {
     )
 }
 
+// ─── Import section sub-component ────────────────────────────────────────────
+
+type ImportPhase = 'idle' | 'loading' | 'done'
+
+function ImportSection() {
+    const navigate = useNavigate()
+    const [file,     setFile]     = useState<File | null>(null)
+    const [dragOver, setDragOver] = useState(false)
+    const [phase,    setPhase]    = useState<ImportPhase>('idle')
+    const [error,    setError]    = useState('')
+    const [result,   setResult]   = useState<ImportResult | null>(null)
+    const [previewLeads, setPreviewLeads] = useState<Lead[]>([])
+    const inputRef = useRef<HTMLInputElement>(null)
+
+    const handleFiles = useCallback((files: FileList | null) => {
+        if (!files || files.length === 0) return
+        const f    = files[0]
+        const name = f.name.toLowerCase()
+        if (!name.endsWith('.html') && !name.endsWith('.htm') && !name.endsWith('.json')) {
+            setError('Поддерживаются только .html и .json (экспорт Telegram Desktop).')
+            return
+        }
+        setError(''); setResult(null); setPhase('idle'); setPreviewLeads([])
+        setFile(f)
+    }, [])
+
+    const onDrop      = useCallback((e: React.DragEvent) => {
+        e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files)
+    }, [handleFiles])
+    const onDragOver  = (e: React.DragEvent) => { e.preventDefault(); setDragOver(true) }
+    const onDragLeave = () => setDragOver(false)
+
+    const handleSubmit = async () => {
+        if (!file) return
+        setPhase('loading'); setError('')
+        try {
+            const res = await importApi.uploadExport(file)
+            setResult(res)
+            setPhase('done')
+            // Загружаем 3 последних лида из этого чата для превью
+            if (res.matchedLeads > 0) {
+                try {
+                    const page = await leadsApi.list({ page: 0, size: 3 })
+                    setPreviewLeads(page.content.slice(0, 3))
+                } catch { /* silent */ }
+            }
+        } catch (e: unknown) {
+            setError(e instanceof Error ? e.message : 'Неизвестная ошибка')
+            setPhase('idle')
+        }
+    }
+
+    const reset = () => {
+        setFile(null); setResult(null); setError('')
+        setPhase('idle'); setPreviewLeads([])
+    }
+
+    return (
+        <div className={s.importSection}>
+            {/* ── Заголовок-разворачивалка ── */}
+            <div className={s.importHeader}>
+                <div className={s.importHeaderLeft}>
+                    <div className={s.importHeaderIcon}>
+                        <UploadIcon />
+                    </div>
+                    <div>
+                        <p className={s.importHeaderTitle}>Ручной импорт из закрытого чата</p>
+                        <p className={s.importHeaderSub}>
+                            Загрузите экспорт Telegram Desktop — найдём лиды по ключевым словам
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            {/* ── Объяснение ── */}
+            <div className={s.importExplainer}>
+                <div className={s.importExplainerIcon}>
+                    <LockIcon />
+                </div>
+                <div className={s.importExplainerBody}>
+                    <p className={s.importExplainerTitle}>Почему автоматический мониторинг недоступен для некоторых чатов?</p>
+                    <p className={s.importExplainerText}>
+                        AIMLY работает через ваш аккаунт и мониторит открытые чаты в реальном времени.
+                        Но некоторые сообщества закрыты полностью — платные клубы, чаты только по инвайту,
+                        каналы без публичной ссылки. Добавить их в авторежим невозможно — у сервиса нет доступа.
+                        <br /><br />
+                        Если вы уже состоите в таком чате, экспортируйте его историю через Telegram Desktop
+                        и загрузите сюда. Мы обработаем всю переписку и найдём лиды точно так же, как при обычном мониторинге.
+                    </p>
+                </div>
+            </div>
+
+            {/* ── Шаги ── */}
+            <div className={s.importSteps}>
+                {[
+                    { n: 1, text: <>Откройте нужный чат в <strong>Telegram Desktop</strong> (Windows, macOS, Linux).</> },
+                    { n: 2, text: <>Нажмите <strong>⋮ (три точки)</strong> → <strong>«Экспортировать историю чата»</strong>.</> },
+                    { n: 3, text: <>Выберите формат <strong>HTML</strong> или <strong>JSON</strong>. JSON обрабатывается быстрее.</> },
+                    { n: 4, text: <>Дождитесь экспорта и загрузите файл ниже. Максимальный размер — <strong>100 МБ</strong>.</> },
+                ].map(({ n, text }) => (
+                    <div key={n} className={s.importStep}>
+                        <span className={s.importStepNum}>{n}</span>
+                        <span className={s.importStepText}>{text}</span>
+                    </div>
+                ))}
+            </div>
+
+            {/* ── Зона загрузки ── */}
+            {phase !== 'done' && (
+                <div className={s.importUploadCard}>
+                    {!file ? (
+                        <div
+                            className={`${s.importDropzone} ${dragOver ? s.importDropzoneActive : ''}`}
+                            onDrop={onDrop}
+                            onDragOver={onDragOver}
+                            onDragLeave={onDragLeave}
+                            onClick={() => inputRef.current?.click()}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={e => e.key === 'Enter' && inputRef.current?.click()}
+                        >
+                            <div className={s.importDropzoneIcon}><UploadIcon /></div>
+                            <span className={s.importDropzoneLabel}>Перетащите файл или нажмите, чтобы выбрать</span>
+                            <span className={s.importDropzoneSub}>.html, .htm, .json · до 100 МБ</span>
+                            <input
+                                ref={inputRef}
+                                type="file"
+                                accept=".html,.htm,.json"
+                                style={{ display: 'none' }}
+                                onChange={e => handleFiles(e.target.files)}
+                            />
+                        </div>
+                    ) : (
+                        <div className={s.importFilePreview}>
+                            <div className={s.importFileIcon}><FileIcon /></div>
+                            <div className={s.importFileInfo}>
+                                <span className={s.importFileName}>{file.name}</span>
+                                <span className={s.importFileSize}>{formatBytes(file.size)}</span>
+                            </div>
+                            <button className={s.importFileClear} onClick={reset} title="Убрать файл">
+                                <CloseIcon />
+                            </button>
+                        </div>
+                    )}
+
+                    {error && (
+                        <div className={s.importError}>
+                            <AlertIcon />{error}
+                        </div>
+                    )}
+
+                    {phase === 'loading' ? (
+                        <div className={s.importProgress}>
+                            <div className={s.importSpinner} />
+                            <span className={s.importProgressText}>Обрабатываем файл, ищем лиды…</span>
+                        </div>
+                    ) : (
+                        <button
+                            className={s.importSubmitBtn}
+                            onClick={handleSubmit}
+                            disabled={!file}
+                        >
+                            <UploadIcon />
+                            Найти лиды
+                        </button>
+                    )}
+                </div>
+            )}
+
+            {/* ── Результат + превью лидов ── */}
+            {phase === 'done' && result && (
+                <div className={s.importResult}>
+                    <div className={s.importResultHeader}>
+                        <div className={s.importResultBadge}>
+                            <CheckIcon />
+                        </div>
+                        <div>
+                            <p className={s.importResultTitle}>Импорт завершён</p>
+                            <p className={s.importResultChat}>
+                                {result.chatTitle} · {result.format.toUpperCase()}
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Статистика — без нулевых дублей */}
+                    <div className={s.importResultStats}>
+                        <div className={s.importStatCard}>
+                            <span className={s.importStatValue}>{result.totalMessages.toLocaleString('ru')}</span>
+                            <span className={s.importStatLabel}>Сообщений обработано</span>
+                        </div>
+                        <div className={s.importStatCard}>
+                            <span className={s.importStatValue} style={{ color: result.matchedLeads > 0 ? '#10b981' : 'var(--c-ink)' }}>
+                                {result.matchedLeads}
+                            </span>
+                            <span className={s.importStatLabel}>Лидов найдено</span>
+                        </div>
+                        {result.skippedLeads > 0 && (
+                            <div className={s.importStatCard}>
+                                <span className={s.importStatValue} style={{ color: '#d97706' }}>
+                                    {result.skippedLeads}
+                                </span>
+                                <span className={s.importStatLabel}>Пропущено (дубли)</span>
+                            </div>
+                        )}
+                    </div>
+
+                    {result.matchedLeads === 0 && (
+                        <div className={s.importError} style={{ background: 'rgba(245,158,11,.06)', borderColor: 'rgba(245,158,11,.2)', color: '#d97706' }}>
+                            <AlertIcon />
+                            Лидов не найдено. Убедитесь, что ключевые слова настроены и встречаются в этом чате.
+                        </div>
+                    )}
+
+                    {/* Превью последних лидов */}
+                    {previewLeads.length > 0 && (
+                        <div className={s.importLeadPreview}>
+                            <p className={s.importLeadPreviewTitle}>Последние найденные лиды</p>
+                            <div className={s.importLeadPreviewList}>
+                                {previewLeads.map(lead => (
+                                    <div key={lead.id} className={s.importLeadCard}>
+                                        <div className={s.importLeadCardTop}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                                                <span className={s.importLeadChat}>{lead.chatTitle || lead.chatLink}</span>
+                                                {lead.matchedKeyword && (
+                                                    <span className={s.importLeadKeyword}>{lead.matchedKeyword}</span>
+                                                )}
+                                            </div>
+                                            <span className={s.importLeadDate}>{formatLeadDate(lead.foundAt)}</span>
+                                        </div>
+                                        <p className={s.importLeadText}>{lead.messageText}</p>
+                                        <div className={s.importLeadAuthor}>
+                                            <UserIcon />
+                                            <span>{lead.authorName || 'Аноним'}</span>
+                                            {lead.authorUsername && <span style={{ color: 'var(--c-ink-3)' }}>@{lead.authorUsername}</span>}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    <div className={s.importResultActions}>
+                        <button
+                            className={s.importBtnPrimary}
+                            onClick={() => navigate('/dashboard/leads')}
+                        >
+                            Посмотреть все лиды
+                            <ArrowRightIcon />
+                        </button>
+                        <button className={s.importBtnSecondary} onClick={reset}>
+                            Загрузить ещё файл
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function ChatsPage() {
     const { user, refreshUser } = useAuthContext()
@@ -334,6 +692,9 @@ export default function ChatsPage() {
     const [loadingKeywords,     setLoadingKeywords]     = useState(false)
     const [searchingByKeywords, setSearchingByKeywords] = useState(false)
 
+    // Import section collapsed state
+    const [importOpen, setImportOpen] = useState(false)
+
     // Trial bot
     const [trialBotLoading, setTrialBotLoading] = useState(false)
 
@@ -341,11 +702,10 @@ export default function ChatsPage() {
     const st    = user?.subscriptionStatus ?? null
     const hasAi = plan === 'START' || plan === 'BUSINESS' || st === 'TRIAL'
 
-    // Открыть бота для получения trial-периода
     const handleTrialBotOpen = async () => {
         setTrialBotLoading(true)
         try {
-            const res = await authApi.getTelegramLink()
+            const res  = await authApi.getTelegramLink()
             const link = `https://t.me/${res.botUsername}?start=${res.linkToken}`
             window.open(link, '_blank', 'noopener,noreferrer')
             setTimeout(() => refreshUser(), 5000)
@@ -445,8 +805,7 @@ export default function ChatsPage() {
         } finally { setSearching(false) }
     }
 
-    const handleSearch = async () => { await runSearch(searchQuery.trim(), peerType) }
-
+    const handleSearch           = async () => { await runSearch(searchQuery.trim(), peerType) }
     const handleSearchByKeywords = async () => {
         if (userKeywords.length === 0) return
         setSearchingByKeywords(true)
@@ -486,11 +845,6 @@ export default function ChatsPage() {
     const visibleResults = searchResults?.filter(r => !dismissedLinks.has(r.link)) ?? []
     const pendingCount   = visibleResults.filter(r => !addedLinks.has(r.link)).length
     const canToggle      = searchResults !== null && searchResults.length > 0
-
-    const formatDate = (iso: string) => {
-        try { return new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' }) }
-        catch { return '' }
-    }
 
     return (
         <div className={s.page}>
@@ -787,7 +1141,7 @@ export default function ChatsPage() {
                                                 {c.chatLink}
                                             </a>
                                             {c.createdAt && (
-                                                <span className={s.cardDate}>добавлен {formatDate(c.createdAt)}</span>
+                                                <span className={s.cardDate}>добавлен {formatChatDate(c.createdAt)}</span>
                                             )}
                                         </div>
                                     </div>
@@ -801,6 +1155,28 @@ export default function ChatsPage() {
                     })}
                 </div>
             )}
+
+            {/* ─── Ручной импорт из закрытого чата (скрыт по умолчанию) ── */}
+            <div className={s.importToggleWrap}>
+                <button
+                    className={s.importToggleBtn}
+                    onClick={() => setImportOpen(v => !v)}
+                    aria-expanded={importOpen}
+                >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div className={s.importToggleIcon}><UploadIcon /></div>
+                        <div style={{ textAlign: 'left' }}>
+                            <p className={s.importToggleTitle}>Импорт из закрытого чата</p>
+                            <p className={s.importToggleSub}>
+                                Чат платный или без публичной ссылки? Загрузите экспорт вручную
+                            </p>
+                        </div>
+                    </div>
+                    <ChevronIcon open={importOpen} />
+                </button>
+
+                {importOpen && <ImportSection />}
+            </div>
         </div>
     )
 }

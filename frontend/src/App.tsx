@@ -23,7 +23,6 @@ import DashboardOverview from './dashboard/DashboardOverview'
 import LeadsPage         from './dashboard/LeadsPage.tsx'
 import ChatsPage         from './dashboard/ChatsPage'
 import KeywordsPage      from './dashboard/KeywordsPage.tsx'
-import ImportPage        from './dashboard/ImportPage'
 import ProfilePage       from './dashboard/ProfilePage'
 import ProtectedRoute    from './components/ProtectedRoute.tsx'
 import AdminRoute        from './components/AdminRoute.tsx'
@@ -75,7 +74,8 @@ export default function App() {
                             <Route path="leads"    element={<LeadsPage />} />
                             <Route path="chats"    element={<ChatsPage />} />
                             <Route path="keywords" element={<KeywordsPage />} />
-                            <Route path="import"   element={<ImportPage />} />
+                            {}
+                            <Route path="import"   element={<ChatsPage />} />
                             <Route path="profile"  element={<ProfilePage lang={lang} />} />
                         </Route>
                     </Route>

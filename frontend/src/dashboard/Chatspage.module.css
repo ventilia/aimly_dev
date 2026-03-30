@@ -819,7 +819,8 @@
 .searchToggleBtn:hover .searchTitle {
     color: var(--c-accent);
 }
-/* ─── Language segment (добавить в конец Chatspage.module.css) ──────────────── */
+
+/* ─── Language segment ───────────────────────────────────── */
 
 .langSegment {
     display: inline-flex;
@@ -877,3 +878,606 @@
 }
 
 @keyframes spin { to { transform: rotate(360deg) } }
+
+
+/* ═══════════════════════════════════════════════════════════
+   ─── Блок ручного импорта (встроен в ChatsPage) ──────────
+   ═══════════════════════════════════════════════════════════ */
+
+/* Кнопка-разворачивалка */
+.importToggleWrap {
+    border: 1.5px solid var(--c-border);
+    border-radius: 14px;
+    overflow: hidden;
+    transition: border-color .15s;
+}
+
+.importToggleWrap:has(.importSection) {
+    border-color: rgba(92, 57, 223, .25);
+}
+
+.importToggleBtn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    width: 100%;
+    padding: 16px 18px;
+    background: var(--c-surface);
+    border: none;
+    cursor: pointer;
+    font-family: var(--font-body);
+    text-align: left;
+    color: inherit;
+    transition: background .15s;
+}
+
+.importToggleBtn:hover {
+    background: var(--c-bg);
+}
+
+.importToggleIcon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: var(--c-accent-soft);
+    border: 1px solid rgba(92, 57, 223, .12);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--c-accent);
+    flex-shrink: 0;
+}
+
+.importToggleTitle {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--c-ink);
+    margin: 0 0 2px;
+}
+
+.importToggleSub {
+    font-size: 12px;
+    color: var(--c-ink-3);
+    margin: 0;
+    line-height: 1.4;
+}
+
+/* Развёрнутый блок импорта */
+.importSection {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 0 18px 20px;
+    background: var(--c-bg);
+    border-top: 1px solid var(--c-border);
+}
+
+/* Заголовок внутри секции */
+.importHeader {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding-top: 20px;
+}
+
+.importHeaderLeft {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+}
+
+.importHeaderIcon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: var(--c-accent-soft);
+    color: var(--c-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.importHeaderTitle {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--c-ink);
+    margin: 0 0 2px;
+}
+
+.importHeaderSub {
+    font-size: 12.5px;
+    color: var(--c-ink-3);
+    margin: 0;
+}
+
+/* Объяснение */
+.importExplainer {
+    background: var(--c-surface);
+    border: 1.5px solid var(--c-border);
+    border-radius: 12px;
+    padding: 16px 18px;
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+}
+
+.importExplainerIcon {
+    width: 36px;
+    height: 36px;
+    border-radius: 9px;
+    background: var(--c-accent-soft);
+    color: var(--c-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
+.importExplainerBody {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+}
+
+.importExplainerTitle {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--c-ink);
+    margin: 0;
+}
+
+.importExplainerText {
+    font-size: 12.5px;
+    color: var(--c-ink-2);
+    margin: 0;
+    line-height: 1.65;
+}
+
+/* Шаги */
+.importSteps {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    background: var(--c-surface);
+    border: 1.5px solid var(--c-border);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.importStep {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--c-border);
+}
+
+.importStep:last-child {
+    border-bottom: none;
+}
+
+.importStepNum {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--c-accent-soft);
+    color: var(--c-accent);
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
+.importStepText {
+    font-size: 12.5px;
+    color: var(--c-ink-2);
+    line-height: 1.6;
+}
+
+.importStepText strong {
+    color: var(--c-ink);
+    font-weight: 600;
+}
+
+/* Зона загрузки */
+.importUploadCard {
+    background: var(--c-surface);
+    border: 1.5px solid var(--c-border);
+    border-radius: 12px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.importDropzone {
+    border: 2px dashed var(--c-border);
+    border-radius: 10px;
+    padding: 28px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    transition: border-color .2s, background .2s;
+    text-align: center;
+    background: var(--c-bg);
+    outline: none;
+}
+
+.importDropzone:hover,
+.importDropzoneActive {
+    border-color: var(--c-accent);
+    background: var(--c-accent-soft);
+}
+
+.importDropzoneIcon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: var(--c-surface);
+    border: 1.5px solid var(--c-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--c-ink-3);
+    transition: color .2s, border-color .2s;
+}
+
+.importDropzone:hover .importDropzoneIcon,
+.importDropzoneActive .importDropzoneIcon {
+    color: var(--c-accent);
+    border-color: var(--c-accent);
+}
+
+.importDropzoneLabel {
+    font-size: 13px;
+    color: var(--c-ink-2);
+    font-weight: 500;
+}
+
+.importDropzoneSub {
+    font-size: 11.5px;
+    color: var(--c-ink-3);
+}
+
+/* Файл выбран */
+.importFilePreview {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--c-bg);
+    border: 1.5px solid var(--c-border);
+    border-radius: 9px;
+}
+
+.importFileIcon {
+    width: 32px;
+    height: 32px;
+    border-radius: 7px;
+    background: var(--c-accent-soft);
+    color: var(--c-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.importFileInfo {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.importFileName {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--c-ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.importFileSize {
+    font-size: 11px;
+    color: var(--c-ink-3);
+}
+
+.importFileClear {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--c-ink-3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    border-radius: 6px;
+    transition: color .15s, background .15s;
+    flex-shrink: 0;
+}
+
+.importFileClear:hover {
+    color: #dc2626;
+    background: rgba(239, 68, 68, .08);
+}
+
+/* Кнопка отправки */
+.importSubmitBtn {
+    padding: 10px 20px;
+    border-radius: 9px;
+    border: none;
+    background: var(--c-accent);
+    color: #fff;
+    font-size: 13.5px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: var(--font-body);
+    transition: opacity .15s;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    align-self: flex-start;
+}
+
+.importSubmitBtn:hover:not(:disabled) { opacity: .85; }
+.importSubmitBtn:disabled { opacity: .45; cursor: default; }
+
+/* Прогресс */
+.importProgress {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 24px 0;
+}
+
+.importSpinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--c-border);
+    border-top-color: var(--c-accent);
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+}
+
+.importProgressText {
+    font-size: 13px;
+    color: var(--c-ink-2);
+}
+
+/* Ошибка */
+.importError {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    background: rgba(239, 68, 68, .06);
+    border: 1px solid rgba(239, 68, 68, .2);
+    border-radius: 9px;
+    padding: 11px 14px;
+    color: #dc2626;
+    font-size: 12.5px;
+    line-height: 1.5;
+}
+
+/* Результат */
+.importResult {
+    background: var(--c-surface);
+    border: 1.5px solid var(--c-border);
+    border-radius: 12px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.importResultHeader {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.importResultBadge {
+    width: 36px;
+    height: 36px;
+    border-radius: 9px;
+    background: rgba(16, 185, 129, .1);
+    color: #10b981;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.importResultTitle {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--c-ink);
+    margin: 0;
+}
+
+.importResultChat {
+    font-size: 12px;
+    color: var(--c-ink-3);
+    margin: 2px 0 0;
+}
+
+/* Статы */
+.importResultStats {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.importStatCard {
+    background: var(--c-bg);
+    border: 1.5px solid var(--c-border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 100px;
+}
+
+.importStatValue {
+    font-family: var(--font-head);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--c-ink);
+    line-height: 1;
+}
+
+.importStatLabel {
+    font-size: 11.5px;
+    color: var(--c-ink-3);
+}
+
+/* Превью лидов */
+.importLeadPreview {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.importLeadPreviewTitle {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: var(--c-ink-3);
+    margin: 0;
+}
+
+.importLeadPreviewList {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.importLeadCard {
+    background: var(--c-bg);
+    border: 1.5px solid var(--c-border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: border-color .15s;
+}
+
+.importLeadCard:hover {
+    border-color: rgba(92, 57, 223, .2);
+}
+
+.importLeadCardTop {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.importLeadChat {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--c-accent);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.importLeadKeyword {
+    font-size: 10.5px;
+    padding: 2px 7px;
+    border-radius: 100px;
+    background: var(--c-accent-soft);
+    color: var(--c-accent);
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.importLeadDate {
+    font-size: 11px;
+    color: var(--c-ink-3);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.importLeadText {
+    font-size: 13px;
+    color: var(--c-ink);
+    line-height: 1.55;
+    margin: 0;
+    word-break: break-word;
+    white-space: pre-wrap;
+    /* Ограничиваем превью двумя строками */
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.importLeadAuthor {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    color: var(--c-ink-3);
+}
+
+/* Кнопки действий результата */
+.importResultActions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.importBtnPrimary {
+    padding: 9px 18px;
+    border-radius: 9px;
+    border: none;
+    background: var(--c-accent);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: var(--font-body);
+    transition: opacity .15s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.importBtnPrimary:hover { opacity: .85; }
+
+.importBtnSecondary {
+    padding: 9px 18px;
+    border-radius: 9px;
+    border: 1.5px solid var(--c-border);
+    background: none;
+    color: var(--c-ink-2);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--font-body);
+    transition: all .15s;
+}
+
+.importBtnSecondary:hover {
+    border-color: var(--c-accent);
+    color: var(--c-accent);
+}

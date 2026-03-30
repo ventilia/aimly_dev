@@ -31,6 +31,42 @@ function dispatchLeadsCountChanged(newCount: number) {
     )
 }
 
+// ─── Умное форматирование даты ────────────────────────────────────────────────
+// • Сегодня    → «сегодня, 14:32»
+// • Вчера      → «вчера, 09:15»
+// • Текущий год → «15 марта, 09:15»
+// • Другой год  → «15 мар 2023, 09:15»
+function formatLeadDate(iso: string): string {
+    try {
+        const d   = new Date(iso)
+        if (isNaN(d.getTime())) return ''
+        const now = new Date()
+
+        const startOfToday     = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+        const startOfYesterday = new Date(startOfToday.getTime() - 86_400_000)
+
+        const time = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+
+        if (d >= startOfToday) {
+            return `сегодня, ${time}`
+        }
+        if (d >= startOfYesterday) {
+            return `вчера, ${time}`
+        }
+
+        const sameYear = d.getFullYear() === now.getFullYear()
+        if (sameYear) {
+            const datePart = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+            return `${datePart}, ${time}`
+        }
+
+        const datePart = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })
+        return `${datePart}, ${time}`
+    } catch {
+        return ''
+    }
+}
+
 const IconUser = () => (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
@@ -342,10 +378,7 @@ export default function LeadsPage() {
                                             <div>
                                                 <span className={s.leadChat}>{lead.chatTitle || lead.chatLink}</span>
                                                 <span className={s.leadDate} style={{ marginLeft: 8 }}>
-                                                    {new Date(lead.foundAt).toLocaleString('ru-RU', {
-                                                        day: 'numeric', month: 'short',
-                                                        hour: '2-digit', minute: '2-digit',
-                                                    })}
+                                                    {formatLeadDate(lead.foundAt)}
                                                 </span>
                                             </div>
                                             {lead.matchedKeyword && (
