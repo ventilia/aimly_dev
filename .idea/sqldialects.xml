@@ -28,6 +28,7 @@
     <file url="file://$PROJECT_DIR$/backend/src/main/resources/db/migration/V16__add_user_ai_columns.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/backend/src/main/resources/db/migration/V17__add_user_ai_columns.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/backend/src/main/resources/db/migration/V1__create_users.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/backend/src/main/resources/db/migration/V26__add_last_chat_search_to_users.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/backend/src/main/resources/db/migration/V2__create_email_verifications.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/backend/src/main/resources/db/migration/V3__create_rate_limits.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/backend/src/main/resources/db/migration/V4__fix_email_verifications.sql" dialect="GenericSQL" />

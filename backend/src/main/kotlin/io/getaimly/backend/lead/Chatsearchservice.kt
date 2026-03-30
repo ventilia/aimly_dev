@@ -26,6 +26,8 @@ data class ChatSearchResult(
 data class ChatSearchResponse(
     val results: List<ChatSearchResult>,
     val queries: List<String>,
+    /** null = запрос валиден, иначе — текст ошибки для пользователя */
+    val queryError: String? = null,
 )
 
 
@@ -40,6 +42,8 @@ class ChatSearchService(
 
     private val MIN_MEMBERS = 200
 
+    // ─── Сигналы тематик для закреплённых чатов ──────────────────────────────────
+
     private val DESIGN_SIGNALS = setOf(
         "дизайн", "design", "ui", "ux", "graphic", "график", "иллюстр",
         "брендинг", "figma", "photoshop", "illustrator", "sketch", "motion", "моушн",
@@ -51,6 +55,80 @@ class ChatSearchService(
         "съёмк", "оператор", "продакшн", "production", "стилист", "визаж", "флорист",
     )
 
+    private val FREELANCE_SIGNALS = setOf(
+        "фриланс", "freelance", "удалённ", "remote", "заказ", "проект",
+        "исполнитель", "подрядчик",
+    )
+
+    private val INFOBIZ_SIGNALS = setOf(
+        "инфобиз", "онлайн-школ", "курс", "обучени", "эксперт", "вакансии",
+        "коуч", "наставник", "трафик", "воронк", "запуск",
+    )
+
+    private val BIZNES_SIGNALS = setOf(
+        "бизнес", "business", "предпринимател", "стартап", "startup",
+        "маркетинг", "продажи", "клиент", "продвижени",
+    )
+
+    // ─── Закреплённые чаты (приоритетные, проверенные пользователями) ─────────────
+
+    /** Чаты, которые нужно показывать ЧАЩЕ остальных при совпадении профиля пользователя */
+    private val PRIORITY_CHATS = listOf(
+        PriorityChat(
+            result = ChatSearchResult(
+                title = "НАСТОЯЩИЙ ФРИЛАНС ЧАТ №1",
+                username = "@proffreelancee_chat",
+                description = "Фриланс, заказы, удалёнка — главный фриланс-чат",
+                participantsCount = 0, link = "https://t.me/proffreelancee_chat",
+                tgstatLink = null, peerType = "chat",
+            ),
+            signals = FREELANCE_SIGNALS + DESIGN_SIGNALS + setOf("smm", "таргет", "разработк", "копирайт"),
+        ),
+        PriorityChat(
+            result = ChatSearchResult(
+                title = "ФРИЛАНС ЧАТ | ВАКАНСИИ | УДАЛЁНКА",
+                username = "@chatfreelans",
+                description = "Фриланс чат, вакансии, удалённая работа",
+                participantsCount = 0, link = "https://t.me/chatfreelans",
+                tgstatLink = null, peerType = "chat",
+            ),
+            signals = FREELANCE_SIGNALS + setOf("вакансии", "работа", "удалённ"),
+        ),
+        PriorityChat(
+            result = ChatSearchResult(
+                title = "Жирный фриланс",
+                username = "@jir_chat",
+                description = "Фриланс чат для профессионалов",
+                participantsCount = 0, link = "https://t.me/jir_chat",
+                tgstatLink = null, peerType = "chat",
+            ),
+            signals = FREELANCE_SIGNALS + DESIGN_SIGNALS + setOf("разработк", "smm"),
+        ),
+        PriorityChat(
+            result = ChatSearchResult(
+                title = "№1 БИЗНЕС ЧАТ | Бесплатный бизнес клуб",
+                username = "@top1_biznes",
+                description = "Бизнес чат, предпринимательство, нетворкинг",
+                participantsCount = 0, link = "https://t.me/top1_biznes",
+                tgstatLink = null, peerType = "chat",
+            ),
+            signals = BIZNES_SIGNALS,
+        ),
+        PriorityChat(
+            result = ChatSearchResult(
+                title = "Мари про вакансии — инфобизнес",
+                username = "@mari_vakansii",
+                description = "Вакансии и заказы в инфобизнесе, онлайн-школах",
+                participantsCount = 0, link = "https://t.me/mari_vakansii",
+                tgstatLink = null, peerType = "chat",
+            ),
+            signals = INFOBIZ_SIGNALS + setOf("smm", "таргет", "трафик", "маркетинг"),
+            // Этот чат рекомендуем чаще остальных
+            boostScore = 2,
+        ),
+    )
+
+    // Закреплённые чаты по тематикам (старая логика, оставляем)
     private val FIXED_DESIGN_CHAT = ChatSearchResult(
         title = "Designgang Chat", username = "@desgangchat",
         description = "Чат для дизайнеров — обсуждение работ, вакансии и заказы",
@@ -63,16 +141,32 @@ class ChatSearchService(
         participantsCount = 0, link = "https://t.me/mskeventjob", tgstatLink = null, peerType = "chat",
     )
 
-    private fun isDesignRelated(input: String)   = DESIGN_SIGNALS.any { input.lowercase().contains(it) }
-    private fun isCreativeRelated(input: String) = CREATIVE_SIGNALS.any { input.lowercase().contains(it) }
+    private fun isDesignRelated(input: String)    = DESIGN_SIGNALS.any { input.lowercase().contains(it) }
+    private fun isCreativeRelated(input: String)  = CREATIVE_SIGNALS.any { input.lowercase().contains(it) }
 
-    private val SECONDARY_COUNTRIES = listOf("ua", "by", "kz")
+    private fun matchesPriorityChat(input: String, chat: PriorityChat): Boolean {
+        val lower = input.lowercase()
+        return chat.signals.any { lower.contains(it) }
+    }
+
+    // Страны вторичного поиска — Украину исключаем, оставляем Беларусь и Казахстан
+    // Повышаем порог для включения вторичного поиска (было < 8, стало < 6)
+    private val SECONDARY_COUNTRIES = listOf("by", "kz")
+
+    // ─── Публичный метод поиска ───────────────────────────────────────────────────
 
     fun search(inputText: String, peerType: String? = null): ChatSearchResponse {
         val effectivePeerType = when (peerType?.lowercase()?.trim()) {
             "channel" -> "channel"
             "chat"    -> "chat"
             else      -> "all"
+        }
+
+        // Валидируем запрос ДО поиска
+        val queryError = aiService.validateSearchQuery(inputText)
+        if (queryError != null) {
+            log.info("ChatSearch: запрос '${inputText.take(60)}' отклонён как некорректный: $queryError")
+            return ChatSearchResponse(results = emptyList(), queries = emptyList(), queryError = queryError)
         }
 
         val seen    = mutableSetOf<String>()
@@ -86,12 +180,10 @@ class ChatSearchService(
             displayQueries = (chatQueries + channelQueries).distinct()
             log.info("TGStat поиск [all]: chatQ=$chatQueries channelQ=$channelQueries")
 
-
             val chatSeen    = mutableSetOf<String>()
             val channelSeen = mutableSetOf<String>()
             val chatBuf     = mutableListOf<ChatSearchResult>()
             val channelBuf  = mutableListOf<ChatSearchResult>()
-
 
             for (query in chatQueries) {
                 if (chatBuf.size >= 10) break
@@ -103,7 +195,6 @@ class ChatSearchService(
                 log.info("TGStat [all/chat] '$query' (ru): ${found.size}, буфер групп: ${chatBuf.size}")
             }
 
-
             for (query in channelQueries) {
                 if (channelBuf.size >= 10) break
                 val found = searchTgstat(query, limit = 50, peerType = "channel", country = "ru")
@@ -114,9 +205,9 @@ class ChatSearchService(
                 log.info("TGStat [all/channel] '$query' (ru): ${found.size}, буфер каналов: ${channelBuf.size}")
             }
 
-
+            // Повышен порог — подключаем другие страны только если совсем мало
             if (chatBuf.size < 4 || channelBuf.size < 4) {
-                log.info("TGStat [all]: мало результатов (чаты=${chatBuf.size}, каналы=${channelBuf.size}), расширяем на другие страны")
+                log.info("TGStat [all]: мало результатов (чаты=${chatBuf.size}, каналы=${channelBuf.size}), расширяем на by/kz")
                 for (country in SECONDARY_COUNTRIES) {
                     if (chatBuf.size < 6) {
                         for (query in chatQueries.take(3)) {
@@ -135,7 +226,6 @@ class ChatSearchService(
                 log.info("TGStat [all] после расширения: чаты=${chatBuf.size}, каналы=${channelBuf.size}")
             }
 
-
             if (chatBuf.size < 3) {
                 for (query in chatQueries.take(3)) {
                     if (chatBuf.size >= 6) break
@@ -150,7 +240,6 @@ class ChatSearchService(
                         .forEach { r -> r.username?.lowercase()?.let { if (channelSeen.add(it)) channelBuf.add(r) } }
                 }
             }
-
 
             val chatTake    = chatBuf.take(8)
             val channelTake = channelBuf.take(8)
@@ -170,7 +259,6 @@ class ChatSearchService(
             log.info("TGStat [all] после перемешивания: ${results.size} (групп=${chatTake.size}, каналов=${channelTake.size})")
 
         } else {
-            // Оригинальная логика для chat/channel режима
             val queries = aiService.generateTgstatQueries(inputText, effectivePeerType)
             displayQueries = queries
             log.info("TGStat поиск: запросы=$queries peerType=$effectivePeerType")
@@ -185,8 +273,9 @@ class ChatSearchService(
                 log.info("TGStat '$query' (ru): нашли ${found.size}, итого уникальных: ${results.size}")
             }
 
-            if (results.size < 8) {
-                log.info("TGStat: мало результатов (${results.size}), расширяем на другие страны")
+            // Повышен порог для вторичных стран (было < 8, стало < 6)
+            if (results.size < 6) {
+                log.info("TGStat: мало результатов (${results.size}), расширяем на by/kz")
                 for (country in SECONDARY_COUNTRIES) {
                     for (query in queries.take(4)) {
                         if (results.size >= 15) break
@@ -198,7 +287,7 @@ class ChatSearchService(
                     }
                     if (results.size >= 15) break
                 }
-                log.info("TGStat после расширения на другие страны: ${results.size}")
+                log.info("TGStat после расширения на by/kz: ${results.size}")
             }
 
             if (results.size < 5) {
@@ -215,13 +304,35 @@ class ChatSearchService(
             }
         }
 
-        // Добавляем закреплённые чаты для профильных тематик
+        // ─── Добавляем закреплённые тематические чаты ────────────────────────────
         if (effectivePeerType != "channel") {
             if (isDesignRelated(inputText) && results.none { it.link.contains("desgangchat") }) {
                 results.add(FIXED_DESIGN_CHAT); seen.add("desgangchat")
             }
             if (isCreativeRelated(inputText) && results.none { it.link.contains("mskeventjob") }) {
                 results.add(FIXED_EVENT_CHAT); seen.add("mskeventjob")
+            }
+        }
+
+        // ─── Добавляем приоритетные чаты (проверенные пользователями) ─────────────
+        // Приоритетные чаты добавляем в начало если подходят по тематике
+        if (effectivePeerType != "channel") {
+            val priorityToAdd = PRIORITY_CHATS
+                .filter { pc ->
+                    matchesPriorityChat(inputText, pc) &&
+                            results.none { r -> r.username?.lowercase() == pc.result.username?.lowercase()?.trimStart('@') ||
+                                    r.link == pc.result.link }
+                }
+                .sortedByDescending { it.boostScore }
+
+            if (priorityToAdd.isNotEmpty()) {
+                log.info("TGStat: добавляем ${priorityToAdd.size} приоритетных чатов для запроса '${inputText.take(40)}'")
+                // Вставляем приоритетные чаты на первые позиции
+                val priorityResults = priorityToAdd.map { it.result }
+                results.addAll(0, priorityResults)
+                priorityResults.forEach { r ->
+                    r.username?.lowercase()?.trimStart('@')?.let { seen.add(it) }
+                }
             }
         }
 
@@ -266,16 +377,19 @@ REMOVE если хотя бы одно:
 - тема кардинально не совпадает с запросом (например запрос "программирование", а чат про спорт/финансы/крипту/ставки)
 - эротика, 18+, казино, ставки, gambling
 - крипто-скам, NFT, инвестиционные пирамиды
-- чат явно на иностранном языке и не по теме запроса
+- чат явно на украинском или другом иностранном языке и не по теме запроса
 - общий "болталка" чат без профессиональной тематики
 - чат по рекламе/спаму (catalog of chats, order advertising)
+- политика, религия, новости не по теме
 
 KEEP если:
 - чат по теме запроса или смежной теме
 - профессиональное сообщество, биржа заказов, фриланс-чат
 - обучение и обсуждение темы запроса
+- общие фриланс/бизнес чаты (даже если не строго по теме — там тоже бывают лиды)
 
-Будь строгим — лучше убрать нерелевантный чат, чем оставить шум.
+Будь УМЕРЕННО строгим — удаляй явно нерелевантные чаты, но не перестарайся.
+Фриланс-чаты и бизнес-чаты общего профиля — оставляй.
 
 JSON без пояснений: {"keep": [1,2,3], "remove": [4]}
 """.trimIndent()
@@ -394,6 +508,13 @@ JSON без пояснений: {"keep": [1,2,3], "remove": [4]}
                     return@mapNotNull null
                 }
 
+                // Фильтруем украинские чаты на уровне language
+                val lang = item.language?.lowercase()?.trim()
+                if (lang == "uk") {
+                    log.debug("TGStat: пропускаем украиноязычный чат '${item.title}'")
+                    return@mapNotNull null
+                }
+
                 val resolvedPeerType = item.peerType?.lowercase()?.trim() ?: "chat"
                 val tgstatLink = "https://tgstat.ru/${if (resolvedPeerType == "chat") "chat" else "channel"}/$usernameSlug"
 
@@ -420,6 +541,15 @@ JSON без пояснений: {"keep": [1,2,3], "remove": [4]}
         }
     }
 }
+
+// ─── Вспомогательный класс для приоритетных чатов ────────────────────────────
+
+data class PriorityChat(
+    val result: ChatSearchResult,
+    val signals: Set<String>,
+    /** Чем выше, тем ближе к началу при сортировке приоритетных (default 1) */
+    val boostScore: Int = 1,
+)
 
 
 @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)

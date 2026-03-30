@@ -4,13 +4,12 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="a461964d-f6a3-4e0b-a3fa-4fab913d5a3e" name="Changes" comment="админ панель лиды (dev)">
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/admin/Admincontroller.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/admin/Admincontroller.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/TgstatSearchController.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/TgstatSearchController.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/user/User.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/user/User.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/api/auth.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/api/auth.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/pages/AdminPanel.module.css" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/pages/AdminPanel.module.css" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/pages/AdminPanel.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/pages/AdminPanel.tsx" afterDir="false" />
+    <list default="true" id="a461964d-f6a3-4e0b-a3fa-4fab913d5a3e" name="Changes" comment="регистрация исправлена(dev)">
+      <change beforePath="$PROJECT_DIR$/.idea/sqldialects.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/sqldialects.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/ai/Aiservice.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/ai/Aiservice.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/Botchatsearchhandler.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/Botchatsearchhandler.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/Chatsearchservice.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/Chatsearchservice.kt" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -61,7 +60,7 @@
     &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
     &quot;javascript.preferred.runtime.type.id&quot;: &quot;node&quot;,
     &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/GAMER/aimly_dev&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/GAMER/aimly_dev/backend/src/main/resources/db/migration&quot;,
     &quot;list.type.of.created.stylesheet&quot;: &quot;CSS&quot;,
     &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
     &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
@@ -76,11 +75,11 @@
 }</component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\GAMER\aimly_dev\backend\src\main\resources\db\migration" />
       <recent name="C:\Users\GAMER\aimly_dev\userbot" />
       <recent name="C:\Users\GAMER\aimly_dev\frontend" />
       <recent name="C:\Users\GAMER\aimly_dev\backend" />
       <recent name="C:\Users\GAMER\aimly_dev" />
-      <recent name="C:\Users\GAMER\aimly\frontend\public" />
     </key>
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\GAMER\aimly\frontend\src\dashboard" />
@@ -147,15 +146,8 @@
       <workItem from="1774457194471" duration="311000" />
       <workItem from="1774531551706" duration="1547000" />
       <workItem from="1774561409222" duration="2841000" />
-      <workItem from="1774713234869" duration="6917000" />
-    </task>
-    <task id="LOCAL-00001" summary="Fix version">
-      <option name="closed" value="true" />
-      <created>1772111444551</created>
-      <option name="number" value="00001" />
-      <option name="presentableId" value="LOCAL-00001" />
-      <option name="project" value="LOCAL" />
-      <updated>1772111444551</updated>
+      <workItem from="1774713234869" duration="9099000" />
+      <workItem from="1774883083718" duration="1210000" />
     </task>
     <task id="LOCAL-00002" summary=".env">
       <option name="closed" value="true" />
@@ -501,7 +493,55 @@
       <option name="project" value="LOCAL" />
       <updated>1774727172855</updated>
     </task>
-    <option name="localTasksCounter" value="45" />
+    <task id="LOCAL-00045" summary="админ панель лиды2 (dev)">
+      <option name="closed" value="true" />
+      <created>1774728770355</created>
+      <option name="number" value="00045" />
+      <option name="presentableId" value="LOCAL-00045" />
+      <option name="project" value="LOCAL" />
+      <updated>1774728770355</updated>
+    </task>
+    <task id="LOCAL-00046" summary="админ панель лиды2 (dev)">
+      <option name="closed" value="true" />
+      <created>1774729091113</created>
+      <option name="number" value="00046" />
+      <option name="presentableId" value="LOCAL-00046" />
+      <option name="project" value="LOCAL" />
+      <updated>1774729091113</updated>
+    </task>
+    <task id="LOCAL-00047" summary="админ панель лиды3 (dev)">
+      <option name="closed" value="true" />
+      <created>1774729416929</created>
+      <option name="number" value="00047" />
+      <option name="presentableId" value="LOCAL-00047" />
+      <option name="project" value="LOCAL" />
+      <updated>1774729416929</updated>
+    </task>
+    <task id="LOCAL-00048" summary="админ панель лиды4 (dev)">
+      <option name="closed" value="true" />
+      <created>1774729780441</created>
+      <option name="number" value="00048" />
+      <option name="presentableId" value="LOCAL-00048" />
+      <option name="project" value="LOCAL" />
+      <updated>1774729780441</updated>
+    </task>
+    <task id="LOCAL-00049" summary="админ панель лиды5 (dev)">
+      <option name="closed" value="true" />
+      <created>1774730196978</created>
+      <option name="number" value="00049" />
+      <option name="presentableId" value="LOCAL-00049" />
+      <option name="project" value="LOCAL" />
+      <updated>1774730196978</updated>
+    </task>
+    <task id="LOCAL-00050" summary="регистрация исправлена(dev)">
+      <option name="closed" value="true" />
+      <created>1774883096459</created>
+      <option name="number" value="00050" />
+      <option name="presentableId" value="LOCAL-00050" />
+      <option name="project" value="LOCAL" />
+      <updated>1774883096459</updated>
+    </task>
+    <option name="localTasksCounter" value="51" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -541,9 +581,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="Fix version" />
-    <MESSAGE value=".env" />
-    <MESSAGE value="Закончен блок с авторизацией. Реализован личный кабинет" />
     <MESSAGE value="GO init" />
     <MESSAGE value="Добавление полей в бд, добавление админ роли, админ панели (сырой), баланс, уведомление только для бота. перех на другой апи для почты" />
     <MESSAGE value="push. beta" />
@@ -564,6 +601,11 @@
     <MESSAGE value="забыли пароль, проверка на гугл, фикс рефералки1 (dev)" />
     <MESSAGE value="админпанель поменять (dev)" />
     <MESSAGE value="админ панель лиды (dev)" />
-    <option name="LAST_COMMIT_MESSAGE" value="админ панель лиды (dev)" />
+    <MESSAGE value="админ панель лиды2 (dev)" />
+    <MESSAGE value="админ панель лиды3 (dev)" />
+    <MESSAGE value="админ панель лиды4 (dev)" />
+    <MESSAGE value="админ панель лиды5 (dev)" />
+    <MESSAGE value="регистрация исправлена(dev)" />
+    <option name="LAST_COMMIT_MESSAGE" value="регистрация исправлена(dev)" />
   </component>
 </project>

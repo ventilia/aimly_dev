@@ -216,6 +216,27 @@ class BotChatSearchHandler(
 
                 val resp = chatSearchService.search(query, peerType)
 
+                // Обрабатываем ошибку валидации запроса
+                if (resp.queryError != null) {
+                    log.info("BotChatSearch: некорректный запрос chatId=$chatId query='${query.take(60)}' error=${resp.queryError}")
+                    sender.editText(
+                        chatId, loadingMsgId,
+                        "⚠️ Запрос не распознан\n\n" +
+                                "${resp.queryError}\n\n" +
+                                "Примеры хороших запросов:\n" +
+                                "• дизайн\n" +
+                                "• smm маркетинг\n" +
+                                "• разработка сайтов\n" +
+                                "• таргетолог",
+                        keyboard(
+                            row(btn("🔄 Попробовать снова", "csearch:manual")),
+                            row(btn("◀️ Назад к чатам",     "menu:chats")),
+                            row(btn("🏠 Главное меню",       "menu:back")),
+                        ),
+                    )
+                    return@submit
+                }
+
                 log.info("BotChatSearch: найдено ${resp.results.size} чатов chatId=$chatId")
 
                 if (resp.results.isEmpty()) {
