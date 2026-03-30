@@ -60,7 +60,7 @@
 }
 .closeBtn:hover { background: var(--c-bg); color: var(--c-ink); }
 
-/* Кнопка «Назад» в заголовке */
+
 .backBtn {
     width: 32px;
     height: 32px;
@@ -189,7 +189,7 @@
 }
 
 
-/* Строка «Забыли пароль?» под полем пароля */
+
 .forgotRow {
     display: flex;
     justify-content: flex-end;
@@ -210,7 +210,7 @@
 }
 .forgotLink:hover { color: var(--c-accent); }
 
-/* Подсказка на шаге запроса сброса */
+
 .forgotHintText {
     font-size: 14px;
     color: var(--c-ink-2);
@@ -338,12 +338,12 @@
 .successBtn { width: 100%; justify-content: center; margin-top: 8px; }
 
 
-/* ─── Мобильные правки: bottom-sheet паттерн ─── */
+
 @media (max-width: 520px) {
     .overlay {
         align-items: flex-end;
         padding: 0;
-        /* Позволяем скроллить если контент не помещается */
+
         overflow-y: auto;
     }
 
@@ -351,7 +351,7 @@
         border-radius: 20px 20px 0 0;
         max-height: 95dvh;
         overflow-y: auto;
-        /* Анимация снизу */
+
         animation: slideUpMobile .22s ease;
     }
 

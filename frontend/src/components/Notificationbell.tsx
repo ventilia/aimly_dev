@@ -22,6 +22,7 @@ export default function NotificationBell({ lang }: Props) {
             const res = await notificationsApi.getUnreadCount()
             setUnread(res.unread)
         } catch {
+            // ff
 
         }
     }
@@ -33,6 +34,7 @@ export default function NotificationBell({ lang }: Props) {
             setNotifications(data)
             setUnread(data.filter(n => !n.read).length)
         } catch {
+            // ff
 
         } finally {
             setLoading(false)

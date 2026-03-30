@@ -1,4 +1,3 @@
-/// --- FILE: C:\Users\vent\aimly_dev\frontend\src\components\AuthModal.tsx --- ///
 import {useState, useEffect, useRef, useMemo} from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Lang } from '../i18n/translations'
@@ -6,7 +5,7 @@ import { authApi } from '../api/auth'
 import { useAuthContext } from '../context/AuthContext'
 import s from './AuthModal.module.css'
 
-// ─── SVG Icons ────────────────────────────────────────────────────────────────
+
 function EyeIcon() {
     return (
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
@@ -58,7 +57,7 @@ function GoogleIcon() {
     )
 }
 
-// ─── Google OAuth URL builder ─────────────────────────────────────────────────
+
 function buildGoogleOAuthUrl(): string {
     const clientId   = import.meta.env.VITE_GOOGLE_CLIENT_ID as string
     const origin     = window.location.origin
@@ -74,13 +73,10 @@ function buildGoogleOAuthUrl(): string {
     return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
 }
 
-// ─── Реферальный код: хелперы ─────────────────────────────────────────────────
+
 const REF_STORAGE_KEY = 'aimly_ref_code'
 
-/**
- * Читаем ?ref= из URL и сохраняем в sessionStorage.
- * Возвращает код, если найден.
- */
+
 function captureRefCode(): string | undefined {
     const params = new URLSearchParams(window.location.search)
     const fromUrl = params.get('ref') || undefined
@@ -90,14 +86,12 @@ function captureRefCode(): string | undefined {
     }
     return sessionStorage.getItem(REF_STORAGE_KEY) || undefined
 }
-/**
- * Очищает сохранённый реферальный код.
- */
+
 function clearStoredRefCode(): void {
     sessionStorage.removeItem(REF_STORAGE_KEY)
 }
 
-// ─── Локализация ──────────────────────────────────────────────────────────────
+
 const txt = {
     ru: {
         login:            'Войти',
@@ -129,22 +123,18 @@ const txt = {
         googleBtn:        'Войти через Google',
         unverifiedHint:   'Мы отправили новый код на ваш email. Подтвердите почту.',
         forgotPassword:   'Забыли пароль?',
-        // Шаг 1: запрос сброса
         forgotTitle:      'Восстановление пароля',
         forgotHint:       'Введите email от вашего аккаунта, и мы отправим код для сброса пароля.',
         forgotBtn:        'Отправить код',
         forgotSuccess:    'Код отправлен. Проверьте почту',
         forgotTgHint:     'Также отправили код в Telegram, если он привязан к аккаунту.',
-        // Шаг 2: ввод кода сброса
         resetCodeTitle:   'Введите код',
         resetCodeHint:    'Отправили код сброса пароля на',
         resetCodeNote:    'Также проверьте Telegram, если он привязан к аккаунту.',
-        // Шаг 3: новый пароль
         newPasswordTitle: 'Новый пароль',
         newPassword:      'Новый пароль',
         confirmNewPass:   'Подтвердите новый пароль',
         setPasswordBtn:   'Сохранить пароль',
-        // Успех
         resetSuccessTitle: 'Пароль изменён!',
         resetSuccessText:  'Вы вошли в аккаунт. Переходим…',
     },

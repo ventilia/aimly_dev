@@ -40,7 +40,6 @@ interface Props { lang: Lang }
 
 export default function UserMenu({ lang }: Props) {
     const l = txt[lang]
-    // token убран — он в httpOnly куке, недоступен на клиенте
     const { user, logout, refreshUser } = useAuthContext()
     const navigate = useNavigate()
     const [open, setOpen] = useState(false)
@@ -73,7 +72,6 @@ export default function UserMenu({ lang }: Props) {
         setTgLoading(true)
         setTgLink(null)
         try {
-            // токен в куке — не передаём вручную
             const res = await authApi.getTelegramLink()
             setTgLink(`https://t.me/${res.botUsername}?start=${res.linkToken}`)
         } catch (e: unknown) {
@@ -89,7 +87,6 @@ export default function UserMenu({ lang }: Props) {
             await navigator.clipboard.writeText(tgLink)
             setCopied(true)
             setTimeout(() => setCopied(false), 2000)
-            // через 5 сек проверяем — вдруг пользователь уже прошёл по ссылке
             setTimeout(() => refreshUser(), 5000)
         } catch {
             window.open(tgLink, '_blank')

@@ -474,7 +474,7 @@
 }
 
 
-/* ─── Ручное добавление ──────────────────────────────────── */
+
 
 .addBlock {
     background: var(--c-surface);
@@ -558,7 +558,7 @@
 }
 
 
-/* ─── Ошибки ─────────────────────────────────────────────── */
+
 
 .error {
     display: flex;
@@ -587,7 +587,7 @@
 .errorClose:hover { color: #dc2626; }
 
 
-/* ─── Скелетоны ──────────────────────────────────────────── */
+
 
 .skels {
     display: flex;
@@ -609,7 +609,7 @@
 }
 
 
-/* ─── Пустое состояние ───────────────────────────────────── */
+
 
 .empty {
     display: flex;
@@ -646,7 +646,7 @@
 }
 
 
-/* ─── Список чатов ───────────────────────────────────────── */
+
 
 .list {
     display: flex;
@@ -769,7 +769,7 @@
 .removeBtn:disabled { opacity: .5; cursor: default; }
 
 
-/* ─── Спиннеры ───────────────────────────────────────────── */
+
 
 .spinner {
     width: 14px;
@@ -820,7 +820,6 @@
     color: var(--c-accent);
 }
 
-/* ─── Language segment ───────────────────────────────────── */
 
 .langSegment {
     display: inline-flex;
@@ -880,11 +879,7 @@
 @keyframes spin { to { transform: rotate(360deg) } }
 
 
-/* ═══════════════════════════════════════════════════════════
-   ─── Блок ручного импорта (встроен в ChatsPage) ──────────
-   ═══════════════════════════════════════════════════════════ */
 
-/* Кнопка-разворачивалка */
 .importToggleWrap {
     border: 1.5px solid var(--c-border);
     border-radius: 14px;
@@ -994,7 +989,7 @@
     margin: 0;
 }
 
-/* Объяснение */
+
 .importExplainer {
     background: var(--c-surface);
     border: 1.5px solid var(--c-border);
@@ -1039,7 +1034,7 @@
     line-height: 1.65;
 }
 
-/* Шаги */
+
 .importSteps {
     display: flex;
     flex-direction: column;
@@ -1088,7 +1083,7 @@
     font-weight: 600;
 }
 
-/* Зона загрузки */
+
 .importUploadCard {
     background: var(--c-surface);
     border: 1.5px solid var(--c-border);
@@ -1150,7 +1145,7 @@
     color: var(--c-ink-3);
 }
 
-/* Файл выбран */
+
 .importFilePreview {
     display: flex;
     align-items: center;
@@ -1214,7 +1209,7 @@
     background: rgba(239, 68, 68, .08);
 }
 
-/* Кнопка отправки */
+
 .importSubmitBtn {
     padding: 10px 20px;
     border-radius: 9px;
@@ -1235,7 +1230,7 @@
 .importSubmitBtn:hover:not(:disabled) { opacity: .85; }
 .importSubmitBtn:disabled { opacity: .45; cursor: default; }
 
-/* Прогресс */
+
 .importProgress {
     display: flex;
     flex-direction: column;
@@ -1258,7 +1253,7 @@
     color: var(--c-ink-2);
 }
 
-/* Ошибка */
+
 .importError {
     display: flex;
     align-items: flex-start;
@@ -1272,7 +1267,7 @@
     line-height: 1.5;
 }
 
-/* Результат */
+
 .importResult {
     background: var(--c-surface);
     border: 1.5px solid var(--c-border);
@@ -1314,7 +1309,7 @@
     margin: 2px 0 0;
 }
 
-/* Статы */
+
 .importResultStats {
     display: flex;
     gap: 8px;
@@ -1345,7 +1340,7 @@
     color: var(--c-ink-3);
 }
 
-/* Превью лидов */
+
 .importLeadPreview {
     display: flex;
     flex-direction: column;
@@ -1424,7 +1419,6 @@
     margin: 0;
     word-break: break-word;
     white-space: pre-wrap;
-    /* Ограничиваем превью двумя строками */
     display: -webkit-box;
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;

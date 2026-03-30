@@ -138,44 +138,32 @@
 }
 .mobileLink:hover { color: var(--c-accent); }
 
-/* ═══ МОБИЛЬНЫЕ ПРАВКИ — только ≤860px, десктоп не трогаем ═══ */
+
 @media (max-width: 860px) {
-    /* Скрываем десктопную навигацию */
     .nav { display: none; }
-
-    /* Показываем бургер */
     .burger { display: flex; }
-
-    /* Убираем большой gap */
     .inner { gap: 8px; }
     .right  { gap: 6px; }
-
-    /* Скрываем всё лишнее из хедера */
     .langSwitch { display: none; }
     .adminChip  { display: none; }
     .bellBtn    { display: none; }
-
-    /* Кнопку «Войти» скрываем — она есть в мобильном меню */
     .right :global(.btn-ghost) { display: none; }
-
-    /* Кнопку «Регистрация» делаем компактнее */
     .right :global(.btn-primary) {
         padding: 8px 14px !important;
         font-size: 13px !important;
     }
 
-    /* Лого чуть меньше */
     .logo { font-size: 18px; gap: 8px; }
     .owl  { width: 32px; height: 32px; }
     .adminTag { display: none; }
 }
 
-/* На совсем узких экранах убираем и «Регистрацию» */
+
 @media (max-width: 380px) {
     .authRow { display: none; }
 }
 
-/* ═══ Остальные стили ═══ */
+
 .authRow {
     display: flex;
     align-items: center;

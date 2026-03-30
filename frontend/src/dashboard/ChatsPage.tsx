@@ -5,7 +5,7 @@ import { useAuthContext } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import s from './Chatspage.module.css'
 
-// ─── Icons ────────────────────────────────────────────────────────────────────
+
 function TgIcon() {
     return (
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
@@ -128,7 +128,7 @@ function UserIcon() {
     )
 }
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+
 type PeerTypeFilter = 'all' | 'chat' | 'channel'
 
 interface TgstatResult {
@@ -174,7 +174,7 @@ function clearSearchState() {
 
 import { saveChatSearchQueryForKeywords } from './chatSearchShared'
 
-// ─── API ──────────────────────────────────────────────────────────────────────
+
 const BASE: string = import.meta.env.VITE_API_URL || ''
 
 async function searchChatsApi(query: string, peerType: PeerTypeFilter): Promise<TgstatSearchResponse> {
@@ -191,7 +191,7 @@ async function searchChatsApi(query: string, peerType: PeerTypeFilter): Promise<
     return res.json() as Promise<TgstatSearchResponse>
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 function buildTelegramUrl(link: string): string {
     const raw = link.trim()
     if (raw.startsWith('https://t.me/') || raw.startsWith('http://t.me/')) return raw
@@ -212,13 +212,7 @@ function formatBytes(bytes: number): string {
     return `${(bytes / 1024 / 1024).toFixed(1)} МБ`
 }
 
-/**
- * Умное форматирование даты:
- * - Сегодня → «сегодня, 14:32»
- * - Вчера   → «вчера, 09:15»
- * - В этом году → «15 марта, 09:15»
- * - Другой год → «15 мар 2023, 09:15»
- */
+
 function formatLeadDate(iso: string): string {
     try {
         const d   = new Date(iso)
@@ -266,7 +260,7 @@ function formatChatDate(iso: string): string {
     }
 }
 
-// ─── Sub-components (AI search) ───────────────────────────────────────────────
+
 
 function StatusBadge({ active }: { active: boolean }) {
     return (
@@ -406,7 +400,7 @@ function PeerTypeSelector({ value, onChange, disabled }: {
     )
 }
 
-// ─── Import section sub-component ────────────────────────────────────────────
+
 
 type ImportPhase = 'idle' | 'loading' | 'done'
 
@@ -445,7 +439,7 @@ function ImportSection() {
             const res = await importApi.uploadExport(file)
             setResult(res)
             setPhase('done')
-            // Загружаем 3 последних лида из этого чата для превью
+
             if (res.matchedLeads > 0) {
                 try {
                     const page = await leadsApi.list({ page: 0, size: 3 })
@@ -465,7 +459,7 @@ function ImportSection() {
 
     return (
         <div className={s.importSection}>
-            {/* ── Заголовок-разворачивалка ── */}
+            {}
             <div className={s.importHeader}>
                 <div className={s.importHeaderLeft}>
                     <div className={s.importHeaderIcon}>
@@ -480,7 +474,7 @@ function ImportSection() {
                 </div>
             </div>
 
-            {/* ── Объяснение ── */}
+            {}
             <div className={s.importExplainer}>
                 <div className={s.importExplainerIcon}>
                     <LockIcon />
@@ -488,7 +482,7 @@ function ImportSection() {
                 <div className={s.importExplainerBody}>
                     <p className={s.importExplainerTitle}>Почему автоматический мониторинг недоступен для некоторых чатов?</p>
                     <p className={s.importExplainerText}>
-                        AIMLY работает через ваш аккаунт и мониторит открытые чаты в реальном времени.
+                        AIMLY автоматически работает только с чатами, у которых имеется ссылка-приглашение.
                         Но некоторые сообщества закрыты полностью — платные клубы, чаты только по инвайту,
                         каналы без публичной ссылки. Добавить их в авторежим невозможно — у сервиса нет доступа.
                         <br /><br />
@@ -498,11 +492,11 @@ function ImportSection() {
                 </div>
             </div>
 
-            {/* ── Шаги ── */}
+            {}
             <div className={s.importSteps}>
                 {[
-                    { n: 1, text: <>Откройте нужный чат в <strong>Telegram Desktop</strong> (Windows, macOS, Linux).</> },
-                    { n: 2, text: <>Нажмите <strong>⋮ (три точки)</strong> → <strong>«Экспортировать историю чата»</strong>.</> },
+                    { n: 1, text: <>Откройте нужный чат </> },
+                    { n: 2, text: <>Нажмите <strong>⋮ (три точки)</strong> → <strong>Экспортировать историю чата</strong>.</> },
                     { n: 3, text: <>Выберите формат <strong>HTML</strong> или <strong>JSON</strong>. JSON обрабатывается быстрее.</> },
                     { n: 4, text: <>Дождитесь экспорта и загрузите файл ниже. Максимальный размер — <strong>100 МБ</strong>.</> },
                 ].map(({ n, text }) => (
@@ -513,7 +507,7 @@ function ImportSection() {
                 ))}
             </div>
 
-            {/* ── Зона загрузки ── */}
+            {}
             {phase !== 'done' && (
                 <div className={s.importUploadCard}>
                     {!file ? (
@@ -575,7 +569,7 @@ function ImportSection() {
                 </div>
             )}
 
-            {/* ── Результат + превью лидов ── */}
+            {}
             {phase === 'done' && result && (
                 <div className={s.importResult}>
                     <div className={s.importResultHeader}>
@@ -619,7 +613,7 @@ function ImportSection() {
                         </div>
                     )}
 
-                    {/* Превью последних лидов */}
+                    {}
                     {previewLeads.length > 0 && (
                         <div className={s.importLeadPreview}>
                             <p className={s.importLeadPreviewTitle}>Последние найденные лиды</p>
@@ -665,7 +659,7 @@ function ImportSection() {
     )
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+
 export default function ChatsPage() {
     const { user, refreshUser } = useAuthContext()
 
@@ -692,10 +686,10 @@ export default function ChatsPage() {
     const [loadingKeywords,     setLoadingKeywords]     = useState(false)
     const [searchingByKeywords, setSearchingByKeywords] = useState(false)
 
-    // Import section collapsed state
+
     const [importOpen, setImportOpen] = useState(false)
 
-    // Trial bot
+
     const [trialBotLoading, setTrialBotLoading] = useState(false)
 
     const plan  = user?.subscriptionPlan   ?? null
@@ -861,7 +855,7 @@ export default function ChatsPage() {
                 )}
             </div>
 
-            {/* ─── AI-поиск чатов ────────────────────────── */}
+            {}
             <div className={s.searchBlock}>
                 <div
                     className={s.searchToggleBtn}
@@ -1080,7 +1074,7 @@ export default function ChatsPage() {
                 )}
             </div>
 
-            {/* ─── Ручное добавление ────────────────────── */}
+            {}
             <div className={s.addBlock}>
                 <div className={s.addRow}>
                     <div className={s.inputWrap}>
@@ -1156,7 +1150,7 @@ export default function ChatsPage() {
                 </div>
             )}
 
-            {/* ─── Ручной импорт из закрытого чата (скрыт по умолчанию) ── */}
+            {}
             <div className={s.importToggleWrap}>
                 <button
                     className={s.importToggleBtn}
