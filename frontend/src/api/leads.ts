@@ -64,6 +64,14 @@ export interface SubscriptionInfo {
     balance:   number
 }
 
+export interface ImportResult {
+    chatTitle:     string
+    totalMessages: number
+    matchedLeads:  number
+    skippedLeads:  number
+    format:        string
+}
+
 export const leadsApi = {
     list(params: { status?: string; page?: number; size?: number } = {}): Promise<LeadPage> {
         const q = new URLSearchParams()
@@ -80,6 +88,25 @@ export const leadsApi = {
     },
     markAllRead(): Promise<void> {
         return req('/api/v1/leads/read-all', { method: 'POST' })
+    },
+}
+
+export const importApi = {
+    uploadExport(file: File): Promise<ImportResult> {
+        const formData = new FormData()
+        formData.append('file', file)
+        return fetch(`${BASE}/api/v1/leads/import-export`, {
+            method:      'POST',
+            credentials: 'include',
+            body:        formData,
+            // Content-Type не указываем — браузер сам выставит multipart/form-data с boundary
+        }).then(async res => {
+            if (!res.ok) {
+                const b = await res.json().catch(() => ({ error: `Ошибка ${res.status}` })) as { error?: string }
+                throw new Error(b.error ?? `Ошибка ${res.status}`)
+            }
+            return res.json() as Promise<ImportResult>
+        })
     },
 }
 

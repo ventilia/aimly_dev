@@ -12,6 +12,7 @@ const txt = {
             leads:    'Лиды',
             chats:    'Чаты',
             keywords: 'Ключевые слова',
+            import:   'Импорт чата',
             profile:  'Профиль',
         },
         logout:     'Выход',
@@ -25,6 +26,7 @@ const txt = {
             leads:    'Leads',
             chats:    'Chats',
             keywords: 'Keywords',
+            import:   'Chat Import',
             profile:  'Profile',
         },
         logout:     'Sign out',
@@ -39,6 +41,7 @@ interface NavLabels {
     leads:    string
     chats:    string
     keywords: string
+    import:   string
     profile:  string
 }
 
@@ -47,6 +50,7 @@ const NAV_ITEMS = (l: NavLabels) => [
     { to: '/dashboard/leads',    label: l.leads,    exact: false },
     { to: '/dashboard/chats',    label: l.chats,    exact: false },
     { to: '/dashboard/keywords', label: l.keywords, exact: false },
+    { to: '/dashboard/import',   label: l.import,   exact: false },
     { to: '/dashboard/profile',  label: l.profile,  exact: false },
 ]
 
@@ -168,12 +172,10 @@ export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) 
                     )}
                 </a>
 
-                {/* Бургер — виден только на мобильном через CSS (margin-left: auto) */}
                 <button className={s.burger} onClick={() => setMobileOpen(v => !v)} aria-label="Меню">
                     <span /><span /><span />
                 </button>
 
-                {/* Правая часть — скрыта на мобильном через CSS */}
                 <div className={s.topbarRight}>
                     <div className={s.langSwitch}>
                         {(['ru', 'en'] as Lang[]).map(lng => (
@@ -229,7 +231,6 @@ export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) 
                             </NavLink>
                         ))}
 
-                        {/* Ссылка на Админ-панель в sidebar — без смайлика щита */}
                         {isAdmin && (
                             <a
                                 href="/admin"
@@ -247,7 +248,6 @@ export default function DashboardLayout({ lang, onLang }: DashboardLayoutProps) 
                         <div className={s.sidebarUserInfo}>
                             <div className={s.sidebarUserName}>{displayName}</div>
                         </div>
-                        {/* Кнопка «Выход» — видна только на мобильном через CSS */}
                         <button className={s.sidebarLogout} onClick={handleLogout}>
                             {l.logout}
                         </button>

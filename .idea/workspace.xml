@@ -4,12 +4,8 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="a461964d-f6a3-4e0b-a3fa-4fab913d5a3e" name="Changes" comment="регистрация исправлена(dev)">
-      <change beforePath="$PROJECT_DIR$/.idea/sqldialects.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/sqldialects.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/ai/Aiservice.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/ai/Aiservice.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/Botchatsearchhandler.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/Botchatsearchhandler.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/Chatsearchservice.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/Chatsearchservice.kt" afterDir="false" />
+    <list default="true" id="a461964d-f6a3-4e0b-a3fa-4fab913d5a3e" name="Changes" comment="поиск чатов, фильтрация лидов">
+      <change beforePath="$PROJECT_DIR$/frontend/src/api/leads.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/api/leads.ts" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -148,14 +144,6 @@
       <workItem from="1774561409222" duration="2841000" />
       <workItem from="1774713234869" duration="9099000" />
       <workItem from="1774883083718" duration="1210000" />
-    </task>
-    <task id="LOCAL-00002" summary=".env">
-      <option name="closed" value="true" />
-      <created>1772228616888</created>
-      <option name="number" value="00002" />
-      <option name="presentableId" value="LOCAL-00002" />
-      <option name="project" value="LOCAL" />
-      <updated>1772228616888</updated>
     </task>
     <task id="LOCAL-00003" summary="Закончен блок с авторизацией. Реализован личный кабинет">
       <option name="closed" value="true" />
@@ -541,7 +529,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774883096459</updated>
     </task>
-    <option name="localTasksCounter" value="51" />
+    <task id="LOCAL-00051" summary="поиск чатов, фильтрация лидов">
+      <option name="closed" value="true" />
+      <created>1774889797641</created>
+      <option name="number" value="00051" />
+      <option name="presentableId" value="LOCAL-00051" />
+      <option name="project" value="LOCAL" />
+      <updated>1774889797642</updated>
+    </task>
+    <option name="localTasksCounter" value="52" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -581,7 +577,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="GO init" />
     <MESSAGE value="Добавление полей в бд, добавление админ роли, админ панели (сырой), баланс, уведомление только для бота. перех на другой апи для почты" />
     <MESSAGE value="push. beta" />
     <MESSAGE value="push. нпм дев" />
@@ -606,6 +601,7 @@
     <MESSAGE value="админ панель лиды4 (dev)" />
     <MESSAGE value="админ панель лиды5 (dev)" />
     <MESSAGE value="регистрация исправлена(dev)" />
-    <option name="LAST_COMMIT_MESSAGE" value="регистрация исправлена(dev)" />
+    <MESSAGE value="поиск чатов, фильтрация лидов" />
+    <option name="LAST_COMMIT_MESSAGE" value="поиск чатов, фильтрация лидов" />
   </component>
 </project>
