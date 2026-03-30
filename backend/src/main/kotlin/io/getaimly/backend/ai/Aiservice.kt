@@ -571,7 +571,7 @@ Return ONLY JSON, no extra text:
             .toList()
     }
 
-    // ─── Очередь и throttle ──────────────────────────────────────────────────────
+
 
     private fun processQueue() {
         while (true) {
@@ -600,7 +600,7 @@ Return ONLY JSON, no extra text:
             minuteStart = now
         }
         val count = requestsThisMinute.incrementAndGet()
-        if (count > 25) {
+        if (count > 20) {
             val waitMs = 60_000 - (now.epochSecond - minuteStart.epochSecond) * 1000
             if (waitMs > 0) {
                 log.debug("rate limit: ждём ${waitMs}ms")
