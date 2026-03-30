@@ -7,13 +7,14 @@ data class RegisterRequest(
     @field:NotBlank(message = "еmail обязателен")
     val email: String,
 
+    val referralCode: String? = null,
+
     @field:NotBlank(message = "пароль обязателен")
     @field:Size(min = 8, max = 100, message = "пароль должен быть от 8 до 100 символов")
     @field:Pattern(
         regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).+$",
         message = "пароль должен содержать строчные, заглавные буквы и цифры",
     )
-    val referralCode: String? = null,
     val password: String,
 
     @field:NotBlank(message = "подтверждение пароля обязательно")
