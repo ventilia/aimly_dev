@@ -68,7 +68,8 @@ class ChatExportService(
         //    Парсим через OffsetDateTime → нормализуем к серверному времени (без смещения)
         //    Важно: обрезать нельзя — теряется зона
         { s ->
-            if (s.length > 19 && (s.contains('+', startIndex = 10) || s.endsWith('Z'))) {
+            // FIX: contains(Char, startIndex) не существует, используем indexOf
+            if (s.length > 19 && (s.indexOf('+', startIndex = 10) != -1 || s.endsWith('Z'))) {
                 tryParse { OffsetDateTime.parse(s).atZoneSameInstant(ZoneOffset.UTC).toLocalDateTime() }
             } else null
         },
