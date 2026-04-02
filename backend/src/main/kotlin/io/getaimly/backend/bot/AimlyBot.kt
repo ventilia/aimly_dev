@@ -2,6 +2,7 @@ package io.getaimly.backend.bot
 
 import io.getaimly.backend.ai.AiService
 import io.getaimly.backend.auth.AuthService
+import io.getaimly.backend.lead.ChatExportService
 import io.getaimly.backend.lead.ChatSearchService
 import io.getaimly.backend.lead.ChatSubscriptionRepository
 import io.getaimly.backend.lead.KeywordRepository
@@ -43,6 +44,7 @@ class AimlyBot(
     private val aiService: AiService,
     private val chatSearchService: ChatSearchService,
     private val referralService: ReferralService,
+    private val exportService: ChatExportService,
 ) : SpringLongPollingBot, LongPollingSingleThreadUpdateConsumer {
 
     private val log            = LoggerFactory.getLogger(AimlyBot::class.java)
@@ -123,6 +125,15 @@ class AimlyBot(
         expiryRepository = expiryRepository,
     )
 
+    private val exportHandler = BotChatExportHandler(
+        sender         = sender,
+        sessions       = sessions,
+        userRepository = userRepository,
+        exportService  = exportService,
+        telegramClient = telegramClient,
+        botToken       = token,
+    )
+
 
     @PostConstruct
     fun init() = log.info("AimlyBot запущен: @$botUsername")
@@ -152,8 +163,9 @@ class AimlyBot(
     override fun consume(update: Update) {
         try {
             when {
-                update.hasMessage() && update.message.hasText() -> handleMessage(update)
-                update.hasCallbackQuery()                       -> handleCallback(update)
+                update.hasMessage() && update.message.hasDocument() -> handleDocument(update)
+                update.hasMessage() && update.message.hasText()     -> handleMessage(update)
+                update.hasCallbackQuery()                            -> handleCallback(update)
             }
         } catch (e: Exception) {
             val ctx = when {
@@ -162,6 +174,25 @@ class AimlyBot(
                 else                      -> "unknown update"
             }
             log.error("[BOT] ❌ Ошибка обработки update #${update.updateId} ($ctx): ${e.message}", e)
+        }
+    }
+
+    // ─── Обработка входящих документов (файлов) ───────────────────────────────────
+
+    private fun handleDocument(update: Update) {
+        val msg      = update.message
+        val chatId   = msg.chatId
+        val from     = msg.from
+        val document = msg.document
+        val tgUser   = "${from.firstName} (@${from.userName ?: "—"}, tgId=${from.id})"
+
+        val session = sessions[chatId]
+        if (session?.step == BotStep.WAITING_CHAT_EXPORT_FILE) {
+            log.info("[BOT][DOC] Файл в режиме ожидания экспорта: $tgUser file=\"${document.fileName}\"")
+            exportHandler.handleFileUpload(chatId, from, document)
+        } else {
+            log.debug("[BOT][DOC] Документ вне контекста ожидания: $tgUser file=\"${document.fileName}\" step=${session?.step}")
+            // Документы в других контекстах игнорируем молча
         }
     }
 
@@ -257,6 +288,10 @@ class AimlyBot(
             BotStep.WAITING_CONTEXT              -> profileHandler.handleContextInput(chatId, text)
             BotStep.WAITING_AI_KEYWORD_CONFIRM   -> { /* обрабатывается через callback */ }
             BotStep.WAITING_CHAT_SEARCH_QUERY    -> chatSearchHandler.handleSearchQueryInput(chatId, text, from)
+
+            // ── Ожидание файла экспорта ───────────────────────────────────────
+            // Если пользователь прислал текст вместо файла — напоминаем
+            BotStep.WAITING_CHAT_EXPORT_FILE     -> exportHandler.handleWrongInput(chatId)
         }
     }
 
@@ -335,6 +370,9 @@ class AimlyBot(
             data == "payment:plans" -> paymentHandler.showPlans(chatId, msgId, from.id)
 
             data == "referral:info" -> referralHandler.showReferral(chatId, msgId, from.id)
+
+            // ── Экспорт чата ──────────────────────────────────────────────────
+            data == "export:start"  -> exportHandler.showExportScreen(chatId, msgId, from.id)
 
             data == "leads:new"      -> leadsHandler.showLeadsList(chatId, msgId, from.id, 0, "NEW")
             data == "leads:all"      -> leadsHandler.showLeadsList(chatId, msgId, from.id, 0, null)
@@ -501,7 +539,8 @@ class AimlyBot(
                 "Как работает:\n" +
                 "1. Добавьте Telegram-чаты (вручную или через AI-поиск)\n" +
                 "2. Укажите ключевые слова («ищу дизайнера» и т.д.)\n" +
-                "3. При совпадении вы получите уведомление с лидом\n\n" +
+                "3. При совпадении вы получите уведомление с лидом\n" +
+                "4. Или загрузите экспорт чата для анализа истории\n\n" +
                 "💬 Поддержка: @aimly_support"
 
     private fun buildTgDeepLink(link: String): String {

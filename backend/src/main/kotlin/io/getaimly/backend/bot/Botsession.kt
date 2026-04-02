@@ -31,6 +31,10 @@ enum class BotStep {
 
     // ── Поиск чатов ───────────────────────────────────────────────────────
     WAITING_CHAT_SEARCH_QUERY,
+
+    // ── Экспорт чата ──────────────────────────────────────────────────────
+    /** Ожидаем файл (.json/.html) с экспортом Telegram Desktop */
+    WAITING_CHAT_EXPORT_FILE,
 }
 
 data class UserSession(
