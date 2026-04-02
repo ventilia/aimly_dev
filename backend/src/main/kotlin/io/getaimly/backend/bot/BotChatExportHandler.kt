@@ -3,8 +3,9 @@ package io.getaimly.backend.bot
 import io.getaimly.backend.lead.ChatExportService
 import io.getaimly.backend.user.UserRepository
 import org.slf4j.LoggerFactory
-import org.springframework.mock.web.MockMultipartFile
 import org.telegram.telegrambots.meta.api.methods.GetFile
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow
 import org.telegram.telegrambots.meta.generics.TelegramClient
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
@@ -52,9 +53,8 @@ class BotChatExportHandler(
             return
         }
 
-        val kwCount = 0 // проверим при получении файла
         sessions[chatId] = UserSession(
-            step  = BotStep.WAITING_CHAT_EXPORT_FILE,
+            step = BotStep.WAITING_CHAT_EXPORT_FILE,
             msgId = msgId,
         )
 
@@ -83,16 +83,15 @@ class BotChatExportHandler(
 
     /**
      * Обрабатываем входящий документ (файл) от пользователя.
-     * Вызывается из AimlyBot.handleMessage когда сессия в шаге WAITING_CHAT_EXPORT_FILE.
      */
     fun handleFileUpload(
         chatId: Long,
         from: org.telegram.telegrambots.meta.api.objects.User,
         document: org.telegram.telegrambots.meta.api.objects.Document,
     ) {
-        val session    = sessions.remove(chatId)
+        val session = sessions.remove(chatId)
         val savedMsgId = session?.msgId ?: 0
-        val tgUser     = "${from.firstName} (@${from.userName ?: "—"}, tgId=${from.id})"
+        val tgUser = "${from.firstName} (@${from.userName ?: "—"}, tgId=${from.id})"
 
         val user = userRepository.findByTelegramId(from.id).orElse(null)
         if (user == null) {
@@ -111,7 +110,6 @@ class BotChatExportHandler(
 
         log.info("[BOT][EXPORT] Файл получен: $tgUser fileName=\"$fileName\" size=$fileSize")
 
-        // Проверка формата по имени файла
         val lowerName = fileName.lowercase()
         val isJson = lowerName.endsWith(".json")
         val isHtml = lowerName.endsWith(".html") || lowerName.endsWith(".htm")
@@ -121,11 +119,7 @@ class BotChatExportHandler(
             if (savedMsgId != 0) {
                 sender.editText(
                     chatId, savedMsgId,
-                    "❌ *Неверный формат файла*\n\n" +
-                            "Поддерживаются только файлы:\n" +
-                            "• `.json` — JSON-экспорт Telegram Desktop\n" +
-                            "• `.html` / `.htm` — HTML-экспорт Telegram Desktop\n\n" +
-                            "Повторите экспорт и выберите нужный формат.",
+                    "❌ *Неверный формат файла*\n\nПоддерживаются только `.json`, `.html`, `.htm`",
                     keyboard(
                         row(btn("📤 Попробовать снова", "export:start")),
                         row(btn("◀️ Главное меню", "menu:back")),
@@ -145,83 +139,63 @@ class BotChatExportHandler(
             return
         }
 
-        // Проверка размера
         if (fileSize > MAX_FILE_SIZE_BYTES) {
             log.warn("[BOT][EXPORT] Файл слишком большой: $tgUser size=$fileSize")
             sender.sendText(
                 chatId,
-                "❌ Файл слишком большой (${fileSize / 1024 / 1024} МБ).\n\n" +
-                        "Максимальный размер: ${MAX_FILE_SIZE_MB} МБ.\n\n" +
-                        "Попробуйте экспортировать меньший диапазон дат.",
+                "❌ Файл слишком большой (${fileSize / 1024 / 1024} МБ).\nМаксимум: ${MAX_FILE_SIZE_MB} МБ.",
                 keyboard(row(btn("◀️ Главное меню", "menu:back"))),
             )
             return
         }
 
-        // Сообщение «обрабатываем»
         val processingMsgId = if (savedMsgId != 0) {
             sender.editText(
                 chatId, savedMsgId,
-                "⏳ *Анализируем файл...*\n\n" +
-                        "Файл: $fileName\n" +
-                        "Ищем лиды по вашим ключевым словам.\n\n" +
-                        "_Это может занять несколько секунд._",
+                "⏳ *Анализируем файл...*\n\nФайл: $fileName",
                 parseMarkdown = true,
             )
             savedMsgId
         } else {
             sender.sendTextAndGetId(
                 chatId,
-                "⏳ Анализируем файл \"$fileName\"...\n\nЭто может занять несколько секунд.",
+                "⏳ Анализируем файл \"$fileName\"...\nЭто может занять несколько секунд.",
             ) ?: 0
         }
 
-        val fileId   = document.fileId
+        val fileId = document.fileId
         val capturedUser = user
 
         worker.submit {
             try {
-                log.info("[BOT][EXPORT] Начало загрузки файла из Telegram: $tgUser fileId=$fileId")
+                log.info("[BOT][EXPORT] Скачиваем файл: $tgUser fileId=$fileId")
 
-                // Получаем путь к файлу через Telegram API
                 val getFile = GetFile(fileId)
-                val tgFile  = telegramClient.execute(getFile)
+                val tgFile = telegramClient.execute(getFile)
                 val filePath = tgFile.filePath
 
                 if (filePath.isNullOrBlank()) {
-                    log.error("[BOT][EXPORT] Telegram вернул пустой filePath: $tgUser fileId=$fileId")
-                    sender.editText(
-                        chatId, processingMsgId,
-                        "❌ Не удалось получить файл от Telegram. Попробуйте ещё раз.",
-                        keyboard(row(btn("◀️ Главное меню", "menu:back"))),
-                    )
+                    sender.editText(chatId, processingMsgId, "❌ Не удалось получить файл от Telegram.")
                     return@submit
                 }
 
-                // Скачиваем файл напрямую по URL
                 val downloadUrl = "https://api.telegram.org/file/bot$botToken/$filePath"
-                val fileBytes   = URI.create(downloadUrl).toURL().readBytes()
+                val fileBytes = URI.create(downloadUrl).toURL().readBytes()
 
-                log.info("[BOT][EXPORT] Файл скачан: $tgUser size=${fileBytes.size}")
+                log.info("[BOT][EXPORT] Файл скачан: $tgUser size=${fileBytes.size} байт")
 
-                // Определяем content type
-                val contentType = when {
-                    isJson -> "application/json"
-                    else   -> "text/html"
-                }
+                val contentType = if (isJson) "application/json" else "text/html"
 
-                // Создаём MockMultipartFile для ChatExportService
-                val multipartFile = MockMultipartFile(
-                    "file",
+                // ← НОВАЯ СИГНАТУРА СЕРВИСА
+                val result = exportService.processExport(
+                    capturedUser,
                     fileName,
                     contentType,
-                    fileBytes,
+                    fileBytes
                 )
 
-                val result = exportService.processExport(capturedUser, multipartFile)
-
                 log.info(
-                    "[BOT][EXPORT] Завершён: userId=${capturedUser.id} email=${capturedUser.email} " +
+                    "[BOT][EXPORT] Завершён: userId=${capturedUser.id} " +
                             "chat=\"${result.chatTitle}\" total=${result.totalMessages} " +
                             "matched=${result.matchedLeads} skipped=${result.skippedLeads}"
                 )
@@ -229,7 +203,7 @@ class BotChatExportHandler(
                 val formatLabel = when (result.format) {
                     "json" -> "JSON"
                     "html" -> "HTML"
-                    else   -> result.format.uppercase()
+                    else -> result.format.uppercase()
                 }
 
                 val resultText = buildString {
@@ -239,15 +213,12 @@ class BotChatExportHandler(
                     append("📊 *Результаты:*\n")
                     append("• Всего сообщений: ${result.totalMessages}\n")
                     append("• Найдено лидов: *${result.matchedLeads}*\n")
-                    if (result.skippedLeads > 0) {
-                        append("• Пропущено (дубли): ${result.skippedLeads}\n")
-                    }
+                    if (result.skippedLeads > 0) append("• Пропущено (дубли): ${result.skippedLeads}\n")
                     append("\n")
                     if (result.matchedLeads > 0) {
                         append("🎯 Лиды добавлены в ваш список. Проверьте раздел «Лиды».")
                     } else {
-                        append("😔 Подходящих лидов по вашим ключевым словам не найдено.\n\n")
-                        append("💡 Попробуйте добавить больше ключевых слов или проверьте другой чат.")
+                        append("😔 Подходящих лидов не найдено.\n💡 Попробуйте добавить больше ключевых слов.")
                     }
                 }
 
@@ -262,51 +233,34 @@ class BotChatExportHandler(
                     parseMarkdown = true,
                 )
 
-            } catch (e: IllegalArgumentException) {
-                log.warn("[BOT][EXPORT] Ошибка валидации: $tgUser — ${e.message}")
+            } catch (e: Exception) {
+                log.error("[BOT][EXPORT] Ошибка обработки файла: $tgUser", e)
                 sender.editText(
                     chatId, processingMsgId,
-                    "❌ *Ошибка обработки файла*\n\n${e.message}",
+                    "❌ Ошибка при обработке файла.\n\n${e.message?.take(100) ?: "Попробуйте позже."}",
                     keyboard(
                         row(btn("📤 Попробовать снова", "export:start")),
                         row(btn("◀️ Главное меню", "menu:back")),
                     ),
                     parseMarkdown = true,
                 )
-            } catch (e: Exception) {
-                log.error("[BOT][EXPORT] Критическая ошибка: $tgUser — ${e.message}", e)
-                sender.editText(
-                    chatId, processingMsgId,
-                    "❌ Ошибка при обработке файла. Попробуйте позже.",
-                    keyboard(
-                        row(btn("📤 Попробовать снова", "export:start")),
-                        row(btn("◀️ Главное меню", "menu:back")),
-                    ),
-                )
             }
         }
     }
 
-    /**
-     * Пользователь прислал текст вместо файла в режиме ожидания экспорта.
-     */
     fun handleWrongInput(chatId: Long) {
         sender.sendText(
             chatId,
-            "⚠️ Пожалуйста, отправьте *файл* экспорта (.json или .html).\n\n" +
-                    "Или нажмите «Отмена» для возврата в меню.",
+            "⚠️ Пожалуйста, отправьте *файл* экспорта (.json или .html).",
             keyboard(row(btn("❌ Отмена", "menu:back"))),
             parseMarkdown = true,
         )
     }
 
-    // Вспомогательная функция для фильтрации null-строк при создании клавиатуры
+    // Вспомогательная функция для клавиатуры
     private fun keyboard(vararg rows: InlineKeyboardRow?): InlineKeyboardMarkup? {
         val filteredRows = rows.filterNotNull()
         return if (filteredRows.isEmpty()) null
         else InlineKeyboardMarkup(filteredRows)
     }
 }
-
-// Вспомогательный импорт (чтобы компилятор не ругался на неиспользуемый импорт)
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup
