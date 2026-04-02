@@ -6,8 +6,6 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.web.multipart.MultipartFile
 import java.time.LocalDateTime
-import java.time.OffsetDateTime
-import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 
@@ -46,7 +44,6 @@ data class TgExportMessage(
     val id:           Long    = 0,
     val type:         String  = "",
     val date:         String  = "",
-    val date_unixtime: String? = null,  // unix-timestamp как резервный источник
     val from:         String? = null,
     val from_id:      String? = null,
     val text:         Any?    = null,   // может быть String или List<Any>
@@ -62,63 +59,10 @@ class ChatExportService(
 ) {
     private val log = LoggerFactory.getLogger(ChatExportService::class.java)
 
-
-    private val PARSERS: List<(String) -> LocalDateTime?> = listOf(
-        // 1. ISO с offset: 2024-01-15T14:32:00+03:00 / 2024-01-15T14:32:00Z
-        //    Парсим через OffsetDateTime → нормализуем к серверному времени (без смещения)
-        //    Важно: обрезать нельзя — теряется зона
-        { s ->
-            // FIX: contains(Char, startIndex) не существует, используем indexOf
-            if (s.length > 19 && (s.indexOf('+', startIndex = 10) != -1 || s.endsWith('Z'))) {
-                tryParse { OffsetDateTime.parse(s).atZoneSameInstant(ZoneOffset.UTC).toLocalDateTime() }
-            } else null
-        },
-
-        // 2. ISO без зоны, с секундами: 2024-01-15T14:32:00
-        { s ->
-            if (s.length >= 19 && s[10] == 'T') {
-                tryParse { LocalDateTime.parse(s.take(19), DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss")) }
-            } else null
-        },
-
-        // 3. ISO без зоны, без секунд: 2024-01-15T14:32
-        { s ->
-            if (s.length >= 16 && s[10] == 'T') {
-                tryParse { LocalDateTime.parse(s.take(16), DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm")) }
-            } else null
-        },
-
-        // 4. HTML формат с секундами: 15.01.2024 14:32:00
-        { s ->
-            if (s.length >= 19 && s[2] == '.' && s[5] == '.') {
-                tryParse { LocalDateTime.parse(s.take(19), DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss")) }
-            } else null
-        },
-
-        // 5. HTML формат без секунд: 15.01.2024 14:32
-        { s ->
-            if (s.length >= 16 && s[2] == '.' && s[5] == '.') {
-                tryParse { LocalDateTime.parse(s.take(16), DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")) }
-            } else null
-        },
-
-        // 6. ISO-подобный с пробелом, с секундами: 2024-01-15 14:32:00
-        { s ->
-            if (s.length >= 19 && s[10] == ' ' && s[4] == '-') {
-                tryParse { LocalDateTime.parse(s.take(19), DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) }
-            } else null
-        },
-
-        // 7. ISO-подобный с пробелом, без секунд: 2024-01-15 14:32
-        { s ->
-            if (s.length >= 16 && s[10] == ' ' && s[4] == '-') {
-                tryParse { LocalDateTime.parse(s.take(16), DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")) }
-            } else null
-        },
-    )
-
-    private inline fun tryParse(block: () -> LocalDateTime): LocalDateTime? =
-        try { block() } catch (_: DateTimeParseException) { null } catch (_: Exception) { null }
+    private val ISO_FMT      = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss")
+    private val ISO_FMT_ZONE = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX")
+    private val HTML_FMT     = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss")
+    private val HTML_FMT2    = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
     /**
      * Основная точка входа: определяет формат, парсит, прогоняет через LeadService.
@@ -174,30 +118,16 @@ class ChatExportService(
             .mapNotNull { m ->
                 val text = extractJsonText(m.text) ?: return@mapNotNull null
                 if (text.isBlank()) return@mapNotNull null
-
-                // Пробуем date-поле, при неудаче — date_unixtime
-                val date = parseDate(m.date)
-                    ?: parseUnixTimestamp(m.date_unixtime)
-                    ?: run {
-                        log.debug("[IMPORT] Не удалось распарсить дату: id=${m.id} date=\"${m.date}\" unixtime=${m.date_unixtime}")
-                        return@mapNotNull null
-                    }
+                val date = parseDate(m.date) ?: return@mapNotNull null
 
                 ParsedMessage(
                     messageId      = m.id,
                     authorName     = m.from?.trim() ?: "Неизвестный",
-                    authorUsername = extractUsername(m.from_id),
+                    authorUsername = "",
                     text           = text.trim(),
                     date           = date,
                 )
             }
-
-    /**
-     * Извлекает username из from_id.
-     * В JSON-экспорте from_id может иметь вид "user123456789" или быть числом.
-     * Username реально не хранится в экспорте — возвращаем пустую строку.
-     */
-    private fun extractUsername(fromId: String?): String = ""
 
     @Suppress("UNCHECKED_CAST")
     private fun extractJsonText(raw: Any?): String? = when (raw) {
@@ -255,6 +185,11 @@ class ChatExportService(
     }
 
     private fun parseHtmlMessages(html: String): List<ParsedMessage> {
+        /*
+         * Разбиваем HTML на блоки <div class="message default clearfix" id="messageNNN">…</div>.
+         * Telegram всегда закрывает каждый блок сообщения отдельным </div>, а вложенность
+         * стандартная — можно корректно вырезать блок, найдя соответствующий закрывающий тег.
+         */
         val messages = mutableListOf<ParsedMessage>()
 
         // Ищем все открывающие теги div.message.default
@@ -264,7 +199,8 @@ class ChatExportService(
 
         for (i in starts.indices) {
             val match    = starts[i]
-            val msgId    = match.groupValues[1].toLongOrNull() ?: 0L
+            val msgIdStr = match.groupValues[1]
+            val msgId    = msgIdStr.toLongOrNull() ?: 0L
             val blockStart = match.range.first
 
             // Конец блока — до начала следующего message-блока или конца файла
@@ -288,23 +224,11 @@ class ChatExportService(
         return messages
     }
 
-    /**
-     * Дата из: <div class="... date ..." title="дд.мм.гггг чч:мм:сс">
-     *
-     * Telegram Desktop записывает дату в атрибут title в нескольких вариантах:
-     *   "15.01.2024 14:32:00"  — основной
-     *   "15.01.2024 14:32"     — без секунд (старые сборки)
-     * Передаём строку напрямую в parseDate() без обрезки.
-     */
+    /** Дата из: <div class="... date ..." title="дд.мм.гггг чч:мм:сс"> */
     private fun extractHtmlDate(block: String): LocalDateTime? {
         val title = Regex("""class="[^"]*date[^"]*"[^>]+title="([^"]+)"""")
             .find(block)?.groupValues?.get(1) ?: return null
-        val raw = title.trim()
-        val result = parseDate(raw)
-        if (result == null) {
-            log.debug("[IMPORT][HTML] Не удалось распарсить дату: \"$raw\"")
-        }
-        return result
+        return parseDate(title.trim())
     }
 
     /** Автор из: <div class="from_name">Имя</div> */
@@ -409,35 +333,14 @@ class ChatExportService(
         return keywords.firstOrNull { lower.contains(it) }
     }
 
-    /**
-     * Универсальный парсер дат для Telegram Desktop экспортов.
-     *
-     * Пробует каждый парсер из списка PARSERS по порядку.
-     * Каждый парсер самостоятельно проверяет признаки своего формата
-     * (длину, символы-разделители) перед попыткой парсинга — это
-     * исключает ложные срабатывания и лишние исключения.
-     */
-    fun parseDate(raw: String): LocalDateTime? {
+    private fun parseDate(raw: String): LocalDateTime? {
         if (raw.isBlank()) return null
         val s = raw.trim()
-        for (parser in PARSERS) {
-            val result = parser(s)
-            if (result != null) return result
+        for (fmt in listOf(ISO_FMT, ISO_FMT_ZONE, HTML_FMT, HTML_FMT2)) {
+            try {
+                return LocalDateTime.parse(s.take(19), fmt)
+            } catch (_: DateTimeParseException) { /* попробуем следующий */ }
         }
         return null
-    }
-
-    /**
-     * Парсинг unix-timestamp из поля date_unixtime.
-     * Telegram Desktop записывает его как строку с числом секунд с эпохи.
-     */
-    private fun parseUnixTimestamp(raw: String?): LocalDateTime? {
-        if (raw.isNullOrBlank()) return null
-        val epochSeconds = raw.trim().toLongOrNull() ?: return null
-        return try {
-            LocalDateTime.ofEpochSecond(epochSeconds, 0, ZoneOffset.UTC)
-        } catch (_: Exception) {
-            null
-        }
     }
 }
