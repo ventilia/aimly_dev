@@ -31,8 +31,6 @@ enum class BotStep {
 
     // ── Поиск чатов ───────────────────────────────────────────────────────
     WAITING_CHAT_SEARCH_QUERY,
-
-    WAITING_EXPORT_FILE,
 }
 
 data class UserSession(
@@ -62,6 +60,4 @@ data class UserSession(
     var chatSearchPage: Int = 0,
     var chatSearchQuery: String = "",
     var chatSearchPeerType: String? = null,
-
-    var exportMsgId: Int = 0,
 )

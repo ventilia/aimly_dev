@@ -28,6 +28,7 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 import java.time.LocalDateTime
 import java.util.concurrent.ConcurrentHashMap
 
+
 @Component
 class AimlyBot(
     @Value("\${telegram.bot.token}")    private val token: String,
@@ -49,6 +50,7 @@ class AimlyBot(
     private val sender         = BotSender(telegramClient)
 
     private val sessions = ConcurrentHashMap<Long, UserSession>()
+
 
     private val paymentHandler = BotPaymentHandler(
         sender           = sender,
@@ -121,6 +123,7 @@ class AimlyBot(
         expiryRepository = expiryRepository,
     )
 
+
     @PostConstruct
     fun init() = log.info("AimlyBot запущен: @$botUsername")
 
@@ -144,6 +147,7 @@ class AimlyBot(
     fun sendText(chatId: Long, text: String, markup: InlineKeyboardMarkup?) {
         sender.sendText(chatId, text, markup)
     }
+
 
     override fun consume(update: Update) {
         try {
@@ -397,6 +401,7 @@ class AimlyBot(
         }
     }
 
+
     fun notifyNewLead(
         telegramChatId: Long,
         leadId: Long,
@@ -447,6 +452,7 @@ class AimlyBot(
             log.warn("[BOT][NOTIFY] ❌ Ошибка отправки уведомления: tgChatId=$telegramChatId leadId=$leadId причина=${it.message}")
         }
     }
+
 
     fun sendStatus(chatId: Long, tgUserId: Long) {
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
