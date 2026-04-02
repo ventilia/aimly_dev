@@ -2,6 +2,7 @@ package io.getaimly.backend.bot
 
 import io.getaimly.backend.ai.AiService
 import io.getaimly.backend.auth.AuthService
+import io.getaimly.backend.lead.ChatExportService
 import io.getaimly.backend.lead.ChatSearchService
 import io.getaimly.backend.lead.ChatSubscriptionRepository
 import io.getaimly.backend.lead.KeywordRepository
@@ -43,6 +44,7 @@ class AimlyBot(
     private val aiService: AiService,
     private val chatSearchService: ChatSearchService,
     private val referralService: ReferralService,
+    private val chatExportService: ChatExportService,
 ) : SpringLongPollingBot, LongPollingSingleThreadUpdateConsumer {
 
     private val log            = LoggerFactory.getLogger(AimlyBot::class.java)
@@ -123,6 +125,15 @@ class AimlyBot(
         expiryRepository = expiryRepository,
     )
 
+    private val exportHandler = BotExportHandler(
+        sender          = sender,
+        sessions        = sessions,
+        userRepository  = userRepository,
+        exportService   = chatExportService,
+        telegramClient  = telegramClient,
+        botToken        = token,
+    )
+
 
     @PostConstruct
     fun init() = log.info("AimlyBot запущен: @$botUsername")
@@ -152,8 +163,9 @@ class AimlyBot(
     override fun consume(update: Update) {
         try {
             when {
-                update.hasMessage() && update.message.hasText() -> handleMessage(update)
-                update.hasCallbackQuery()                       -> handleCallback(update)
+                update.hasMessage() && update.message.hasText()     -> handleMessage(update)
+                update.hasMessage() && update.message.hasDocument() -> handleDocument(update)
+                update.hasCallbackQuery()                           -> handleCallback(update)
             }
         } catch (e: Exception) {
             val ctx = when {
@@ -228,6 +240,42 @@ class AimlyBot(
         }
     }
 
+    /**
+     * Обрабатывает входящий документ.
+     *
+     * Если сессия ожидает файл экспорта (WAITING_EXPORT_FILE) — передаём в exportHandler.
+     * Если сессии нет или шаг другой — игнорируем с подсказкой.
+     */
+    private fun handleDocument(update: Update) {
+        val msg      = update.message
+        val chatId   = msg.chatId
+        val from     = msg.from
+        val document = msg.document ?: return
+        val tgUser   = "${from.firstName} (@${from.userName ?: "—"}, tgId=${from.id})"
+
+        log.info("[BOT][DOC] $tgUser → \"${document.fileName}\" (${document.fileSize} байт)")
+
+        val session = sessions[chatId]
+        if (session?.step == BotStep.WAITING_EXPORT_FILE) {
+            exportHandler.handleDocument(chatId, from.id, document)
+            return
+        }
+
+        // Документ пришёл вне ожидания экспорта — даём подсказку
+        val user = userRepository.findByTelegramId(from.id).orElse(null)
+        if (user != null) {
+            log.debug("[BOT][DOC] Документ вне ожидания экспорта: chatId=$chatId session=${session?.step}")
+            sender.sendText(
+                chatId,
+                "📎 Получен файл «${document.fileName ?: "без имени"}».\n\n" +
+                        "Для импорта экспорта Telegram Desktop перейдите:\n" +
+                        "/start → Чаты → 📤 Импорт экспорта",
+            )
+        } else {
+            authHandler.showWelcome(chatId, from.firstName)
+        }
+    }
+
     private fun handleSessionInput(
         chatId: Long,
         text: String,
@@ -252,11 +300,23 @@ class AimlyBot(
             BotStep.WAITING_RESET_NEW_PASSWORD_CONFIRM -> authHandler.handleWaitingResetNewPasswordConfirm(chatId, text, from)
 
             // ── Прочие шаги ───────────────────────────────────────────────────
-            BotStep.WAITING_CHAT_LINK            -> chatsHandler.handleChatLinkInput(chatId, text, from)
-            BotStep.WAITING_KEYWORD              -> keywordsHandler.handleKeywordInput(chatId, text, from)
-            BotStep.WAITING_CONTEXT              -> profileHandler.handleContextInput(chatId, text)
-            BotStep.WAITING_AI_KEYWORD_CONFIRM   -> { /* обрабатывается через callback */ }
-            BotStep.WAITING_CHAT_SEARCH_QUERY    -> chatSearchHandler.handleSearchQueryInput(chatId, text, from)
+            BotStep.WAITING_CHAT_LINK          -> chatsHandler.handleChatLinkInput(chatId, text, from)
+            BotStep.WAITING_KEYWORD            -> keywordsHandler.handleKeywordInput(chatId, text, from)
+            BotStep.WAITING_CONTEXT            -> profileHandler.handleContextInput(chatId, text)
+            BotStep.WAITING_AI_KEYWORD_CONFIRM -> { /* обрабатывается через callback */ }
+            BotStep.WAITING_CHAT_SEARCH_QUERY  -> chatSearchHandler.handleSearchQueryInput(chatId, text, from)
+
+            // ── Ожидание файла экспорта ───────────────────────────────────────
+            // Текстовое сообщение в шаге ожидания файла — напоминаем что нужен файл
+            BotStep.WAITING_EXPORT_FILE -> {
+                val session = sessions[chatId]
+                sender.sendText(
+                    chatId,
+                    "📎 Пожалуйста, отправьте *файл* экспорта (.json или .html), а не текст.\n\n" +
+                            "Для отмены нажмите «❌ Отмена» в сообщении выше.",
+                    parseMarkdown = true,
+                )
+            }
         }
     }
 
@@ -349,11 +409,16 @@ class AimlyBot(
             data.startsWith("lead:viewed:")  -> { leadsHandler.changeLeadStatus(from.id, data.removePrefix("lead:viewed:").toLongOrNull() ?: 0, "VIEWED");  leadsHandler.showLeadsMenu(chatId, from.id, msgId) }
             data.startsWith("lead:replied:") -> { leadsHandler.changeLeadStatus(from.id, data.removePrefix("lead:replied:").toLongOrNull() ?: 0, "REPLIED"); leadsHandler.showLeadsMenu(chatId, from.id, msgId) }
             data.startsWith("lead:ignored:") -> { leadsHandler.changeLeadStatus(from.id, data.removePrefix("lead:ignored:").toLongOrNull() ?: 0, "IGNORED"); leadsHandler.showLeadsMenu(chatId, from.id, msgId) }
+
             data == "chat:add"           -> chatsHandler.startAddChat(chatId, msgId)
             data == "chat:del:cancel"    -> chatsHandler.showChats(chatId, msgId, from.id)
             data.startsWith("chat:page:")        -> chatsHandler.showChats(chatId, msgId, from.id, data.removePrefix("chat:page:").toIntOrNull() ?: 0)
             data.startsWith("chat:del:confirm:") -> { chatsHandler.deleteChat(from.id, data.removePrefix("chat:del:confirm:").toLongOrNull() ?: 0); chatsHandler.showChats(chatId, msgId, from.id) }
             data.startsWith("chat:del:")         -> chatsHandler.showDeleteChatConfirm(chatId, msgId, from.id, data.removePrefix("chat:del:").toLongOrNull() ?: 0)
+
+            // ── Импорт экспорта закрытого чата ────────────────────────────────
+            data == "export:start"   -> exportHandler.startImportFlow(chatId, msgId, from.id)
+
             data == "csearch:start"           -> chatSearchHandler.showSearchScreen(chatId, msgId, from.id)
             data == "csearch:manual"          -> chatSearchHandler.startManualSearch(chatId, msgId, null)
             data == "csearch:manual:chat"     -> chatSearchHandler.startManualSearch(chatId, msgId, "chat")
@@ -500,8 +565,9 @@ class AimlyBot(
                 "/help — эта справка\n\n" +
                 "Как работает:\n" +
                 "1. Добавьте Telegram-чаты (вручную или через AI-поиск)\n" +
-                "2. Укажите ключевые слова («ищу дизайнера» и т.д.)\n" +
-                "3. При совпадении вы получите уведомление с лидом\n\n" +
+                "2. Для закрытых чатов — импортируйте экспорт Telegram Desktop\n" +
+                "3. Укажите ключевые слова («ищу дизайнера» и т.д.)\n" +
+                "4. При совпадении вы получите уведомление с лидом\n\n" +
                 "💬 Поддержка: @aimly_support"
 
     private fun buildTgDeepLink(link: String): String {

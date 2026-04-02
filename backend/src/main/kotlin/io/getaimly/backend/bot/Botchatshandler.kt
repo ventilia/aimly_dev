@@ -29,10 +29,11 @@ class BotChatsHandler(
             return
         }
 
-        val chats  = subscriptionRepository.findByUserIdAndIsActiveTrue(user.id)
-        val plan   = user.subscriptionPlan
-        val status = user.subscriptionStatus
+        val chats     = subscriptionRepository.findByUserIdAndIsActiveTrue(user.id)
+        val plan      = user.subscriptionPlan
+        val status    = user.subscriptionStatus
         val hasSearch = plan in setOf("MINIMUM", "START") || status == "TRIAL"
+        val hasExport = status in setOf("ACTIVE", "TRIAL")
 
         log.info("[BOT][CHATS] Список чатов: userId=${user.id} email=${user.email} активных=${chats.size} страница=$page")
 
@@ -42,16 +43,23 @@ class BotChatsHandler(
             if (hasSearch) {
                 rows.add(row(btn("🔍 AI-поиск чатов", "csearch:start")))
             }
+            if (hasExport) {
+                rows.add(row(btn("📤 Импорт экспорта", "export:start")))
+            }
             rows.add(row(btn("◀️ Главное меню", "menu:back")))
 
             sender.editText(
                 chatId, msgId,
                 "💬 *Чаты для мониторинга*\n\nУ вас ещё нет добавленных чатов.\n\n" +
                         "Добавьте ссылку на Telegram-чат, и userbot начнёт его мониторить.\n\n" +
-                        if (hasSearch)
-                            "💡 Используйте *AI-поиск*, чтобы найти подходящие чаты автоматически."
-                        else
-                            "",
+                        buildString {
+                            if (hasSearch) {
+                                append("💡 Используйте *AI-поиск*, чтобы найти подходящие чаты автоматически.\n\n")
+                            }
+                            if (hasExport) {
+                                append("📤 Для *закрытых чатов* без возможности вступления — импортируйте экспорт Telegram Desktop.")
+                            }
+                        },
                 InlineKeyboardMarkup(rows),
                 parseMarkdown = true,
             )
@@ -95,6 +103,11 @@ class BotChatsHandler(
             actionBtns.add(btn("🔍 AI-поиск", "csearch:start"))
         }
         rows.add(org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow(actionBtns))
+
+        if (hasExport) {
+            rows.add(row(btn("📤 Импорт экспорта закрытого чата", "export:start")))
+        }
+
         rows.add(row(btn("◀️ Главное меню", "menu:back")))
 
         sender.editText(chatId, msgId, sb.toString(), InlineKeyboardMarkup(rows), parseMarkdown = true)
