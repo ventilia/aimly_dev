@@ -245,8 +245,33 @@ class BotAuthHandler(
         )
     }
 
-    fun showMainMenu(chatId: Long, name: String?, tgUserId: Long = chatId) {
-        val user       = userRepository.findByTelegramId(tgUserId).orElse(null)
+   fun showMainMenu(chatId: Long, name: String?, tgUserId: Long = chatId) {
+       val user       = userRepository.findByTelegramId(tgUserId).orElse(null)
+       val newCount   = user?.let { leadRepository.countByUserIdAndStatus(it.id, LeadStatus.NEW) } ?: 0
+       val leadsLabel = if (newCount > 0) "📬 Лиды  •  $newCount новых" else "📋 Лиды"
+
+       val rows = mutableListOf(
+           row(btn(leadsLabel,         "menu:leads")),
+           row(btn("💬 Чаты",          "menu:chats"),
+               btn("🔍 Ключевые слова", "menu:keywords")),
+           row(btn("📤 Анализ экспорта чата", "export:start")),   // ← твоя новая кнопка
+           row(btn("👤 Профиль",        "menu:profile"),
+               btn("❓ Помощь",         "menu:help")),
+       )
+
+       if (user?.subscriptionStatus != "ACTIVE") {
+           rows.add(row(btn("💳 Оплатить подписку", "payment:plans")))
+       }
+
+       sender.sendText(
+           chatId,
+           "${greeting(name)}\n\nЧто хотите сделать?",
+           markup = keyboard(*rows.toTypedArray()),
+       )
+   }
+
+    fun showMainMenuEdit(chatId: Long, msgId: Int, from: User) {
+        val user       = userRepository.findByTelegramId(from.id).orElse(null)
         val newCount   = user?.let { leadRepository.countByUserIdAndStatus(it.id, LeadStatus.NEW) } ?: 0
         val leadsLabel = if (newCount > 0) "📬 Лиды  •  $newCount новых" else "📋 Лиды"
 
@@ -262,37 +287,12 @@ class BotAuthHandler(
             rows.add(row(btn("💳 Оплатить подписку", "payment:plans")))
         }
 
-        sender.sendText(
-            chatId,
-            "${greeting(name)}\n\nЧто хотите сделать?",
+        sender.editText(
+            chatId, msgId,
+            "${greeting(user?.firstName)}\n\nЧто хотите сделать?",
             markup = keyboard(*rows.toTypedArray()),
         )
     }
-
-   fun showMainMenu(chatId: Long, name: String?, tgUserId: Long = chatId) {
-       val user       = userRepository.findByTelegramId(tgUserId).orElse(null)
-       val newCount   = user?.let { leadRepository.countByUserIdAndStatus(it.id, LeadStatus.NEW) } ?: 0
-       val leadsLabel = if (newCount > 0) "📬 Лиды  •  $newCount новых" else "📋 Лиды"
-
-       val rows = mutableListOf(
-           row(btn(leadsLabel,         "menu:leads")),
-           row(btn("💬 Чаты",          "menu:chats"),
-               btn("🔍 Ключевые слова", "menu:keywords")),
-           row(btn("📤 Анализ экспорта чата", "export:start")),
-           row(btn("👤 Профиль",        "menu:profile"),
-               btn("❓ Помощь",         "menu:help")),
-       )
-
-       if (user?.subscriptionStatus != "ACTIVE") {
-           rows.add(row(btn("💳 Оплатить подписку", "payment:plans")))
-       }
-
-       sender.sendText(
-           chatId,
-           "${greeting(name)}\n\nЧто хотите сделать?",
-           markup = keyboard(*rows.toTypedArray()),
-       )
-   }
 
 
     // ─── ВХОД (логин) ─────────────────────────────────────────────────────────────
