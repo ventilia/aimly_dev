@@ -120,12 +120,13 @@ class BotLeadsHandler(
             val num        = idx + 1 + page * LEADS_PAGE_SIZE
             val statusIcon = statusIcon(lead.status)
             val aiIcon     = when (lead.aiValid) { true -> " ✨"; false -> " 🚫"; else -> "" }
+            val sourceTag  = sourceTag(lead.source)
             val author     = if (lead.authorUsername.isNotBlank()) "@${lead.authorUsername}" else lead.authorName
             val preview    = lead.messageText.take(80).let { if (lead.messageText.length > 80) "$it…" else it }
             val chatLabel  = lead.chatTitle.ifBlank { lead.chatLink }.take(30)
 
-            sb.append("$statusIcon$aiIcon $num. $author\n")
-            sb.append("💬 $chatLabel\n")
+            sb.append("$statusIcon$aiIcon $num. $author  $sourceTag\n")
+            if (chatLabel.isNotBlank()) sb.append("💬 $chatLabel\n")
             sb.append("$preview\n")
             sb.append("🔑 «${lead.matchedKeyword}»\n\n")
 
@@ -186,16 +187,26 @@ class BotLeadsHandler(
             append(lead.authorName)
             if (lead.authorUsername.isNotBlank()) append(" (@${lead.authorUsername})")
         }
-        val date = lead.foundAt.toLocalDate().toString()
-        val time = "%02d:%02d".format(lead.foundAt.hour, lead.foundAt.minute)
+
+        // Для экспорта показываем реальную дату сообщения (messageDate),
+        // для мониторинга — дату обнаружения (foundAt). Они совпадают для LIVE.
+        val displayDate = lead.messageDate ?: lead.foundAt
+        val date = displayDate.toLocalDate().toString()
+        val time = "%02d:%02d".format(displayDate.hour, displayDate.minute)
+
+        val sourceLabel = when (lead.source.name) {
+            "MANUAL_EXPORT" -> "экспорт файла"
+            else            -> "мониторинг"
+        }
 
         val text = buildString {
             append("📄 Лид #${lead.id}\n\n")
-            append("$statusLabel$aiLine\n\n")
+            append("$statusLabel$aiLine\n")
+            append("Источник: $sourceLabel\n\n")
             append("👤 Автор: $author\n")
             if (chatLabel.isNotBlank()) append("💬 Чат: $chatLabel\n")
             append("🔑 Ключевое слово: «${lead.matchedKeyword}»\n")
-            append("📅 Найден: $date в $time\n\n")
+            append("📅 Дата: $date в $time\n\n")
             append("Сообщение:\n${lead.messageText.take(800)}")
             if (lead.messageText.length > 800) append("…")
         }
@@ -260,6 +271,11 @@ class BotLeadsHandler(
         }
     }
 
+
+    private fun sourceTag(source: String) = when (source) {
+        "MANUAL_EXPORT" -> "[экспорт]"
+        else            -> "[монитор]"
+    }
 
     private fun statusIcon(status: String) = when (status) {
         "NEW"     -> "🔴"
