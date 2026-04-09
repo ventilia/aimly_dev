@@ -27,6 +27,9 @@ data class ParsedMessage(
     val authorUsername: String,
     val text:           String,
     val date:           LocalDateTime,
+    // true, если сообщение является пересланным (forward).
+    // Определяем эвристически по HTML-структуре Telegram-экспорта.
+    val isForwarded:    Boolean = false,
 )
 
 // ─── Jackson-маппинг для Telegram JSON-экспорта ───────────────────────────────
@@ -47,6 +50,9 @@ data class TgExportMessage(
     val from:         String? = null,
     val from_id:      String? = null,
     val text:         Any?    = null,   // может быть String или List<Any>
+    // Поля пересланных сообщений в Telegram JSON-экспорте
+    val forwarded_from: String? = null,
+    val forward_from:   String? = null,
 )
 
 // ─── Сервис ───────────────────────────────────────────────────────────────────
@@ -120,12 +126,16 @@ class ChatExportService(
                 if (text.isBlank()) return@mapNotNull null
                 val date = parseDate(m.date) ?: return@mapNotNull null
 
+                // В JSON-экспорте пересланные сообщения имеют поле forwarded_from или forward_from
+                val isForwarded = !m.forwarded_from.isNullOrBlank() || !m.forward_from.isNullOrBlank()
+
                 ParsedMessage(
                     messageId      = m.id,
                     authorName     = m.from?.trim() ?: "Неизвестный",
                     authorUsername = "",
                     text           = text.trim(),
                     date           = date,
+                    isForwarded    = isForwarded,
                 )
             }
 
@@ -154,6 +164,8 @@ class ChatExportService(
      *     <div class="pull_right date details" title="дд.мм.гггг чч:мм:сс">...</div>
      *     <div class="text">текст</div>
      *   </div>
+     *
+     * Пересланные сообщения имеют класс "forwarded" и/или содержат блок .forwarded внутри.
      *
      * Используем regex-парсинг по блокам — надёжный подход для фиксированного формата.
      */
@@ -212,12 +224,16 @@ class ChatExportService(
             val text       = extractHtmlText(block)
             if (text.isBlank()) continue
 
+            // Пересланные сообщения в HTML-экспорте содержат блок с классом "forwarded"
+            val isForwarded = block.contains("""class="forwarded"""")
+
             messages += ParsedMessage(
                 messageId      = msgId,
                 authorName     = authorName,
                 authorUsername = "",
                 text           = text.trim(),
                 date           = date,
+                isForwarded    = isForwarded,
             )
         }
 
@@ -288,10 +304,21 @@ class ChatExportService(
 
         for (i in messages.indices) {
             val msg = messages[i]
+
+            // Пересланные сообщения пропускаем — они не являются запросами от реального автора,
+            // а лишь цитатами из другого чата. Это правило работает без изменений в Go.
+            if (msg.isForwarded) {
+                log.debug("[IMPORT] Пересланное сообщение пропущено: id=${msg.messageId} author=${msg.authorName}")
+                skipped++
+                continue
+            }
+
             val matchedKeyword = findKeyword(msg.text, allKeywords) ?: continue
 
             val contextMessages = messages
                 .subList(maxOf(0, i - 3), i)
+                // Контекст тоже фильтруем — пересланные в контексте не несут смысла
+                .filter { !it.isForwarded }
                 .map { it.text.take(300) }
 
             val req = IncomingMessageRequest(
@@ -307,6 +334,10 @@ class ChatExportService(
                 matchedKeyword  = matchedKeyword,
                 contextMessages = contextMessages,
                 isHistorical    = true,
+                // --- ЗАДАЧА 1: помечаем лид как из ручного экспорта ---
+                source          = LeadSource.MANUAL_EXPORT,
+                // --- ЗАДАЧА 2: передаём реальную дату сообщения из файла ---
+                messageDate     = msg.date,
             )
 
             try {

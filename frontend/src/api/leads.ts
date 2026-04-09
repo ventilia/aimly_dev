@@ -28,6 +28,12 @@ export interface Lead {
     aiValid:         boolean | null
     aiReason:        string | null
     contextMessages: string[]
+    // --- НОВЫЕ ПОЛЯ ---
+    // "LIVE" — найден ботом в реальном времени, "MANUAL_EXPORT" — из ручного экспорта файла
+    source:          'LIVE' | 'MANUAL_EXPORT'
+    // Реальное время написания сообщения.
+    // Для LIVE = foundAt. Для MANUAL_EXPORT = реальная дата из файла экспорта.
+    messageDate:     string
 }
 
 export interface LeadPage {
@@ -183,4 +189,25 @@ export const adminSubsApi = {
             body:   JSON.stringify({ userId, amount }),
         })
     },
+}
+
+
+export interface AdminLeadDto {
+    id:             number
+    userId:         number
+    userEmail:      string
+    chatTitle:      string
+    chatLink:       string
+    authorName:     string
+    authorUsername: string
+    messageText:    string
+    messageLink:    string
+    matchedKeyword: string
+    status:         string
+    aiValid:        boolean | null
+    aiReason:       string | null
+    foundAt:        string
+    // --- НОВЫЕ ПОЛЯ ---
+    source:         'LIVE' | 'MANUAL_EXPORT'
+    messageDate:    string
 }

@@ -38,7 +38,12 @@ function dispatchLeadsCountChanged(newCount: number) {
 // • Другой год  → «15 мар 2023, 09:15»
 function formatLeadDate(iso: string): string {
     try {
-        const d   = new Date(iso)
+        // Kotlin LocalDateTime.toString() даёт формат "2024-03-15T14:32:00" без суффикса Z.
+        // Добавляем Z только если нет никакого zone-суффикса, чтобы браузер не трактовал как UTC+local.
+        const normalized = iso.includes('T') && !iso.endsWith('Z') && !iso.includes('+') && !iso.includes('-', 10)
+            ? iso + 'Z'
+            : iso
+        const d   = new Date(normalized)
         if (isNaN(d.getTime())) return ''
         const now = new Date()
 
@@ -133,6 +138,40 @@ const IconChevron = ({ open }: { open: boolean }) => (
         <polyline points="6 9 12 15 18 9"/>
     </svg>
 )
+
+// Иконка файла для тега "из экспорта"
+const IconFileImport = () => (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="12" y1="18" x2="12" y2="12"/>
+        <polyline points="9 15 12 18 15 15"/>
+    </svg>
+)
+
+// Тег «из экспорта» — показывается для лидов с source === 'MANUAL_EXPORT'
+function ExportBadge() {
+    return (
+        <span style={{
+            display:        'inline-flex',
+            alignItems:     'center',
+            gap:            4,
+            fontSize:       10,
+            fontWeight:     700,
+            padding:        '2px 7px',
+            borderRadius:   100,
+            background:     'rgba(139,92,246,.12)',
+            color:          '#7c3aed',
+            border:         '1px solid rgba(139,92,246,.25)',
+            letterSpacing:  '.2px',
+            flexShrink:     0,
+            whiteSpace:     'nowrap',
+        }}>
+            <IconFileImport />
+            экспорт
+        </span>
+    )
+}
 
 export default function LeadsPage() {
     const [data,       setData]       = useState<LeadPage | null>(null)
@@ -352,8 +391,15 @@ export default function LeadsPage() {
                             const isArchived = lead.status === 'IGNORED'
                             const isExpanded = expanded.has(lead.id)
                             const isUpdating = updating.has(lead.id)
+                            const isExport   = lead.source === 'MANUAL_EXPORT'
 
                             const contextMsgs: string[] = lead.contextMessages ?? []
+
+                            // Для экспортных лидов показываем реальную дату сообщения (messageDate),
+                            // для живых — foundAt (момент обнаружения ботом).
+                            const displayDate = isExport
+                                ? (lead.messageDate || lead.foundAt)
+                                : lead.foundAt
 
                             return (
                                 <div
@@ -362,23 +408,36 @@ export default function LeadsPage() {
                                     style={{
                                         ...(isNew      ? { borderLeftColor: '#dc2626', borderLeftWidth: 3 } : {}),
                                         ...(isArchived ? { opacity: 0.65 } : {}),
+                                        // Лиды из экспорта — чуть другой оттенок левой полосы (фиолетовый)
+                                        ...(isExport && isNew ? { borderLeftColor: '#7c3aed' } : {}),
                                     }}
                                 >
                                     <div className={s.leadHead}>
                                         <div className={s.leadMeta}>
                                             <div style={{
                                                 width: 32, height: 32, borderRadius: '50%',
-                                                background: 'var(--c-accent-soft)', color: 'var(--c-accent)',
+                                                background: isExport ? 'rgba(139,92,246,.1)' : 'var(--c-accent-soft)',
+                                                color: isExport ? '#7c3aed' : 'var(--c-accent)',
                                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                                                 fontWeight: 700, fontSize: 14, flexShrink: 0,
                                                 fontFamily: 'var(--font-head)',
                                             }}>
                                                 {(lead.authorName || lead.chatTitle || '?').charAt(0).toUpperCase()}
                                             </div>
-                                            <div>
-                                                <span className={s.leadChat}>{lead.chatTitle || lead.chatLink}</span>
-                                                <span className={s.leadDate} style={{ marginLeft: 8 }}>
-                                                    {formatLeadDate(lead.foundAt)}
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                                    <span className={s.leadChat}>{lead.chatTitle || lead.chatLink}</span>
+                                                    {/* Тег "из экспорта" — задача 1 */}
+                                                    {isExport && <ExportBadge />}
+                                                </div>
+                                                <span className={s.leadDate}>
+                                                    {/* Задача 2: для экспорта показываем реальную дату сообщения */}
+                                                    {formatLeadDate(displayDate)}
+                                                    {isExport && (
+                                                        <span style={{ color: 'var(--c-ink-3)', fontSize: 10, marginLeft: 4 }}>
+                                                            · дата сообщения
+                                                        </span>
+                                                    )}
                                                 </span>
                                             </div>
                                             {lead.matchedKeyword && (
@@ -636,17 +695,19 @@ export default function LeadsPage() {
                                                 </button>
                                             )}
 
-                                            <a
-                                                href={lead.messageLink}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className={s.openLink}
-                                                style={{ display: 'flex', alignItems: 'center', gap: 4 }}
-                                                onClick={() => handleOpen(lead)}
-                                            >
-                                                Открыть
-                                                <IconExternalLink />
-                                            </a>
+                                            {lead.messageLink && (
+                                                <a
+                                                    href={lead.messageLink}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className={s.openLink}
+                                                    style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                                                    onClick={() => handleOpen(lead)}
+                                                >
+                                                    Открыть
+                                                    <IconExternalLink />
+                                                </a>
+                                            )}
                                         </div>
                                     </div>
                                 </div>

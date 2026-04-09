@@ -34,6 +34,11 @@ data class LeadDto(
     val aiValid:         Boolean?,
     val aiReason:        String?,
     val contextMessages: List<String>,
+    // --- НОВЫЕ ПОЛЯ ---
+    // Источник: "LIVE" или "MANUAL_EXPORT"
+    val source:          String,
+    // Реальное время сообщения (для MANUAL_EXPORT — из файла, для LIVE — совпадает с foundAt)
+    val messageDate:     String,
 )
 
 data class LeadPageDto(
@@ -190,12 +195,15 @@ class LeadService(
             contextMessages = req.contextMessages.take(3)
                 .map { it.sanitize() }
                 .joinToString("\u001F"),
+            // --- НОВЫЕ ПОЛЯ ---
+            source      = req.source,
+            messageDate = req.messageDate ?: LocalDateTime.now(),
         )
         val saved = leadRepo.save(lead)
         user.leadsCount = user.leadsCount + 1
         userRepo.save(user)
 
-        log.info("[LEAD] Создан: leadId=#${saved.id} userId=${user.id} email=${user.email} keyword=\"${req.matchedKeyword}\" chat=\"${req.chatTitle}\" aiEnabled=$hasAiPlan historical=${req.isHistorical}")
+        log.info("[LEAD] Создан: leadId=#${saved.id} userId=${user.id} email=${user.email} keyword=\"${req.matchedKeyword}\" chat=\"${req.chatTitle}\" source=${req.source} aiEnabled=$hasAiPlan historical=${req.isHistorical}")
 
         if (hasAiPlan) {
             val recentLeads = leadRepo.findRecentByUserId(
@@ -527,6 +535,11 @@ class LeadService(
         val rawCtx = contextMessages
         val ctx = if (rawCtx.isNullOrBlank()) emptyList()
         else rawCtx.split("\u001F", "\u0000").filter { it.isNotBlank() }
+
+        // Для MANUAL_EXPORT используем реальную дату сообщения.
+        // Для LIVE — messageDate совпадает с foundAt.
+        val displayDate = messageDate ?: foundAt
+
         return LeadDto(
             id              = id,
             chatTitle       = sub?.chatTitle?.ifBlank { sub.chatLink } ?: "",
@@ -541,6 +554,8 @@ class LeadService(
             aiValid         = aiValid,
             aiReason        = aiReason,
             contextMessages = ctx,
+            source          = source.name,
+            messageDate     = displayDate.toString(),
         )
     }
 

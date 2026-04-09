@@ -5,8 +5,10 @@ import jakarta.persistence.*
 import java.time.LocalDateTime
 
 
-
 enum class LeadStatus { NEW, VIEWED, REPLIED, IGNORED }
+
+// Источник лида: LIVE — найден ботом в реальном времени, MANUAL_EXPORT — из ручного экспорта файла
+enum class LeadSource { LIVE, MANUAL_EXPORT }
 
 
 @Entity
@@ -124,7 +126,6 @@ class Lead(
     @Column(name = "ai_reason", columnDefinition = "TEXT")
     var aiReason: String? = null,
 
-
     @Column(name = "context_messages", columnDefinition = "TEXT")
     var contextMessages: String? = null,
 
@@ -134,4 +135,17 @@ class Lead(
 
     @Column(name = "found_at", nullable = false)
     val foundAt: LocalDateTime = LocalDateTime.now(),
+
+    // --- НОВЫЕ ПОЛЯ ---
+
+    // Источник лида: LIVE (бот поймал в реальном времени) или MANUAL_EXPORT (ручной импорт файла)
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source", nullable = false)
+    val source: LeadSource = LeadSource.LIVE,
+
+    // Оригинальная дата сообщения из файла экспорта.
+    // Для LIVE-лидов равна foundAt (момент обнаружения).
+    // Для MANUAL_EXPORT — реальное время написания сообщения в Telegram.
+    @Column(name = "message_date")
+    val messageDate: LocalDateTime? = null,
 )
