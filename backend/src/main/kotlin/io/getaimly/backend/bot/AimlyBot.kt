@@ -7,6 +7,7 @@ import io.getaimly.backend.lead.ChatSubscriptionRepository
 import io.getaimly.backend.lead.KeywordRepository
 import io.getaimly.backend.lead.LeadRepository
 import io.getaimly.backend.lead.LeadService
+import io.getaimly.backend.lead.LeadSource
 import io.getaimly.backend.lead.LeadStatus
 import io.getaimly.backend.referral.ReferralService
 import io.getaimly.backend.subscription.SubscriptionExpiryRepository
@@ -161,7 +162,7 @@ class AimlyBot(
                 update.hasCallbackQuery() -> "callback \"${update.callbackQuery.data}\" от tgId=${update.callbackQuery.from.id} (@${update.callbackQuery.from.userName ?: "—"})"
                 else                      -> "unknown update"
             }
-            log.error("[BOT] ❌ Ошибка обработки update #${update.updateId} ($ctx): ${e.message}", e)
+            log.error("[BOT] Ошибка обработки update #${update.updateId} ($ctx): ${e.message}", e)
         }
     }
 
@@ -173,7 +174,6 @@ class AimlyBot(
         val tgUser     = "${from.firstName} (@${from.userName ?: "—"}, tgId=${from.id})"
         val startToken = if (text.startsWith("/start ")) text.removePrefix("/start ").trim() else null
 
-        // Не логируем пароли в открытом виде
         val session = sessions[chatId]
         val isPasswordStep = session?.step == BotStep.WAITING_PASSWORD ||
                 session?.step == BotStep.WAITING_REG_PASSWORD ||
@@ -235,23 +235,19 @@ class AimlyBot(
     ) {
         val session = sessions[chatId] ?: return
         when (session.step) {
-            // ── Вход ──────────────────────────────────────────────────────────
             BotStep.WAITING_EMAIL      -> authHandler.handleWaitingEmail(chatId, text)
             BotStep.WAITING_PASSWORD   -> authHandler.handleWaitingPassword(chatId, text, from)
             BotStep.WAITING_LOGIN_CODE -> authHandler.handleWaitingLoginCode(chatId, text, from)
 
-            // ── Регистрация через бота ────────────────────────────────────────
             BotStep.WAITING_REG_EMAIL            -> authHandler.handleWaitingRegEmail(chatId, text)
             BotStep.WAITING_REG_PASSWORD         -> authHandler.handleWaitingRegPassword(chatId, text)
             BotStep.WAITING_REG_PASSWORD_CONFIRM -> authHandler.handleWaitingRegPasswordConfirm(chatId, text, from)
 
-            // ── Сброс пароля ──────────────────────────────────────────────────
             BotStep.WAITING_RESET_EMAIL                -> authHandler.handleWaitingResetEmail(chatId, text)
             BotStep.WAITING_RESET_CODE                 -> authHandler.handleWaitingResetCode(chatId, text)
             BotStep.WAITING_RESET_NEW_PASSWORD         -> authHandler.handleWaitingResetNewPassword(chatId, text)
             BotStep.WAITING_RESET_NEW_PASSWORD_CONFIRM -> authHandler.handleWaitingResetNewPasswordConfirm(chatId, text, from)
 
-            // ── Прочие шаги ───────────────────────────────────────────────────
             BotStep.WAITING_CHAT_LINK            -> chatsHandler.handleChatLinkInput(chatId, text, from)
             BotStep.WAITING_KEYWORD              -> keywordsHandler.handleKeywordInput(chatId, text, from)
             BotStep.WAITING_CONTEXT              -> profileHandler.handleContextInput(chatId, text)
@@ -285,25 +281,13 @@ class AimlyBot(
         log.info("[BOT][CB] $tgUser → \"$data\"")
 
         when {
-            // ── Авторизация: кнопка «Войти» ───────────────────────────────────
             data == "auth:login"     -> authHandler.startLoginFlow(chatId, msgId)
-
-            // ── Авторизация: кнопка «Войти» перед оплатой ────────────────────
             data == "auth:login_pay" -> authHandler.startLoginFlow(chatId, msgId, pendingAction = "pay")
-
-            // ── Авторизация: кнопка «Зарегистрироваться» ─────────────────────
             data == "auth:register"  -> authHandler.startRegisterFlow(chatId, msgId)
-
-            // ── Повторная отправка кода верификации email ─────────────────────
             data == "auth:resend_code" -> authHandler.resendVerificationCode(chatId, msgId)
-
-            // ── Сброс пароля: кнопка «Забыл пароль» ──────────────────────────
             data == "auth:forgot_password" -> authHandler.startForgotPasswordFlow(chatId, msgId)
-
-            // ── Сброс пароля: повторная отправка кода ─────────────────────────
             data == "auth:resend_reset_code" -> authHandler.resendResetCode(chatId, msgId)
 
-            // ── Отмена — редактируем существующее сообщение ───────────────────
             data == "auth:cancel"    -> {
                 sessions.remove(chatId)
                 authHandler.clearPendingReferral(chatId)
@@ -311,7 +295,6 @@ class AimlyBot(
                 sender.editText(chatId, msgId, "Отменено. Нажмите /start чтобы начать.")
             }
 
-            // ── Отмена — просто убираем сессию (сообщение уже не редактируется) ──
             data == "auth:cancel_msg" -> {
                 sessions.remove(chatId)
                 authHandler.clearPendingReferral(chatId)
@@ -402,6 +385,11 @@ class AimlyBot(
     }
 
 
+    /**
+     * Уведомление о новом лиде из мониторинга (LIVE).
+     * Для лидов из ручного экспорта (MANUAL_EXPORT) вызывать не нужно —
+     * вместо этого используется notifyExportSummary.
+     */
     fun notifyNewLead(
         telegramChatId: Long,
         leadId: Long,
@@ -411,26 +399,31 @@ class AimlyBot(
         keyword: String,
         authorUsername: String = "",
         authorName: String = "",
-        isHistorical: Boolean = false,
+        source: LeadSource = LeadSource.LIVE,
     ) {
+        // Лиды из экспорта не рассылаются поштучно
+        if (source == LeadSource.MANUAL_EXPORT) return
+
         val preview    = text.take(300).let { if (text.length > 300) "$it…" else it }
         val authorLine = when {
-            authorUsername.isNotBlank() -> "\n👤 Автор: @$authorUsername"
-            authorName.isNotBlank()     -> "\n👤 Автор: $authorName"
+            authorUsername.isNotBlank() -> "\nАвтор: @$authorUsername"
+            authorName.isNotBlank()     -> "\nАвтор: $authorName"
             else                        -> ""
         }
-        val headline = if (isHistorical) "🕐 Старый лид (за последние 24 ч)" else "🎯 Новый лид!"
+
+        // Короткий тег источника — всегда [монитор] для LIVE
+        val sourceTag = "[монитор]"
 
         val rows = mutableListOf<InlineKeyboardRow>()
         if (link.isNotBlank()) {
             rows.add(row(InlineKeyboardButton.builder()
-                .text("🔗 Открыть в Telegram")
+                .text("Открыть в Telegram")
                 .url(buildTgDeepLink(link))
                 .build()))
         }
         rows.add(row(
-            btn("📄 Подробнее", "lead:open:$leadId"),
-            btn("📋 Все лиды", "menu:leads"),
+            btn("Подробнее", "lead:open:$leadId"),
+            btn("Все лиды", "menu:leads"),
         ))
 
         runCatching {
@@ -438,18 +431,55 @@ class AimlyBot(
                 SendMessage.builder()
                     .chatId(telegramChatId.toString())
                     .text(
-                        "$headline\n\n" +
-                                "💬 Чат: $chatTitle\n" +
-                                "🔑 Ключевое слово: «$keyword»" +
+                        "Новый лид  $sourceTag\n\n" +
+                                "Чат: $chatTitle\n" +
+                                "Ключевое слово: «$keyword»" +
                                 authorLine + "\n\n" +
                                 preview
                     )
                     .replyMarkup(InlineKeyboardMarkup(rows))
                     .build()
             )
-            log.info("[BOT][NOTIFY] ✅ Уведомление отправлено: tgChatId=$telegramChatId leadId=$leadId keyword=\"$keyword\" исторический=$isHistorical")
+            log.info("[BOT][NOTIFY] Уведомление отправлено: tgChatId=$telegramChatId leadId=$leadId keyword=\"$keyword\"")
         }.onFailure {
-            log.warn("[BOT][NOTIFY] ❌ Ошибка отправки уведомления: tgChatId=$telegramChatId leadId=$leadId причина=${it.message}")
+            log.warn("[BOT][NOTIFY] Ошибка отправки уведомления: tgChatId=$telegramChatId leadId=$leadId причина=${it.message}")
+        }
+    }
+
+
+    /**
+     * Единое сводное уведомление после завершения импорта экспорта.
+     * Вызывается один раз из ChatExportService вместо серии отдельных уведомлений.
+     */
+    fun notifyExportSummary(
+        telegramChatId: Long,
+        chatTitle: String,
+        matchedLeads: Int,
+        skippedLeads: Int,
+    ) {
+        if (matchedLeads == 0) return
+
+        val text = buildString {
+            append("Импорт завершён  [экспорт]\n\n")
+            append("Чат: $chatTitle\n")
+            append("Найдено лидов: $matchedLeads")
+            if (skippedLeads > 0) append("\nПропущено (дубли): $skippedLeads")
+            append("\n\nЛиды добавлены в ваш список.")
+        }
+
+        runCatching {
+            telegramClient.execute(
+                SendMessage.builder()
+                    .chatId(telegramChatId.toString())
+                    .text(text)
+                    .replyMarkup(InlineKeyboardMarkup(listOf(
+                        row(btn("Перейти к лидам", "menu:leads")),
+                    )))
+                    .build()
+            )
+            log.info("[BOT][NOTIFY] Сводка экспорта отправлена: tgChatId=$telegramChatId chat=\"$chatTitle\" matched=$matchedLeads skipped=$skippedLeads")
+        }.onFailure {
+            log.warn("[BOT][NOTIFY] Ошибка отправки сводки экспорта: tgChatId=$telegramChatId причина=${it.message}")
         }
     }
 
@@ -464,19 +494,19 @@ class AimlyBot(
         val keywords = keywordRepository.findByUserIdAndIsActiveTrue(user.id).size
         val newLeads = leadRepository.countByUserIdAndStatus(user.id, LeadStatus.NEW)
         val subLine  = when (user.subscriptionStatus) {
-            "ACTIVE" -> "✅ Активна (${user.subscriptionPlan ?: "—"})"
-            "TRIAL"  -> "🔵 Пробный период"
-            else     -> "❌ Нет подписки"
+            "ACTIVE" -> "Активна (${user.subscriptionPlan ?: "—"})"
+            "TRIAL"  -> "Пробный период"
+            else     -> "Нет подписки"
         }
         log.info("[BOT] /status: userId=${user.id} email=${user.email} подписка=${user.subscriptionStatus} чатов=$chats ключевых_слов=$keywords новых_лидов=$newLeads")
         sender.sendText(
             chatId,
-            "📊 Статус аккаунта\n\n" +
-                    "📧 ${user.email}\n" +
-                    "📋 Подписка: $subLine\n\n" +
-                    "💬 Чатов: $chats\n" +
-                    "🔍 Ключевых слов: $keywords\n" +
-                    "📬 Новых лидов: $newLeads",
+            "Статус аккаунта\n\n" +
+                    "${user.email}\n" +
+                    "Подписка: $subLine\n\n" +
+                    "Чатов: $chats\n" +
+                    "Ключевых слов: $keywords\n" +
+                    "Новых лидов: $newLeads",
         )
     }
 
@@ -484,10 +514,10 @@ class AimlyBot(
         sender.sendText(chatId, buildHelpText())
 
     private fun buildHelpText() =
-        "📖 Помощь AIMLY\n\n" +
+        "Помощь AIMLY\n\n" +
                 "Бот предоставляет полный функционал сервиса.\n" +
                 "Для удобства также доступна веб-версия:\n" +
-                "🌐 ${BotAuthHandler.SITE_URL}\n\n" +
+                "${BotAuthHandler.SITE_URL}\n\n" +
                 "Команды:\n" +
                 "/start — главное меню\n" +
                 "/leads — список лидов\n" +
@@ -502,7 +532,7 @@ class AimlyBot(
                 "1. Добавьте Telegram-чаты (вручную или через AI-поиск)\n" +
                 "2. Укажите ключевые слова («ищу дизайнера» и т.д.)\n" +
                 "3. При совпадении вы получите уведомление с лидом\n\n" +
-                "💬 Поддержка: @aimly_support"
+                "Поддержка: @aimly_support"
 
     private fun buildTgDeepLink(link: String): String {
         val clean = link

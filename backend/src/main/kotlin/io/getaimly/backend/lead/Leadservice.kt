@@ -34,7 +34,6 @@ data class LeadDto(
     val aiValid:         Boolean?,
     val aiReason:        String?,
     val contextMessages: List<String>,
-    // --- НОВЫЕ ПОЛЯ ---
     // Источник: "LIVE" или "MANUAL_EXPORT"
     val source:          String,
     // Реальное время сообщения (для MANUAL_EXPORT — из файла, для LIVE — совпадает с foundAt)
@@ -195,7 +194,6 @@ class LeadService(
             contextMessages = req.contextMessages.take(3)
                 .map { it.sanitize() }
                 .joinToString("\u001F"),
-            // --- НОВЫЕ ПОЛЯ ---
             source      = req.source,
             messageDate = req.messageDate ?: LocalDateTime.now(),
         )
@@ -218,11 +216,11 @@ class LeadService(
                 )
             }
 
-
             val capturedUserId  = user.id
             val capturedEmail   = user.email
             val capturedKeyword = req.matchedKeyword
             val capturedLeadId  = saved.id
+            val capturedSource  = req.source
 
             aiService.validateAsync(
                 messageText            = req.messageText,
@@ -261,7 +259,7 @@ class LeadService(
                                 keyword        = req.matchedKeyword,
                                 authorUsername = req.authorUsername,
                                 authorName     = req.authorName,
-                                isHistorical   = req.isHistorical,
+                                source         = capturedSource,
                             )
                         }.onFailure { log.warn("ошибка telegram уведомления leadId=#${saved.id}: ${it.message}") }
                     }
@@ -279,7 +277,7 @@ class LeadService(
                         keyword        = req.matchedKeyword,
                         authorUsername = req.authorUsername,
                         authorName     = req.authorName,
-                        isHistorical   = req.isHistorical,
+                        source         = req.source,
                     )
                 }.onFailure { log.warn("ошибка telegram уведомления leadId=#${saved.id}: ${it.message}") }
             }

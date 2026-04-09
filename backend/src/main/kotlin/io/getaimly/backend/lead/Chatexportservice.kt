@@ -2,7 +2,9 @@ package io.getaimly.backend.lead
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.databind.ObjectMapper
+import io.getaimly.backend.bot.AimlyBot
 import org.slf4j.LoggerFactory
+import org.springframework.context.annotation.Lazy
 import org.springframework.stereotype.Service
 import org.springframework.web.multipart.MultipartFile
 import java.time.LocalDateTime
@@ -62,6 +64,8 @@ class ChatExportService(
     private val leadService: LeadService,
     private val keywordRepo: KeywordRepository,
     private val objectMapper: ObjectMapper,
+    // @Lazy чтобы разорвать циклическую зависимость: AimlyBot → LeadService → ChatExportService → AimlyBot
+    @Lazy private val bot: AimlyBot,
 ) {
     private val log = LoggerFactory.getLogger(ChatExportService::class.java)
 
@@ -183,28 +187,20 @@ class ChatExportService(
 
     /** Извлекает заголовок чата из .page_header .bold */
     private fun extractHtmlChatTitle(html: String): String {
-        // <div class="bold">Название чата</div>  — в секции page_header
         val headerBlock = Regex("""class="page_header"[^>]*>(.*?)</div>\s*</div>""", RegexOption.DOT_MATCHES_ALL)
             .find(html)?.groupValues?.get(1) ?: ""
         val bold = Regex("""class="[^"]*bold[^"]*"[^>]*>([^<]+)<""")
             .find(headerBlock)?.groupValues?.get(1)?.trim()
         if (!bold.isNullOrBlank()) return bold
 
-        // fallback: <title>...</title>
         val title = Regex("""<title[^>]*>([^<]+)</title>""", RegexOption.IGNORE_CASE)
             .find(html)?.groupValues?.get(1)?.trim()
         return title?.ifBlank { null } ?: "Импорт (HTML)"
     }
 
     private fun parseHtmlMessages(html: String): List<ParsedMessage> {
-        /*
-         * Разбиваем HTML на блоки <div class="message default clearfix" id="messageNNN">…</div>.
-         * Telegram всегда закрывает каждый блок сообщения отдельным </div>, а вложенность
-         * стандартная — можно корректно вырезать блок, найдя соответствующий закрывающий тег.
-         */
         val messages = mutableListOf<ParsedMessage>()
 
-        // Ищем все открывающие теги div.message.default
         val blockStartRe = Regex("""<div[^>]+class="[^"]*message\s+default[^"]*"[^>]+id="message(\d+)"[^>]*>""")
 
         val starts = blockStartRe.findAll(html).toList()
@@ -215,7 +211,6 @@ class ChatExportService(
             val msgId    = msgIdStr.toLongOrNull() ?: 0L
             val blockStart = match.range.first
 
-            // Конец блока — до начала следующего message-блока или конца файла
             val blockEnd = if (i + 1 < starts.size) starts[i + 1].range.first else html.length
             val block    = html.substring(blockStart, blockEnd)
 
@@ -224,7 +219,6 @@ class ChatExportService(
             val text       = extractHtmlText(block)
             if (text.isBlank()) continue
 
-            // Пересланные сообщения в HTML-экспорте содержат блок с классом "forwarded"
             val isForwarded = block.contains("""class="forwarded"""")
 
             messages += ParsedMessage(
@@ -305,8 +299,7 @@ class ChatExportService(
         for (i in messages.indices) {
             val msg = messages[i]
 
-            // Пересланные сообщения пропускаем — они не являются запросами от реального автора,
-            // а лишь цитатами из другого чата. Это правило работает без изменений в Go.
+            // Пересланные сообщения пропускаем — они не являются запросами от реального автора
             if (msg.isForwarded) {
                 log.debug("[IMPORT] Пересланное сообщение пропущено: id=${msg.messageId} author=${msg.authorName}")
                 skipped++
@@ -317,7 +310,6 @@ class ChatExportService(
 
             val contextMessages = messages
                 .subList(maxOf(0, i - 3), i)
-                // Контекст тоже фильтруем — пересланные в контексте не несут смысла
                 .filter { !it.isForwarded }
                 .map { it.text.take(300) }
 
@@ -334,9 +326,7 @@ class ChatExportService(
                 matchedKeyword  = matchedKeyword,
                 contextMessages = contextMessages,
                 isHistorical    = true,
-                // --- ЗАДАЧА 1: помечаем лид как из ручного экспорта ---
                 source          = LeadSource.MANUAL_EXPORT,
-                // --- ЗАДАЧА 2: передаём реальную дату сообщения из файла ---
                 messageDate     = msg.date,
             )
 
@@ -353,6 +343,20 @@ class ChatExportService(
             "[IMPORT] Завершён: userId=${user.id} email=${user.email} " +
                     "chat=\"$chatTitle\" total=${messages.size} matched=$matched skipped=$skipped"
         )
+
+        // Отправляем одно сводное уведомление вместо серии поштучных
+        user.telegramId?.let { tgId ->
+            runCatching {
+                bot.notifyExportSummary(
+                    telegramChatId = tgId,
+                    chatTitle      = chatTitle,
+                    matchedLeads   = matched,
+                    skippedLeads   = skipped,
+                )
+            }.onFailure {
+                log.warn("[IMPORT] Ошибка отправки сводки в бот: userId=${user.id} причина=${it.message}")
+            }
+        }
 
         return ImportResultDto(chatTitle, messages.size, matched, skipped, format)
     }
