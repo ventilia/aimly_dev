@@ -1,11 +1,14 @@
 package io.getaimly.backend.bot
 
+import io.getaimly.backend.lead.LeadFeedbackRepository
+import io.getaimly.backend.lead.LeadRating
 import io.getaimly.backend.lead.LeadRepository
 import io.getaimly.backend.lead.LeadService
 import io.getaimly.backend.lead.LeadStatus
 import io.getaimly.backend.lead.ChatSubscriptionRepository
 import io.getaimly.backend.user.UserRepository
 import org.slf4j.LoggerFactory
+import org.springframework.data.domain.PageRequest
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow
@@ -14,15 +17,30 @@ private const val LEADS_PAGE_SIZE = 5
 
 
 class BotLeadsHandler(
-    private val sender: BotSender,
-    private val userRepository: UserRepository,
-    private val leadRepository: LeadRepository,
+    private val sender:                 BotSender,
+    private val userRepository:         UserRepository,
+    private val leadRepository:         LeadRepository,
     private val subscriptionRepository: ChatSubscriptionRepository,
-    private val leadService: LeadService,
+    private val leadService:            LeadService,
+    private val feedbackRepo:           LeadFeedbackRepository,    // ← НОВЫЙ
 ) {
 
     private val log = LoggerFactory.getLogger(BotLeadsHandler::class.java)
 
+    // ─── Вспомогательный метод: ID последнего неоцененного отправленного лида ──
+
+    /**
+     * Возвращает ID лида, который был отправлен пользователю (tgNotifiedAt != null),
+     * но ещё не оценён. Это «блокирующий» лид — пока он не оценён,
+     * новые лиды стоят в очереди.
+     */
+    private fun findUnratedLeadId(userId: Long): Long? =
+        leadRepository.findLatestNotifiedWithoutFeedback(
+            userId   = userId,
+            pageable = PageRequest.of(0, 1),
+        ).firstOrNull()
+
+    // ─── Меню лидов ──────────────────────────────────────────────────────────
 
     fun showLeadsMenu(chatId: Long, tgUserId: Long, msgId: Int? = null) {
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
@@ -33,18 +51,35 @@ class BotLeadsHandler(
             return
         }
 
-        val newCount   = leadRepository.countByUserIdAndStatus(user.id, LeadStatus.NEW)
-        val totalCount = leadRepository.countByUserId(user.id)
-        log.info("[BOT][LEADS] Меню лидов: userId=${user.id} email=${user.email} всего=$totalCount новых=$newCount")
+        val unratedLeadId = findUnratedLeadId(user.id)
+        val newCount      = leadRepository.countByUserIdAndStatus(user.id, LeadStatus.NEW)
+        val totalCount    = leadRepository.countByUserId(user.id)
+
+        log.info(
+            "[BOT][LEADS] Меню лидов: userId=${user.id} email=${user.email} " +
+                    "всего=$totalCount новых=$newCount неоцененный=${unratedLeadId ?: "—"}"
+        )
+
+        val sb   = StringBuilder("📋 Лиды\n\n")
+        val rows = mutableListOf<InlineKeyboardRow>()
+
+        // Блок оценки — показывается поверх всего если есть неоцененный лид
+        if (unratedLeadId != null) {
+            sb.append("⚠️ Лид #$unratedLeadId ожидает вашей оценки\n")
+            sb.append("Новые лиды будут доставлены после оценки 👇\n\n")
+            rows.add(row(
+                btn("👍 Хороший лид", "feedback:good:$unratedLeadId"),
+                btn("👎 Не лид",      "feedback:bad:$unratedLeadId"),
+            ))
+            rows.add(row(btn("📄 Посмотреть лид #$unratedLeadId", "lead:open:$unratedLeadId")))
+            rows.add(row(btn("━━━━━━━━━━━━━━━━━━━━━━━━", "noop")))
+        }
+
+        sb.append("Всего лидов: $totalCount\n")
+        if (newCount > 0) sb.append("🔴 Непросмотренных: $newCount\n")
+        sb.append("\nВыберите раздел:")
 
         val newLabel = if (newCount > 0) "📬 Новые лиды  •  $newCount" else "📬 Новых лидов нет"
-
-        val text = "📋 Лиды\n\n" +
-                "Всего лидов: $totalCount\n" +
-                (if (newCount > 0) "🔴 Непросмотренных: $newCount\n" else "") +
-                "\nВыберите раздел:"
-
-        val rows = mutableListOf<InlineKeyboardRow>()
         rows.add(row(btn(newLabel, "leads:new")))
         rows.add(row(btn("📄 Все лиды", "leads:all")))
         if (newCount > 0) {
@@ -53,11 +88,11 @@ class BotLeadsHandler(
         rows.add(row(btn("◀️ Главное меню", "menu:back")))
 
         val kb = InlineKeyboardMarkup(rows)
-
-        if (msgId != null) sender.editText(chatId, msgId, text, kb)
-        else sender.sendText(chatId, text, kb)
+        if (msgId != null) sender.editText(chatId, msgId, sb.toString(), kb)
+        else sender.sendText(chatId, sb.toString(), kb)
     }
 
+    // ─── Прочитать всё ───────────────────────────────────────────────────────
 
     fun markAllRead(chatId: Long, msgId: Int, tgUserId: Long) {
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
@@ -80,6 +115,7 @@ class BotLeadsHandler(
         showLeadsMenu(chatId, tgUserId, msgId)
     }
 
+    // ─── Список лидов ────────────────────────────────────────────────────────
 
     fun showLeadsList(chatId: Long, msgId: Int, tgUserId: Long, page: Int, statusFilter: String?) {
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
@@ -89,19 +125,34 @@ class BotLeadsHandler(
             return
         }
 
-        log.info("[BOT][LEADS] Список лидов: userId=${user.id} email=${user.email} фильтр=${statusFilter ?: "ALL"} страница=$page")
+        val unratedLeadId = findUnratedLeadId(user.id)
+        val filterTag     = statusFilter ?: "all"
 
-        val pageDto   = leadService.getLeads(user, statusFilter, page, LEADS_PAGE_SIZE)
-        val filterTag = statusFilter ?: "all"
+        log.info(
+            "[BOT][LEADS] Список лидов: userId=${user.id} email=${user.email} " +
+                    "фильтр=${statusFilter ?: "ALL"} страница=$page неоцененный=${unratedLeadId ?: "—"}"
+        )
+
+        val pageDto = leadService.getLeads(user, statusFilter, page, LEADS_PAGE_SIZE)
 
         if (pageDto.content.isEmpty()) {
             log.info("[BOT][LEADS] Список пуст: userId=${user.id} email=${user.email} фильтр=${statusFilter ?: "ALL"}")
+            val rows = mutableListOf<InlineKeyboardRow>()
+            if (unratedLeadId != null) {
+                rows.add(row(
+                    btn("👍 Хороший лид", "feedback:good:$unratedLeadId"),
+                    btn("👎 Не лид",      "feedback:bad:$unratedLeadId"),
+                ))
+                rows.add(row(btn("📄 Посмотреть лид #$unratedLeadId", "lead:open:$unratedLeadId")))
+            }
+            rows.add(row(btn("◀️ Назад", "menu:leads")))
             sender.editText(
                 chatId, msgId,
-                "📭 Лидов нет\n\n" +
-                        (if (statusFilter == "NEW") "Новых лидов пока нет.\nДобавьте чаты и ключевые слова."
-                        else "Лидов нет.\nДобавьте чаты и ключевые слова для мониторинга."),
-                keyboard(row(btn("◀️ Назад", "menu:leads"))),
+                "📭 Лидов нет\n\n" + (
+                        if (statusFilter == "NEW") "Новых лидов пока нет.\nДобавьте чаты и ключевые слова."
+                        else "Лидов нет.\nДобавьте чаты и ключевые слова для мониторинга."
+                        ),
+                InlineKeyboardMarkup(rows),
             )
             return
         }
@@ -113,8 +164,21 @@ class BotLeadsHandler(
             else      -> "📋 Все лиды"
         }
 
-        val sb   = StringBuilder("$title  •  стр. ${page + 1}/${pageDto.totalPages}\n\n")
+        val sb   = StringBuilder()
         val rows = mutableListOf<InlineKeyboardRow>()
+
+        // ── Баннер неоцененного лида — поверх списка ─────────────────────────
+        if (unratedLeadId != null) {
+            sb.append("⚠️ Лид #$unratedLeadId ждёт оценки — новые лиды в очереди\n\n")
+            rows.add(row(
+                btn("👍 Хороший лид", "feedback:good:$unratedLeadId"),
+                btn("👎 Не лид",      "feedback:bad:$unratedLeadId"),
+            ))
+            rows.add(row(btn("📄 Посмотреть лид #$unratedLeadId", "lead:open:$unratedLeadId")))
+            rows.add(row(btn("━━━━━━━━━━━━━━━━━━━━━━━━", "noop")))
+        }
+
+        sb.append("$title  •  стр. ${page + 1}/${pageDto.totalPages}\n\n")
 
         pageDto.content.forEachIndexed { idx, lead ->
             val num        = idx + 1 + page * LEADS_PAGE_SIZE
@@ -125,7 +189,10 @@ class BotLeadsHandler(
             val preview    = lead.messageText.take(80).let { if (lead.messageText.length > 80) "$it…" else it }
             val chatLabel  = lead.chatTitle.ifBlank { lead.chatLink }.take(30)
 
-            sb.append("$statusIcon$aiIcon $num. $author  $sourceTag\n")
+            // Показываем оценку если есть
+            val feedbackIcon = feedbackIcon(user.id, lead.id)
+
+            sb.append("$statusIcon$aiIcon$feedbackIcon $num. $author  $sourceTag\n")
             if (chatLabel.isNotBlank()) sb.append("💬 $chatLabel\n")
             sb.append("$preview\n")
             sb.append("🔑 «${lead.matchedKeyword}»\n\n")
@@ -146,6 +213,7 @@ class BotLeadsHandler(
         sender.editText(chatId, msgId, sb.toString().trimEnd(), InlineKeyboardMarkup(rows))
     }
 
+    // ─── Карточка лида ───────────────────────────────────────────────────────
 
     fun showLeadDetail(chatId: Long, msgId: Int, tgUserId: Long, leadId: Long) {
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
@@ -167,7 +235,15 @@ class BotLeadsHandler(
             return
         }
 
-        log.info("[BOT][LEADS] Просмотр лида: userId=${user.id} email=${user.email} leadId=$leadId статус=${lead.status} keyword=\"${lead.matchedKeyword}\" автор=@${lead.authorUsername.ifBlank { lead.authorName }}")
+        val existingFeedback = feedbackRepo.findByUserIdAndLeadId(user.id, leadId)
+        val unratedLeadId    = findUnratedLeadId(user.id)
+
+        log.info(
+            "[BOT][LEADS] Просмотр лида: userId=${user.id} email=${user.email} leadId=$leadId " +
+                    "статус=${lead.status} keyword=\"${lead.matchedKeyword}\" " +
+                    "автор=@${lead.authorUsername.ifBlank { lead.authorName }} " +
+                    "оценка=${existingFeedback?.rating ?: "—"}"
+        )
 
         val sub       = lead.subscriptionId?.let { subscriptionRepository.findById(it).orElse(null) }
         val chatLabel = sub?.chatTitle?.ifBlank { sub.chatLink } ?: ""
@@ -183,13 +259,16 @@ class BotLeadsHandler(
             false -> "\n🤖 AI: ❌ отклонил${lead.aiReason?.let { " — $it" } ?: ""}"
             null  -> ""
         }
+        val feedbackLine = when (existingFeedback?.rating) {
+            LeadRating.GOOD -> "\n⭐ Оценка: 👍 Хороший лид"
+            LeadRating.BAD  -> "\n⭐ Оценка: 👎 Не лид"
+            null            -> ""
+        }
         val author = buildString {
             append(lead.authorName)
             if (lead.authorUsername.isNotBlank()) append(" (@${lead.authorUsername})")
         }
 
-        // Для экспорта показываем реальную дату сообщения (messageDate),
-        // для мониторинга — дату обнаружения (foundAt). Они совпадают для LIVE.
         val displayDate = lead.messageDate ?: lead.foundAt
         val date = displayDate.toLocalDate().toString()
         val time = "%02d:%02d".format(displayDate.hour, displayDate.minute)
@@ -201,7 +280,7 @@ class BotLeadsHandler(
 
         val text = buildString {
             append("📄 Лид #${lead.id}\n\n")
-            append("$statusLabel$aiLine\n")
+            append("$statusLabel$aiLine$feedbackLine\n")
             append("Источник: $sourceLabel\n\n")
             append("👤 Автор: $author\n")
             if (chatLabel.isNotBlank()) append("💬 Чат: $chatLabel\n")
@@ -213,6 +292,22 @@ class BotLeadsHandler(
 
         val rows = mutableListOf<InlineKeyboardRow>()
 
+        // ── 1. Кнопки оценки ─────────────────────────────────────────────────
+        when {
+            // Этот лид не оценен и был отправлен в Telegram — показываем кнопки
+            existingFeedback == null && lead.tgNotifiedAt != null -> {
+                rows.add(row(
+                    btn("👍 Хороший лид", "feedback:good:$leadId"),
+                    btn("👎 Не лид",      "feedback:bad:$leadId"),
+                ))
+            }
+            // Другой лид ожидает оценки — напоминаем
+            unratedLeadId != null && unratedLeadId != leadId -> {
+                rows.add(row(btn("⚠️ Оценить лид #$unratedLeadId", "lead:open:$unratedLeadId")))
+            }
+        }
+
+        // ── 2. Открыть оригинал в Telegram ───────────────────────────────────
         if (lead.messageLink.isNotBlank()) {
             rows.add(row(InlineKeyboardButton.builder()
                 .text("🔗 Открыть в Telegram")
@@ -220,6 +315,7 @@ class BotLeadsHandler(
                 .build()))
         }
 
+        // ── 3. Смена статуса ─────────────────────────────────────────────────
         when (lead.status) {
             LeadStatus.NEW -> {
                 rows.add(row(
@@ -236,6 +332,7 @@ class BotLeadsHandler(
             else -> {}
         }
 
+        // ── 4. Навигация ──────────────────────────────────────────────────────
         rows.add(row(btn("◀️ К списку", "leads:all")))
         rows.add(row(btn("🏠 Главное меню", "menu:back")))
 
@@ -252,6 +349,7 @@ class BotLeadsHandler(
         }
     }
 
+    // ─── Смена статуса ───────────────────────────────────────────────────────
 
     fun changeLeadStatus(tgUserId: Long, leadId: Long, status: String) {
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)
@@ -271,6 +369,20 @@ class BotLeadsHandler(
         }
     }
 
+    // ─── Приватные хелперы ────────────────────────────────────────────────────
+
+    /**
+     * Возвращает иконку оценки для лида в списке.
+     * Не бросает исключений — при любой ошибке БД просто вернёт пустую строку.
+     */
+    private fun feedbackIcon(userId: Long, leadId: Long): String =
+        runCatching {
+            when (feedbackRepo.findByUserIdAndLeadId(userId, leadId)?.rating) {
+                LeadRating.GOOD -> " 👍"
+                LeadRating.BAD  -> " 👎"
+                null            -> ""
+            }
+        }.getOrDefault("")
 
     private fun sourceTag(source: String) = when (source) {
         "MANUAL_EXPORT" -> "[экспорт]"

@@ -83,6 +83,7 @@ class AimlyBot(
         leadRepository         = leadRepository,
         subscriptionRepository = subscriptionRepository,
         leadService            = leadService,
+        feedbackRepo           = feedbackRepo,           // ← передаём для UX оценок
     )
 
     private val chatsHandler = BotChatsHandler(
