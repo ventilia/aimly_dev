@@ -5,10 +5,14 @@ import io.getaimly.backend.auth.AuthService
 import io.getaimly.backend.lead.ChatSearchService
 import io.getaimly.backend.lead.ChatSubscriptionRepository
 import io.getaimly.backend.lead.KeywordRepository
+import io.getaimly.backend.lead.LeadFeedbackRepository
+import io.getaimly.backend.lead.LeadFeedbackService
+import io.getaimly.backend.lead.LeadRating
 import io.getaimly.backend.lead.LeadRepository
 import io.getaimly.backend.lead.LeadService
 import io.getaimly.backend.lead.LeadSource
 import io.getaimly.backend.lead.LeadStatus
+import io.getaimly.backend.lead.PendingLeadNotificationRepository
 import io.getaimly.backend.referral.ReferralService
 import io.getaimly.backend.subscription.SubscriptionExpiryRepository
 import io.getaimly.backend.user.UserRepository
@@ -22,6 +26,7 @@ import org.telegram.telegrambots.longpolling.interfaces.LongPollingUpdateConsume
 import org.telegram.telegrambots.longpolling.starter.SpringLongPollingBot
 import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateConsumer
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageReplyMarkup
 import org.telegram.telegrambots.meta.api.objects.Update
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton
@@ -34,16 +39,19 @@ import java.util.concurrent.ConcurrentHashMap
 class AimlyBot(
     @Value("\${telegram.bot.token}")    private val token: String,
     @Value("\${telegram.bot.username}") private val botUsername: String,
-    private val authService: AuthService,
-    private val userRepository: UserRepository,
-    private val leadRepository: LeadRepository,
+    private val authService:            AuthService,
+    private val userRepository:         UserRepository,
+    private val leadRepository:         LeadRepository,
     private val subscriptionRepository: ChatSubscriptionRepository,
-    private val keywordRepository: KeywordRepository,
-    private val leadService: LeadService,
-    private val expiryRepository: SubscriptionExpiryRepository,
-    private val aiService: AiService,
-    private val chatSearchService: ChatSearchService,
-    private val referralService: ReferralService,
+    private val keywordRepository:      KeywordRepository,
+    private val leadService:            LeadService,
+    private val expiryRepository:       SubscriptionExpiryRepository,
+    private val aiService:              AiService,
+    private val chatSearchService:      ChatSearchService,
+    private val referralService:        ReferralService,
+    private val feedbackService:        LeadFeedbackService,           // ← НОВЫЙ
+    private val feedbackRepo:           LeadFeedbackRepository,        // ← НОВЫЙ
+    private val pendingRepo:            PendingLeadNotificationRepository, // ← НОВЫЙ
 ) : SpringLongPollingBot, LongPollingSingleThreadUpdateConsumer {
 
     private val log            = LoggerFactory.getLogger(AimlyBot::class.java)
@@ -332,6 +340,18 @@ class AimlyBot(
             data.startsWith("lead:viewed:")  -> { leadsHandler.changeLeadStatus(from.id, data.removePrefix("lead:viewed:").toLongOrNull() ?: 0, "VIEWED");  leadsHandler.showLeadsMenu(chatId, from.id, msgId) }
             data.startsWith("lead:replied:") -> { leadsHandler.changeLeadStatus(from.id, data.removePrefix("lead:replied:").toLongOrNull() ?: 0, "REPLIED"); leadsHandler.showLeadsMenu(chatId, from.id, msgId) }
             data.startsWith("lead:ignored:") -> { leadsHandler.changeLeadStatus(from.id, data.removePrefix("lead:ignored:").toLongOrNull() ?: 0, "IGNORED"); leadsHandler.showLeadsMenu(chatId, from.id, msgId) }
+
+            // ─── Оценки лидов ─────────────────────────────────────────────────
+            data.startsWith("feedback:good:") -> {
+                val leadId = data.removePrefix("feedback:good:").toLongOrNull() ?: return
+                handleFeedback(chatId, msgId, from.id, leadId, LeadRating.GOOD)
+            }
+            data.startsWith("feedback:bad:") -> {
+                val leadId = data.removePrefix("feedback:bad:").toLongOrNull() ?: return
+                handleFeedback(chatId, msgId, from.id, leadId, LeadRating.BAD)
+            }
+            // ──────────────────────────────────────────────────────────────────
+
             data == "chat:add"           -> chatsHandler.startAddChat(chatId, msgId)
             data == "chat:del:cancel"    -> chatsHandler.showChats(chatId, msgId, from.id)
             data.startsWith("chat:page:")        -> chatsHandler.showChats(chatId, msgId, from.id, data.removePrefix("chat:page:").toIntOrNull() ?: 0)
@@ -384,11 +404,64 @@ class AimlyBot(
         }
     }
 
+    // ─── Обработка оценки лида ────────────────────────────────────────────────
+
+    private fun handleFeedback(
+        chatId:   Long,
+        msgId:    Int,
+        tgUserId: Long,
+        leadId:   Long,
+        rating:   LeadRating,
+    ) {
+        val user = userRepository.findByTelegramId(tgUserId).orElse(null)
+        if (user == null) {
+            sender.editText(chatId, msgId, "Нужно войти. /start")
+            return
+        }
+
+        val ratingLabel = when (rating) {
+            LeadRating.GOOD -> "👍 Хороший лид"
+            LeadRating.BAD  -> "👎 Не лид"
+        }
+
+        runCatching {
+            feedbackService.submitFeedback(user, leadId, rating)
+
+            // Убираем кнопки оценки — заменяем на статус + навигацию
+            // (текст сообщения не трогаем, только markup)
+            val queueAfter = pendingRepo.countByUserId(user.id)
+            val queueNote  = if (queueAfter > 0) " · Следующий лид ↓" else ""
+
+            runCatching {
+                telegramClient.execute(
+                    EditMessageReplyMarkup.builder()
+                        .chatId(chatId.toString())
+                        .messageId(msgId)
+                        .replyMarkup(InlineKeyboardMarkup(listOf(
+                            row(btn("✅ Оценено: $ratingLabel$queueNote", "noop")),
+                            row(
+                                btn("Подробнее", "lead:open:$leadId"),
+                                btn("Все лиды",  "menu:leads"),
+                            ),
+                        )))
+                        .build()
+                )
+            }.onFailure {
+                log.debug("[BOT][FEEDBACK] editMarkup ошибка: $it.message")
+            }
+
+            log.info("[BOT][FEEDBACK] Оценка принята: userId=${user.id} leadId=#$leadId rating=$rating")
+        }.onFailure {
+            log.warn("[BOT][FEEDBACK] Ошибка оценки: userId=${user.id} leadId=#$leadId ${it.message}")
+            sender.editText(chatId, msgId, "❌ Ошибка сохранения оценки. Попробуйте ещё раз.")
+        }
+    }
+
+    // ─── Уведомление о новом лиде (с кнопками оценки) ────────────────────────
 
     /**
-     * Уведомление о новом лиде из мониторинга (LIVE).
-     * Для лидов из ручного экспорта (MANUAL_EXPORT) вызывать не нужно —
-     * вместо этого используется notifyExportSummary.
+     * Отправляет уведомление о новом LIVE-лиде с кнопками 👍/👎.
+     * Для лидов из ручного экспорта (MANUAL_EXPORT) — не вызывается.
      */
     fun notifyNewLead(
         telegramChatId: Long,
@@ -401,7 +474,6 @@ class AimlyBot(
         authorName: String = "",
         source: LeadSource = LeadSource.LIVE,
     ) {
-        // Лиды из экспорта не рассылаются поштучно
         if (source == LeadSource.MANUAL_EXPORT) return
 
         val preview    = text.take(300).let { if (text.length > 300) "$it…" else it }
@@ -411,19 +483,25 @@ class AimlyBot(
             else                        -> ""
         }
 
-        // Короткий тег источника — всегда [монитор] для LIVE
-        val sourceTag = "[монитор]"
-
         val rows = mutableListOf<InlineKeyboardRow>()
+
         if (link.isNotBlank()) {
             rows.add(row(InlineKeyboardButton.builder()
                 .text("Открыть в Telegram")
                 .url(buildTgDeepLink(link))
                 .build()))
         }
+
+        // Кнопки оценки — обязательная строка
+        rows.add(row(
+            btn("👍 Хороший лид", "feedback:good:$leadId"),
+            btn("👎 Не лид",      "feedback:bad:$leadId"),
+        ))
+
+        // Навигация
         rows.add(row(
             btn("Подробнее", "lead:open:$leadId"),
-            btn("Все лиды", "menu:leads"),
+            btn("Все лиды",  "menu:leads"),
         ))
 
         runCatching {
@@ -431,7 +509,7 @@ class AimlyBot(
                 SendMessage.builder()
                     .chatId(telegramChatId.toString())
                     .text(
-                        "Новый лид  $sourceTag\n\n" +
+                        "Новый лид  [монитор]\n\n" +
                                 "Чат: $chatTitle\n" +
                                 "Ключевое слово: «$keyword»" +
                                 authorLine + "\n\n" +
@@ -446,11 +524,44 @@ class AimlyBot(
         }
     }
 
+    // ─── Nudge: есть новый лид, но нужно оценить предыдущий ─────────────────
 
     /**
-     * Единое сводное уведомление после завершения импорта экспорта.
-     * Вызывается один раз из ChatExportService вместо серии отдельных уведомлений.
+     * Лёгкое уведомление — не показывает детали нового лида,
+     * а напоминает оценить уже показанный [pendingLeadId].
+     * [queueSize] — сколько лидов стоит в очереди (включая только что добавленный).
      */
+    fun notifyLeadPending(
+        telegramChatId: Long,
+        pendingLeadId:  Long,
+        queueSize:      Long,
+    ) {
+        val queueNote = if (queueSize > 1) " (+ещё ${queueSize - 1})" else ""
+        val text = "📬 Пришёл новый лид$queueNote\n\n" +
+                "Чтобы посмотреть его, оцените предыдущий лид 👇"
+
+        runCatching {
+            telegramClient.execute(
+                SendMessage.builder()
+                    .chatId(telegramChatId.toString())
+                    .text(text)
+                    .replyMarkup(InlineKeyboardMarkup(listOf(
+                        row(
+                            btn("👍 Хороший лид", "feedback:good:$pendingLeadId"),
+                            btn("👎 Не лид",      "feedback:bad:$pendingLeadId"),
+                        ),
+                        row(btn("Посмотреть лид", "lead:open:$pendingLeadId")),
+                    )))
+                    .build()
+            )
+            log.info("[BOT][NOTIFY] Nudge отправлен: tgChatId=$telegramChatId pendingLeadId=$pendingLeadId queueSize=$queueSize")
+        }.onFailure {
+            log.warn("[BOT][NOTIFY] Ошибка отправки nudge: tgChatId=$telegramChatId причина=${it.message}")
+        }
+    }
+
+    // ─── Сводка экспорта ─────────────────────────────────────────────────────
+
     fun notifyExportSummary(
         telegramChatId: Long,
         chatTitle: String,
@@ -483,6 +594,7 @@ class AimlyBot(
         }
     }
 
+    // ─── Статус ──────────────────────────────────────────────────────────────
 
     fun sendStatus(chatId: Long, tgUserId: Long) {
         val user = userRepository.findByTelegramId(tgUserId).orElse(null)

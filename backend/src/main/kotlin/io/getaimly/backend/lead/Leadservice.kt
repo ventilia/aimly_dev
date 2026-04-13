@@ -34,9 +34,7 @@ data class LeadDto(
     val aiValid:         Boolean?,
     val aiReason:        String?,
     val contextMessages: List<String>,
-    // Источник: "LIVE" или "MANUAL_EXPORT"
     val source:          String,
-    // Реальное время сообщения (для MANUAL_EXPORT — из файла, для LIVE — совпадает с foundAt)
     val messageDate:     String,
 )
 
@@ -77,8 +75,9 @@ class LeadService(
     private val keywordRepo:      KeywordRepository,
     private val userRepo:         UserRepository,
 
-    @Lazy private val bot: AimlyBot,
-    private val aiService: AiService,
+    @Lazy private val bot:            AimlyBot,
+    private val aiService:            AiService,
+    private val feedbackService:      LeadFeedbackService,   // ← НОВЫЙ
     @Value("\${userbot.url:http://localhost:9090}") private val userbotUrl: String,
     @Value("\${internal.api-secret:aimly_internal_secret_change_in_prod}") private val internalSecret: String,
 ) {
@@ -203,6 +202,18 @@ class LeadService(
 
         log.info("[LEAD] Создан: leadId=#${saved.id} userId=${user.id} email=${user.email} keyword=\"${req.matchedKeyword}\" chat=\"${req.chatTitle}\" source=${req.source} aiEnabled=$hasAiPlan historical=${req.isHistorical}")
 
+        // Payload для уведомления — формируем один раз, передаём в feedbackService
+        val notifPayload = LeadNotificationPayload(
+            leadId         = saved.id,
+            chatTitle      = req.chatTitle,
+            text           = req.messageText.take(200),
+            link           = req.messageLink,
+            keyword        = req.matchedKeyword,
+            authorUsername = req.authorUsername,
+            authorName     = req.authorName,
+            source         = req.source,
+        )
+
         if (hasAiPlan) {
             val recentLeads = leadRepo.findRecentByUserId(
                 userId   = user.id,
@@ -216,17 +227,23 @@ class LeadService(
                 )
             }
 
+            // Персональные примеры оценок пользователя для AI-промпта
+            val feedbackExamples = feedbackService.getFeedbackExamplesForPrompt(
+                userId  = user.id,
+                keyword = req.matchedKeyword,
+            )
+
             val capturedUserId  = user.id
             val capturedEmail   = user.email
             val capturedKeyword = req.matchedKeyword
             val capturedLeadId  = saved.id
-            val capturedSource  = req.source
 
             aiService.validateAsync(
                 messageText            = req.messageText,
                 keyword                = req.matchedKeyword,
                 contextMessages        = req.contextMessages.take(3),
                 recentLeads            = recentLeads,
+                feedbackExamples       = feedbackExamples,
                 businessContext        = user.businessContext,
                 respondToServiceOffers = user.respondToServiceOffers,
             ) { result ->
@@ -248,38 +265,50 @@ class LeadService(
 
                 val isRelevant = result?.valid != false
                 if (isRelevant) {
-                    user.telegramId?.let { tgId ->
-                        runCatching {
-                            bot.notifyNewLead(
-                                telegramChatId = tgId,
-                                leadId         = saved.id,
-                                chatTitle      = req.chatTitle,
-                                text           = req.messageText.take(200),
-                                link           = req.messageLink,
-                                keyword        = req.matchedKeyword,
-                                authorUsername = req.authorUsername,
-                                authorName     = req.authorName,
-                                source         = capturedSource,
-                            )
-                        }.onFailure { log.warn("ошибка telegram уведомления leadId=#${saved.id}: ${it.message}") }
+                    if (req.isHistorical) {
+                        // Исторические лиды не проходят через очередь оценок —
+                        // они приходят пачкой при подключении чата и не должны блокировать
+                        user.telegramId?.let { tgId ->
+                            runCatching {
+                                bot.notifyNewLead(
+                                    telegramChatId = tgId,
+                                    leadId         = notifPayload.leadId,
+                                    chatTitle      = notifPayload.chatTitle,
+                                    text           = notifPayload.text,
+                                    link           = notifPayload.link,
+                                    keyword        = notifPayload.keyword,
+                                    authorUsername = notifPayload.authorUsername,
+                                    authorName     = notifPayload.authorName,
+                                    source         = notifPayload.source,
+                                )
+                            }.onFailure { log.warn("ошибка telegram уведомления leadId=#${notifPayload.leadId}: ${it.message}") }
+                        }
+                    } else {
+                        // LIVE-лиды — через очередь с оценками
+                        feedbackService.deliverOrEnqueue(user, notifPayload)
                     }
                 }
             }
         } else {
-            user.telegramId?.let { tgId ->
-                runCatching {
-                    bot.notifyNewLead(
-                        telegramChatId = tgId,
-                        leadId         = saved.id,
-                        chatTitle      = req.chatTitle,
-                        text           = req.messageText.take(200),
-                        link           = req.messageLink,
-                        keyword        = req.matchedKeyword,
-                        authorUsername = req.authorUsername,
-                        authorName     = req.authorName,
-                        source         = req.source,
-                    )
-                }.onFailure { log.warn("ошибка telegram уведомления leadId=#${saved.id}: ${it.message}") }
+            if (req.isHistorical) {
+                user.telegramId?.let { tgId ->
+                    runCatching {
+                        bot.notifyNewLead(
+                            telegramChatId = tgId,
+                            leadId         = notifPayload.leadId,
+                            chatTitle      = notifPayload.chatTitle,
+                            text           = notifPayload.text,
+                            link           = notifPayload.link,
+                            keyword        = notifPayload.keyword,
+                            authorUsername = notifPayload.authorUsername,
+                            authorName     = notifPayload.authorName,
+                            source         = notifPayload.source,
+                        )
+                    }.onFailure { log.warn("ошибка telegram уведомления leadId=#${notifPayload.leadId}: ${it.message}") }
+                }
+            } else {
+                // Без AI-плана, но LIVE — тоже через очередь
+                feedbackService.deliverOrEnqueue(user, notifPayload)
             }
         }
     }
@@ -534,8 +563,6 @@ class LeadService(
         val ctx = if (rawCtx.isNullOrBlank()) emptyList()
         else rawCtx.split("\u001F", "\u0000").filter { it.isNotBlank() }
 
-        // Для MANUAL_EXPORT используем реальную дату сообщения.
-        // Для LIVE — messageDate совпадает с foundAt.
         val displayDate = messageDate ?: foundAt
 
         return LeadDto(

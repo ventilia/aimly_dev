@@ -1,6 +1,8 @@
 package io.getaimly.backend.ai
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
+import io.getaimly.backend.lead.FeedbackExample
+import io.getaimly.backend.lead.LeadRating
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpEntity
@@ -26,13 +28,11 @@ class AiService(
     private val EXPAND_MODEL = "llama-3.3-70b-versatile"
     private val GROQ_URL     = "https://api.groq.com/openai/v1/chat/completions"
 
-    // Разбиваем строку ключей по запятой, убираем пробелы и пустые элементы
     private val apiKeys: List<String> = apiKeyRaw
         .split(",")
         .map { it.trim() }
         .filter { it.isNotBlank() }
 
-    // Первый ключ — для проверок isBlank во всех местах
     private val apiKey: String get() = apiKeys.firstOrNull() ?: ""
 
     private val queue = ArrayBlockingQueue<ValidationTask>(50)
@@ -67,25 +67,19 @@ class AiService(
         val messageText:            String,
         val keyword:                String,
         val contextMessages:        List<String>,
-        val recentLeads:            List<RecentLead> = emptyList(),
-        val businessContext:        String?          = null,
-        val respondToServiceOffers: Boolean          = false,
-        val senderUsername:         String?          = null,
+        val recentLeads:            List<RecentLead>      = emptyList(),
+        val feedbackExamples:       List<FeedbackExample> = emptyList(),   // ← НОВЫЙ
+        val businessContext:        String?               = null,
+        val respondToServiceOffers: Boolean               = false,
+        val senderUsername:         String?               = null,
         val callback:               (ValidationResult?) -> Unit,
     )
 
     // ─── Публичные методы ────────────────────────────────────────────────────────
 
-    /**
-     * Быстрая pre-проверка до АИ: определяет, является ли отправитель ботом.
-     * Telegram-боты заканчиваются на "bot" (регистронезависимо), но чтобы не отфильтровать
-     * людей с "bot" в нике — проверяем суффикс "Bot" (с заглавной) или "_bot" (underscore).
-     * Также фильтруем известные спам/сервисные боты по точному username.
-     */
     fun isBotSender(username: String?): Boolean {
         if (username.isNullOrBlank()) return false
         val lower = username.lowercase().trimStart('@')
-        // Telegram-боты по конвенции заканчиваются на "bot"
         if (lower.endsWith("bot")) {
             log.debug("isBotSender: '{}' определён как бот (суффикс bot)", username)
             return true
@@ -96,11 +90,12 @@ class AiService(
     fun validateAsync(
         messageText:            String,
         keyword:                String,
-        contextMessages:        List<String>     = emptyList(),
-        recentLeads:            List<RecentLead> = emptyList(),
-        businessContext:        String?          = null,
-        respondToServiceOffers: Boolean          = false,
-        senderUsername:         String?          = null,
+        contextMessages:        List<String>          = emptyList(),
+        recentLeads:            List<RecentLead>      = emptyList(),
+        feedbackExamples:       List<FeedbackExample> = emptyList(),   // ← НОВЫЙ
+        businessContext:        String?               = null,
+        respondToServiceOffers: Boolean               = false,
+        senderUsername:         String?               = null,
         callback:               (ValidationResult?) -> Unit,
     ) {
         if (apiKey.isBlank()) {
@@ -121,6 +116,7 @@ class AiService(
             keyword                = keyword,
             contextMessages        = contextMessages,
             recentLeads            = recentLeads,
+            feedbackExamples       = feedbackExamples,
             businessContext        = businessContext,
             respondToServiceOffers = respondToServiceOffers,
             senderUsername         = senderUsername,
@@ -325,38 +321,13 @@ CRITICAL RULES:
 - All 8 queries MUST be about the same niche — no mixing topics
 
 q1: Russian profession in PLURAL form (one word only for groups) OR core topic (for channels).
-  Groups: "дизайнеры" "разработчики" "маркетологи" "фотографы"
-  Channels: "дизайн" "маркетинг" "smm" "разработка"
-
-q2: English profession in PLURAL (groups) OR English topic word (channels). 
-  Groups: "designers" "developers" "marketers" "photographers"
-  Channels: "design" "marketing" "smm" "development"
-
+q2: English profession in PLURAL (groups) OR English topic word (channels).
 q3: Russian topic + "фриланс" OR topic + "заказы" — specific compound queries.
-  Groups: "разработка фриланс" "дизайн фриланс" "smm фриланс" "программирование фриланс"
-  Channels: "дизайн канал" "разработка канал"
-  CRITICAL: NEVER use "ит чат", "it чат" — too short/generic, matches unrelated chats.
-
 q4: Russian topic + "заказы" OR topic + "биржа".
-  Groups: "разработка заказы" "дизайн заказы" "smm заказы" "программирование заказы"
-  Channels: "разработка заказы" "дизайн заказы"
-
 q5: English SPECIFIC multi-word profession (NEVER single "it", "dev", "chat").
-  Groups: "web developers" "software developers" "frontend developers" "smm specialists"
-  Channels: "web development" "software development" "digital marketing"
-  NEVER: "it chat", "dev chat", "it freelance" — these are too generic.
-
 q6: English topic + "freelance" (specific, not generic).
-  Groups: "design freelance" "smm freelance" "development freelance"
-  Channels: "design channel" "smm channel"
-
 q7: Russian topic + "сообщество" OR topic + "профи".
-  Groups: "разработчики профи" "дизайнеры профи" "smm сообщество"
-  Channels: "разработчики" "маркетологи" "дизайнеры"
-
 q8: Single Russian core topic word (MUST be specific, 4+ chars).
-  "дизайн" "smm" "маркетинг" "фотография" "разработка" "программирование" "автоматизация"
-  NEVER: "ит", "it" — too short and generic.
 
 All queries must be lowercase.
 Return ONLY JSON, no extra text:
@@ -397,36 +368,26 @@ Return ONLY JSON, no extra text:
         }
     }
 
-    /**
-     * Проверяет, является ли пользовательский запрос осмысленным для поиска чатов.
-     * Возвращает null если запрос валиден, иначе — сообщение об ошибке.
-     */
     fun validateSearchQuery(input: String): String? {
         val trimmed = input.trim()
 
-        // Слишком короткий
         if (trimmed.length < 2) return "Запрос слишком короткий. Опишите тематику чатов."
 
-        // Только спецсимволы/цифры/случайные буквы
         val alphaRu = trimmed.count { it in 'а'..'я' || it in 'А'..'Я' }
         val alphaEn = trimmed.count { it in 'a'..'z' || it in 'A'..'Z' }
         val totalAlpha = alphaRu + alphaEn
 
         if (totalAlpha < 3) return "Запрос содержит слишком мало букв. Напишите тему, например: «дизайн», «smm», «разработка»."
 
-        // Набор случайных символов — отношение уникальных букв к длине слишком высокое
-        // при коротких словах, и очень хаотичный текст
         val words = trimmed.split(Regex("\\s+")).filter { it.isNotBlank() }
         if (words.size == 1 && trimmed.length <= 6) {
-            // Одно короткое слово — проверяем, что оно не бессмысленное (типа "ыыы", "фыва")
             val distinctChars = trimmed.lowercase().toSet().size
             if (distinctChars <= 2 && trimmed.length >= 3) {
                 return "Запрос выглядит некорректно. Попробуйте описать тему иначе, например: «нужен дизайнер», «smm специалист»."
             }
         }
 
-        // Если запрос не прошёл быстрые проверки — спрашиваем у АИ
-        if (apiKey.isBlank()) return null // без ключа не проверяем
+        if (apiKey.isBlank()) return null
 
         return try {
             val prompt = """
@@ -462,7 +423,7 @@ Return ONLY JSON, no extra text:
             "Запрос не распознан как тема для поиска. ${hint ?: "Попробуйте написать конкретную нишу или услугу."}"
         } catch (e: Exception) {
             log.warn("validateSearchQuery ошибка: ${e.message}")
-            null // при ошибке не блокируем
+            null
         }
     }
 
@@ -571,7 +532,7 @@ Return ONLY JSON, no extra text:
             .toList()
     }
 
-
+    // ─── Worker loop ─────────────────────────────────────────────────────────────
 
     private fun processQueue() {
         while (true) {
@@ -583,6 +544,7 @@ Return ONLY JSON, no extra text:
                     keyword                = task.keyword,
                     contextMessages        = task.contextMessages,
                     recentLeads            = task.recentLeads,
+                    feedbackExamples       = task.feedbackExamples,
                     businessContext        = task.businessContext,
                     respondToServiceOffers = task.respondToServiceOffers,
                 )
@@ -617,9 +579,10 @@ Return ONLY JSON, no extra text:
         messageText:            String,
         keyword:                String,
         contextMessages:        List<String>,
-        recentLeads:            List<RecentLead> = emptyList(),
-        businessContext:        String?          = null,
-        respondToServiceOffers: Boolean          = false,
+        recentLeads:            List<RecentLead>      = emptyList(),
+        feedbackExamples:       List<FeedbackExample> = emptyList(),   // ← НОВЫЙ
+        businessContext:        String?               = null,
+        respondToServiceOffers: Boolean               = false,
     ): ValidationResult {
 
         val messageShort = messageText.take(900)
@@ -628,6 +591,20 @@ Return ONLY JSON, no extra text:
             val ctx = contextMessages.take(2).joinToString("\n") { "  - \"${it.take(100)}\"" }
             "\nКонтекст чата:\n$ctx"
         } else ""
+
+        // ── Персональные оценки пользователя ──────────────────────────────────────
+        // Вставляем перед leadsBlock, чтобы было выше по приоритету.
+        // Примеры по тому же keyword идут первыми (уже отсортированы в getFeedbackExamplesForPrompt).
+        // Не добавляем блок если примеров нет — не тратим токены.
+        val feedbackBlock = if (feedbackExamples.isNotEmpty()) {
+            val lines = feedbackExamples.joinToString("\n") { ex ->
+                val icon = if (ex.rating == LeadRating.GOOD) "✅ ХОРОШИЙ" else "❌ НЕ ЛИД"
+                val kwNote = if (ex.matchedKeyword != keyword) " [kw:${ex.matchedKeyword}]" else ""
+                "  $icon$kwNote: \"${ex.messageSnippet.take(150)}\""
+            }
+            "\nПримеры оценок этого пользователя (учитывай при анализе):\n$lines"
+        } else ""
+        // ──────────────────────────────────────────────────────────────────────────
 
         val leadsBlock = if (recentLeads.isNotEmpty()) {
             val leads = recentLeads.take(3).joinToString("\n") { l ->
@@ -754,7 +731,7 @@ Return ONLY JSON, no extra text:
         }
 
         val prompt = """
-${serviceOffersRule}Ключевое слово поиска: "$keyword"$contextBlock$leadsBlock$businessBlock
+${serviceOffersRule}Ключевое слово поиска: "$keyword"$contextBlock$feedbackBlock$leadsBlock$businessBlock
 
 Сообщение:
 "$messageShort"
@@ -781,11 +758,6 @@ ${serviceOffersRule}Ключевое слово поиска: "$keyword"$context
 
     // ─── Fallback по списку ключей ────────────────────────────────────────────────
 
-    /**
-     * Перебирает ключи из [apiKeys] по порядку.
-     * При 429 (rate limit) или 413 (payload/TPM exceeded) переходит к следующему ключу.
-     * Остальные ошибки (400, 401, 500…) пробрасываются сразу без fallback.
-     */
     private fun postToGroqWithFallback(body: Map<String, Any>): GroqResponse? {
         var lastException: Exception? = null
 
