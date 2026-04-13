@@ -37,9 +37,9 @@ class LeadFeedbackService(
 ) {
     private val log = LoggerFactory.getLogger(LeadFeedbackService::class.java)
 
-    private val QUEUE_LIMIT               = 50
-    private val MIN_FEEDBACKS_FOR_PROMPT  = 3
-    private val PROMPT_EXAMPLES_COUNT     = 6
+    private val QUEUE_LIMIT              = 50
+    private val MIN_FEEDBACKS_FOR_PROMPT = 3
+    private val PROMPT_EXAMPLES_COUNT    = 6
 
     // ─── Основная точка входа ─────────────────────────────────────────────────
 
@@ -71,8 +71,10 @@ class LeadFeedbackService(
                 log.warn("[FEEDBACK] Ошибка nudge: userId=${user.id} ${it.message}")
             }
 
-            log.info("[FEEDBACK] Лид #${payload.leadId} в очереди: userId=${user.id} " +
-                    "неоцененный=#$pendingLeadId queueSize=$queueSize")
+            log.info(
+                "[FEEDBACK] Лид #${payload.leadId} в очереди: userId=${user.id} " +
+                        "неоцененный=#$pendingLeadId queueSize=$queueSize"
+            )
         }
     }
 
@@ -105,8 +107,10 @@ class LeadFeedbackService(
             )
         )
 
-        log.info("[FEEDBACK] Оценка: userId=${user.id} leadId=#$leadId rating=$rating " +
-                "keyword=\"${lead.matchedKeyword}\"")
+        log.info(
+            "[FEEDBACK] Оценка: userId=${user.id} leadId=#$leadId rating=$rating " +
+                    "keyword=\"${lead.matchedKeyword}\""
+        )
 
         // Доставить следующий из очереди
         deliverNextFromQueue(user)
@@ -134,10 +138,13 @@ class LeadFeedbackService(
         val remaining    = PROMPT_EXAMPLES_COUNT - byKeyword.size
 
         val general = if (remaining > 0) {
-            feedbackRepo.findRecentByUserId(userId, PageRequest.of(0, remaining + byKeyword.size))
+            feedbackRepo
+                .findRecentByUserId(userId, PageRequest.of(0, remaining + byKeyword.size))
                 .filter { it.id !in byKeywordIds }
                 .take(remaining)
-        } else emptyList()
+        } else {
+            emptyList()
+        }
 
         return (byKeyword + general).map {
             FeedbackExample(
@@ -150,22 +157,24 @@ class LeadFeedbackService(
 
     // ─── Приватные методы ────────────────────────────────────────────────────
 
-    private fun findUnratedNotifiedLeadId(userId: Long): Long? {
-        val ratedIds = feedbackRepo
-            .findRecentByUserId(userId, PageRequest.of(0, 200))
-            .map { it.lead.id }
-            .toSet()
-
-        // NOT IN не работает с пустой коллекцией в JPQL — передаём фиктивный ID
-        val safeRatedIds = if (ratedIds.isEmpty()) listOf(-1L) else ratedIds.toList()
-
-        return leadRepo.findLatestNotifiedWithoutFeedback(
+    /**
+     * Ищет последний лид, который уже был отправлен пользователю (tgNotifiedAt != null),
+     * но ещё не получил оценку.
+     *
+     * Запрос целиком выполняется на стороне БД через NOT EXISTS —
+     * никакого списка ratedIds в памяти.
+     */
+    private fun findUnratedNotifiedLeadId(userId: Long): Long? =
+        leadRepo.findLatestNotifiedWithoutFeedback(
             userId   = userId,
-            ratedIds = safeRatedIds,
             pageable = PageRequest.of(0, 1),
         ).firstOrNull()
-    }
 
+    /**
+     * Отправляет лид в Telegram и помечает момент отправки (tgNotifiedAt).
+     * Если Telegram-вызов упал — tgNotifiedAt не проставляется,
+     * лид не блокирует очередь.
+     */
     private fun sendAndMarkNotified(user: User, tgId: Long, payload: LeadNotificationPayload) {
         runCatching {
             bot.notifyNewLead(
@@ -179,24 +188,32 @@ class LeadFeedbackService(
                 authorName     = payload.authorName,
                 source         = payload.source,
             )
-            // Помечаем момент отправки
+        }.onSuccess {
+            // Помечаем момент отправки только при успехе —
+            // иначе лид не попадает в «неоцененные» и очередь не застрянет.
             leadRepo.findById(payload.leadId).ifPresent { lead ->
                 lead.tgNotifiedAt = LocalDateTime.now()
                 leadRepo.save(lead)
             }
         }.onFailure {
-            log.warn("[FEEDBACK] Ошибка отправки: userId=${user.id} leadId=#${payload.leadId} ${it.message}")
+            log.warn(
+                "[FEEDBACK] Ошибка отправки: userId=${user.id} " +
+                        "leadId=#${payload.leadId} ${it.message}"
+            )
         }
     }
 
     private fun enqueue(user: User, payload: LeadNotificationPayload) {
         if (pendingRepo.existsByUserIdAndLeadId(user.id, payload.leadId)) return
 
-        // Защита от переполнения
+        // Защита от переполнения: удаляем самый старый если достигнут лимит
         if (pendingRepo.countByUserId(user.id) >= QUEUE_LIMIT) {
             pendingRepo.findOldestByUserId(user.id, PageRequest.of(0, 1)).firstOrNull()?.let {
                 pendingRepo.delete(it)
-                log.warn("[FEEDBACK] Очередь переполнена, удалён старый: userId=${user.id} leadId=#${it.lead.id}")
+                log.warn(
+                    "[FEEDBACK] Очередь переполнена, удалён старый: " +
+                            "userId=${user.id} leadId=#${it.lead.id}"
+                )
             }
         }
 

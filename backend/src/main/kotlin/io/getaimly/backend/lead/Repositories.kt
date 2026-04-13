@@ -50,6 +50,35 @@ interface LeadRepository : JpaRepository<Lead, Long> {
     @Modifying
     @Query("UPDATE Lead l SET l.status = io.getaimly.backend.lead.LeadStatus.VIEWED WHERE l.user.id = :userId AND l.status = io.getaimly.backend.lead.LeadStatus.NEW")
     fun markAllViewedByUserId(@Param("userId") userId: Long)
+
+    // ─── Feedback-система: поиск неоцененных отправленных лидов ──────────────
+
+    /**
+     * Возвращает ID лида, который уже был отправлен пользователю в Telegram
+     * (tgNotifiedAt IS NOT NULL), но ещё не получил оценку в lead_feedbacks.
+     *
+     * Использует NOT EXISTS вместо NOT IN, что:
+     *  - корректно работает с пустым множеством оцененных лидов
+     *  - не тянет список ID в память приложения
+     *  - эффективнее на больших данных
+     *
+     * Вызывается из LeadFeedbackService.findUnratedNotifiedLeadId().
+     */
+    @Query("""
+        SELECT l.id FROM Lead l
+        WHERE l.user.id = :userId
+          AND l.tgNotifiedAt IS NOT NULL
+          AND NOT EXISTS (
+              SELECT 1 FROM LeadFeedback f
+              WHERE f.lead.id = l.id
+                AND f.user.id = :userId
+          )
+        ORDER BY l.tgNotifiedAt DESC
+    """)
+    fun findLatestNotifiedWithoutFeedback(
+        @Param("userId") userId: Long,
+        pageable: Pageable,
+    ): List<Long>
 }
 
 @Repository
@@ -74,7 +103,6 @@ interface ChatSubscriptionRepository : JpaRepository<ChatSubscription, Long> {
 interface KeywordRepository : JpaRepository<Keyword, Long> {
 
     fun findByUserIdAndIsActiveTrue(userId: Long): List<Keyword>
-
 
     fun findByUserId(userId: Long): List<Keyword>
 

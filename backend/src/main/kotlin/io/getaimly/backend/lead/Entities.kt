@@ -99,6 +99,9 @@ class Lead(
     @Column(name = "subscription_id")
     val subscriptionId: Long? = null,
 
+    @Column(name = "tg_notified_at")
+    var tgNotifiedAt: LocalDateTime? = null,
+
     @Column(name = "tg_message_id", nullable = false)
     val tgMessageId: Long,
 
