@@ -428,30 +428,36 @@ class AimlyBot(
         runCatching {
             feedbackService.submitFeedback(user, leadId, rating)
 
-            // Убираем кнопки оценки — заменяем на статус + навигацию
-            // (текст сообщения не трогаем, только markup)
+            // После оценки: проверяем очередь и показываем что дальше.
+            // deliverNextFromQueue вызывается внутри submitFeedback — следующий лид
+            // уже отправлен к моменту когда мы читаем countByUserId.
             val queueAfter = pendingRepo.countByUserId(user.id)
-            val queueNote  = if (queueAfter > 0) " · Следующий лид ↓" else ""
+
+            val statusRows = mutableListOf<InlineKeyboardRow>()
+            statusRows.add(row(btn("✅ Оценено: $ratingLabel", "noop")))
+            if (queueAfter > 0) {
+                // Есть ещё лиды в очереди — зовём в меню где будет следующий
+                statusRows.add(row(btn("📬 Следующий лид →", "menu:leads")))
+            } else {
+                statusRows.add(row(
+                    btn("Подробнее", "lead:open:$leadId"),
+                    btn("Все лиды",  "leads:all"),
+                ))
+            }
 
             runCatching {
                 telegramClient.execute(
                     EditMessageReplyMarkup.builder()
                         .chatId(chatId.toString())
                         .messageId(msgId)
-                        .replyMarkup(InlineKeyboardMarkup(listOf(
-                            row(btn("✅ Оценено: $ratingLabel$queueNote", "noop")),
-                            row(
-                                btn("Подробнее", "lead:open:$leadId"),
-                                btn("Все лиды",  "menu:leads"),
-                            ),
-                        )))
+                        .replyMarkup(InlineKeyboardMarkup(statusRows))
                         .build()
                 )
             }.onFailure {
-                log.debug("[BOT][FEEDBACK] editMarkup ошибка: $it.message")
+                log.debug("[BOT][FEEDBACK] editMarkup ошибка: ${it.message}")
             }
 
-            log.info("[BOT][FEEDBACK] Оценка принята: userId=${user.id} leadId=#$leadId rating=$rating")
+            log.info("[BOT][FEEDBACK] Оценка принята: userId=${user.id} leadId=#$leadId rating=$rating queueAfter=$queueAfter")
         }.onFailure {
             log.warn("[BOT][FEEDBACK] Ошибка оценки: userId=${user.id} leadId=#$leadId ${it.message}")
             sender.editText(chatId, msgId, "❌ Ошибка сохранения оценки. Попробуйте ещё раз.")
@@ -537,9 +543,16 @@ class AimlyBot(
         pendingLeadId:  Long,
         queueSize:      Long,
     ) {
-        val queueNote = if (queueSize > 1) " (+ещё ${queueSize - 1})" else ""
-        val text = "📬 Пришёл новый лид$queueNote\n\n" +
-                "Чтобы посмотреть его, оцените предыдущий лид 👇"
+        // queueSize включает только что добавленный лид, поэтому "новых" = queueSize
+        val queueLine = when {
+            queueSize == 1L -> "Пришёл новый лид — оцените предыдущий, чтобы получить его."
+            queueSize == 2L -> "Пришло ещё 2 новых лида. Оцените предыдущий — и они придут по очереди."
+            else            -> "Пришло ещё $queueSize новых лидов. Оцените предыдущий — и они придут по очереди."
+        }
+
+        val text = "📬 $queueLine\n\n" +
+                "💡 Оценки помогают ИИ точнее фильтровать лиды под ваш бизнес.\n\n" +
+                "👇 Лид #$pendingLeadId ждёт вашей оценки:"
 
         runCatching {
             telegramClient.execute(
@@ -551,7 +564,7 @@ class AimlyBot(
                             btn("👍 Хороший лид", "feedback:good:$pendingLeadId"),
                             btn("👎 Не лид",      "feedback:bad:$pendingLeadId"),
                         ),
-                        row(btn("Посмотреть лид", "lead:open:$pendingLeadId")),
+                        row(btn("📄 Читать лид #$pendingLeadId", "lead:open:$pendingLeadId")),
                     )))
                     .build()
             )

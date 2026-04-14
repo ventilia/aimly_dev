@@ -39,7 +39,15 @@ class LeadFeedbackService(
 
     private val QUEUE_LIMIT              = 50
     private val MIN_FEEDBACKS_FOR_PROMPT = 3
-    private val PROMPT_EXAMPLES_COUNT    = 6
+
+    /**
+     * Максимальное число примеров для AI-промпта.
+     * Ограничено 10, чтобы не перегружать контекст токенами.
+     * Приоритет: оценки по тому же ключевому слову (до 4) → общие последние (до 6).
+     */
+    private val MAX_PROMPT_EXAMPLES      = 10
+    private val MAX_BY_KEYWORD           = 4
+    private val MAX_GENERAL              = MAX_PROMPT_EXAMPLES - MAX_BY_KEYWORD  // 6
 
     // ─── Основная точка входа ─────────────────────────────────────────────────
 
@@ -83,6 +91,7 @@ class LeadFeedbackService(
     /**
      * Сохраняет оценку и доставляет следующий лид из очереди.
      * Вызывается из bot-callback и REST API.
+     * Поддерживает upsert — повторная оценка меняет предыдущую.
      */
     @Transactional
     fun submitFeedback(user: User, leadId: Long, rating: LeadRating): LeadFeedback {
@@ -91,11 +100,11 @@ class LeadFeedbackService(
         }
         if (lead.user.id != user.id) throw SecurityException("нет доступа")
 
-        // Upsert: удаляем старую оценку если есть (rating — val, не изменить)
-        feedbackRepo.findByUserIdAndLeadId(user.id, leadId)?.let {
+        // Upsert: удаляем старую оценку если есть (rating — val, не изменяется)
+        val isChange = feedbackRepo.findByUserIdAndLeadId(user.id, leadId)?.also {
             feedbackRepo.delete(it)
             feedbackRepo.flush()
-        }
+        } != null
 
         val feedback = feedbackRepo.save(
             LeadFeedback(
@@ -108,12 +117,14 @@ class LeadFeedbackService(
         )
 
         log.info(
-            "[FEEDBACK] Оценка: userId=${user.id} leadId=#$leadId rating=$rating " +
-                    "keyword=\"${lead.matchedKeyword}\""
+            "[FEEDBACK] Оценка${if (isChange) " изменена" else ""}: " +
+                    "userId=${user.id} leadId=#$leadId rating=$rating keyword=\"${lead.matchedKeyword}\""
         )
 
-        // Доставить следующий из очереди
-        deliverNextFromQueue(user)
+        // Доставить следующий из очереди (только если это первичная оценка)
+        if (!isChange) {
+            deliverNextFromQueue(user)
+        }
 
         return feedback
     }
@@ -121,22 +132,29 @@ class LeadFeedbackService(
     // ─── Примеры для AI-промпта ──────────────────────────────────────────────
 
     /**
-     * Формирует список примеров для вставки в промпт.
-     * Приоритет: оценки по тому же keyword → общие последние оценки.
-     * Возвращает пустой список если оценок меньше MIN_FEEDBACKS_FOR_PROMPT.
+     * Формирует список примеров оценок для вставки в AI-промпт.
+     *
+     * Логика выборки (не более MAX_PROMPT_EXAMPLES = 10 итого):
+     *   1. До MAX_BY_KEYWORD (4) оценок по тому же ключевому слову — самые релевантные.
+     *   2. До MAX_GENERAL (6) последних общих оценок — для контекста.
+     *
+     * Возвращает пустой список если накопленных оценок меньше MIN_FEEDBACKS_FOR_PROMPT (3) —
+     * до этого порога данных недостаточно для значимой персонализации.
      */
     fun getFeedbackExamplesForPrompt(userId: Long, keyword: String): List<FeedbackExample> {
         if (feedbackRepo.countByUserId(userId) < MIN_FEEDBACKS_FOR_PROMPT) return emptyList()
 
+        // Сначала — оценки по тому же ключевому слову (наиболее релевантны для промпта)
         val byKeyword = feedbackRepo.findRecentByUserIdAndKeyword(
             userId   = userId,
             keyword  = keyword,
-            pageable = PageRequest.of(0, 4),
+            pageable = PageRequest.of(0, MAX_BY_KEYWORD),
         )
 
         val byKeywordIds = byKeyword.map { it.id }.toSet()
-        val remaining    = PROMPT_EXAMPLES_COUNT - byKeyword.size
+        val remaining    = MAX_GENERAL - (byKeyword.size - MAX_BY_KEYWORD).coerceAtLeast(0)
 
+        // Дополняем общими последними оценками, исключая уже добавленные
         val general = if (remaining > 0) {
             feedbackRepo
                 .findRecentByUserId(userId, PageRequest.of(0, remaining + byKeyword.size))
@@ -146,23 +164,22 @@ class LeadFeedbackService(
             emptyList()
         }
 
-        return (byKeyword + general).map {
-            FeedbackExample(
-                rating         = it.rating,
-                messageSnippet = it.messageSnippet.take(150),
-                matchedKeyword = it.matchedKeyword,
-            )
-        }
+        return (byKeyword + general)
+            .take(MAX_PROMPT_EXAMPLES)
+            .map {
+                FeedbackExample(
+                    rating         = it.rating,
+                    messageSnippet = it.messageSnippet.take(150),
+                    matchedKeyword = it.matchedKeyword,
+                )
+            }
     }
 
     // ─── Приватные методы ────────────────────────────────────────────────────
 
     /**
      * Ищет последний лид, который уже был отправлен пользователю (tgNotifiedAt != null),
-     * но ещё не получил оценку.
-     *
-     * Запрос целиком выполняется на стороне БД через NOT EXISTS —
-     * никакого списка ratedIds в памяти.
+     * но ещё не получил оценку. Запрос выполняется целиком в БД через NOT EXISTS.
      */
     private fun findUnratedNotifiedLeadId(userId: Long): Long? =
         leadRepo.findLatestNotifiedWithoutFeedback(
@@ -171,9 +188,9 @@ class LeadFeedbackService(
         ).firstOrNull()
 
     /**
-     * Отправляет лид в Telegram и помечает момент отправки (tgNotifiedAt).
+     * Отправляет лид в Telegram и помечает tgNotifiedAt только при успехе.
      * Если Telegram-вызов упал — tgNotifiedAt не проставляется,
-     * лид не блокирует очередь.
+     * чтобы лид не застрял в «неоцененных» вечно.
      */
     private fun sendAndMarkNotified(user: User, tgId: Long, payload: LeadNotificationPayload) {
         runCatching {
@@ -189,8 +206,6 @@ class LeadFeedbackService(
                 source         = payload.source,
             )
         }.onSuccess {
-            // Помечаем момент отправки только при успехе —
-            // иначе лид не попадает в «неоцененные» и очередь не застрянет.
             leadRepo.findById(payload.leadId).ifPresent { lead ->
                 lead.tgNotifiedAt = LocalDateTime.now()
                 leadRepo.save(lead)

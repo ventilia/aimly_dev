@@ -57,12 +57,10 @@ interface LeadRepository : JpaRepository<Lead, Long> {
      * Возвращает ID лида, который уже был отправлен пользователю в Telegram
      * (tgNotifiedAt IS NOT NULL), но ещё не получил оценку в lead_feedbacks.
      *
-     * Использует NOT EXISTS вместо NOT IN, что:
-     *  - корректно работает с пустым множеством оцененных лидов
+     * Использует NOT EXISTS вместо NOT IN:
+     *  - корректно работает с пустым множеством оценённых лидов
      *  - не тянет список ID в память приложения
-     *  - эффективнее на больших данных
-     *
-     * Вызывается из LeadFeedbackService.findUnratedNotifiedLeadId().
+     *  - эффективнее на больших объёмах
      */
     @Query("""
         SELECT l.id FROM Lead l
@@ -79,6 +77,20 @@ interface LeadRepository : JpaRepository<Lead, Long> {
         @Param("userId") userId: Long,
         pageable: Pageable,
     ): List<Long>
+
+    /**
+     * Количество лидов в очереди pending_lead_notifications для данного пользователя.
+     * Используется в UI бота для отображения размера очереди рядом с кнопками оценки.
+     *
+     * Это удобная обёртка над PendingLeadNotificationRepository.countByUserId,
+     * доступная через LeadRepository для инъекции в BotLeadsHandler без добавления
+     * лишних зависимостей в конструктор.
+     */
+    @Query("""
+        SELECT COUNT(p) FROM PendingLeadNotification p
+        WHERE p.user.id = :userId
+    """)
+    fun countPendingNotificationsByUserId(@Param("userId") userId: Long): Long
 }
 
 @Repository
