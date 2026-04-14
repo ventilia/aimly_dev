@@ -45,15 +45,18 @@ class LeadFeedbackService(
      * Ограничено 10, чтобы не перегружать контекст токенами.
      * Приоритет: оценки по тому же ключевому слову (до 4) → общие последние (до 6).
      */
-    private val MAX_PROMPT_EXAMPLES      = 10
-    private val MAX_BY_KEYWORD           = 4
-    private val MAX_GENERAL              = MAX_PROMPT_EXAMPLES - MAX_BY_KEYWORD  // 6
+    private val MAX_PROMPT_EXAMPLES = 10
+    private val MAX_BY_KEYWORD      = 4
+    private val MAX_GENERAL         = MAX_PROMPT_EXAMPLES - MAX_BY_KEYWORD  // 6
 
     // ─── Основная точка входа ─────────────────────────────────────────────────
 
     /**
      * Вызывается после AI-решения (или сразу, если AI выключен).
      * Либо отправляет уведомление немедленно, либо ставит в очередь + шлёт nudge.
+     *
+     * Задача 2: при отправке nudge теперь передаём текст и ключевое слово
+     * неоцененного лида, чтобы пользователь видел о чём идёт речь.
      */
     @Transactional
     fun deliverOrEnqueue(user: User, payload: LeadNotificationPayload) {
@@ -69,11 +72,19 @@ class LeadFeedbackService(
             enqueue(user, payload)
 
             val queueSize = pendingRepo.countByUserId(user.id)
+
+            // Получаем данные неоцененного лида для превью в nudge (задача 2)
+            val pendingLead      = leadRepo.findById(pendingLeadId).orElse(null)
+            val messagePreview   = pendingLead?.messageText?.take(150) ?: ""
+            val matchedKeyword   = pendingLead?.matchedKeyword ?: ""
+
             runCatching {
                 bot.notifyLeadPending(
                     telegramChatId = tgId,
                     pendingLeadId  = pendingLeadId,
                     queueSize      = queueSize,
+                    messagePreview = messagePreview,
+                    matchedKeyword = matchedKeyword,
                 )
             }.onFailure {
                 log.warn("[FEEDBACK] Ошибка nudge: userId=${user.id} ${it.message}")

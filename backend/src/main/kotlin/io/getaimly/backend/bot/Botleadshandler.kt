@@ -82,7 +82,8 @@ class BotLeadsHandler(
                 val preview = unratedLead.messageText.take(120)
                 sb.append("\n$preview${if (unratedLead.messageText.length > 120) "…" else ""}")
             }
-            sb.append("\n\n💡 Оценки помогают ИИ лучше фильтровать лиды под ваш бизнес.\n")
+            sb.append("\n\n⭐ Оценки лидов очень важны — ИИ учится на них понимать ваш бизнес ")
+            sb.append("и точнее фильтровать входящие сообщения.\n")
             sb.append("👇 Оцените — и получите следующий лид:")
 
             rows.add(row(
@@ -206,12 +207,9 @@ class BotLeadsHandler(
 
         pageDto.content.forEachIndexed { idx, lead ->
             val num          = idx + 1 + page * LEADS_PAGE_SIZE
-            // Комбинированная иконка: статус + источник
             val statusIcon   = combinedStatusIcon(lead.status, lead.source)
             val aiIcon       = when (lead.aiValid) { true -> " ✨"; false -> " 🚫"; else -> "" }
-            // Оценка показывается для ВСЕХ оцененных лидов независимо от источника
             val feedbackIcon = feedbackIcon(user.id, lead.id)
-            // Неоцененный блокирующий лид — предупреждение
             val blockMark    = if (lead.id == unratedLeadId) " ⚠️" else ""
             val author       = if (lead.authorUsername.isNotBlank()) "@${lead.authorUsername}" else lead.authorName
             val preview      = lead.messageText.take(80).let { if (lead.messageText.length > 80) "$it…" else it }
@@ -262,7 +260,7 @@ class BotLeadsHandler(
 
         val existingFeedback = feedbackRepo.findByUserIdAndLeadId(user.id, leadId)
         val unratedLeadId    = findUnratedLeadId(user.id)
-        val isBlockingLead   = (unratedLeadId == leadId)           // этот лид — сам блокирующий
+        val isBlockingLead   = (unratedLeadId == leadId)
         val anotherBlocks    = unratedLeadId != null && !isBlockingLead
 
         log.info(
@@ -272,7 +270,6 @@ class BotLeadsHandler(
         )
 
         // ── Блокировка: другой лид ждёт оценки, а этот — ещё не доставлен ───
-        // Уже оцененные и уже доставленные (tgNotifiedAt != null) лиды открываются свободно.
         val isQueued = lead.tgNotifiedAt == null && existingFeedback == null
         if (anotherBlocks && isQueued) {
             val unratedLead  = leadRepository.findById(unratedLeadId!!).orElse(null)
@@ -285,7 +282,8 @@ class BotLeadsHandler(
                 if (pendingCount > 1) {
                     append("В очереди ещё ${pendingCount - 1} лид${leadSuffix(pendingCount - 1)}.\n\n")
                 }
-                append("💡 Оценки учит ИИ фильтровать лиды точнее — это важно.")
+                append("⭐ Оценки лидов очень важны — ИИ учится на них понимать ваш бизнес ")
+                append("и точнее фильтровать входящие сообщения.")
                 if (unratedLead != null) {
                     val preview = unratedLead.messageText.take(100)
                     append("\n\n─────────────\n📋 Лид #$unratedLeadId (ждёт оценки):\n")
@@ -332,6 +330,7 @@ class BotLeadsHandler(
         }
 
         val displayDate = lead.messageDate ?: lead.foundAt
+
         val date = displayDate.toLocalDate().toString()
         val time = "%02d:%02d".format(displayDate.hour, displayDate.minute)
 
@@ -347,7 +346,9 @@ class BotLeadsHandler(
             append("👤 Автор: $author\n")
             if (chatLabel.isNotBlank()) append("💬 Чат: $chatLabel\n")
             append("🔑 Ключевое слово: «${lead.matchedKeyword}»\n")
-            append("📅 Дата: $date в $time\n\n")
+            // Задача 5: добавлен явный суффикс "(UTC)" чтобы пользователь не путал
+            // серверное время со своим локальным.
+            append("📅 Дата: $date в $time (UTC)\n\n")
             append("Сообщение:\n${lead.messageText.take(800)}")
             if (lead.messageText.length > 800) append("…")
         }
@@ -366,7 +367,7 @@ class BotLeadsHandler(
             // Лид уже оценён — кнопка смены оценки
             existingFeedback != null -> {
                 val (changeLabel, changeCb) = when (existingFeedback.rating) {
-                    LeadRating.GOOD -> "Изменить → 👎 Не лид"  to "feedback:bad:$leadId"
+                    LeadRating.GOOD -> "Изменить → 👎 Не лид"      to "feedback:bad:$leadId"
                     LeadRating.BAD  -> "Изменить → 👍 Хороший лид" to "feedback:good:$leadId"
                 }
                 rows.add(row(btn(changeLabel, changeCb)))

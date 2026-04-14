@@ -49,9 +49,9 @@ class AimlyBot(
     private val aiService:              AiService,
     private val chatSearchService:      ChatSearchService,
     private val referralService:        ReferralService,
-    private val feedbackService:        LeadFeedbackService,           // ← НОВЫЙ
-    private val feedbackRepo:           LeadFeedbackRepository,        // ← НОВЫЙ
-    private val pendingRepo:            PendingLeadNotificationRepository, // ← НОВЫЙ
+    private val feedbackService:        LeadFeedbackService,
+    private val feedbackRepo:           LeadFeedbackRepository,
+    private val pendingRepo:            PendingLeadNotificationRepository,
 ) : SpringLongPollingBot, LongPollingSingleThreadUpdateConsumer {
 
     private val log            = LoggerFactory.getLogger(AimlyBot::class.java)
@@ -83,7 +83,7 @@ class AimlyBot(
         leadRepository         = leadRepository,
         subscriptionRepository = subscriptionRepository,
         leadService            = leadService,
-        feedbackRepo           = feedbackRepo,           // ← передаём для UX оценок
+        feedbackRepo           = feedbackRepo,
     )
 
     private val chatsHandler = BotChatsHandler(
@@ -358,6 +358,7 @@ class AimlyBot(
             data.startsWith("chat:page:")        -> chatsHandler.showChats(chatId, msgId, from.id, data.removePrefix("chat:page:").toIntOrNull() ?: 0)
             data.startsWith("chat:del:confirm:") -> { chatsHandler.deleteChat(from.id, data.removePrefix("chat:del:confirm:").toLongOrNull() ?: 0); chatsHandler.showChats(chatId, msgId, from.id) }
             data.startsWith("chat:del:")         -> chatsHandler.showDeleteChatConfirm(chatId, msgId, from.id, data.removePrefix("chat:del:").toLongOrNull() ?: 0)
+
             data == "csearch:start"           -> chatSearchHandler.showSearchScreen(chatId, msgId, from.id)
             data == "csearch:manual"          -> chatSearchHandler.startManualSearch(chatId, msgId, null)
             data == "csearch:manual:chat"     -> chatSearchHandler.startManualSearch(chatId, msgId, "chat")
@@ -407,6 +408,16 @@ class AimlyBot(
 
     // ─── Обработка оценки лида ────────────────────────────────────────────────
 
+    /**
+     * Сохраняет оценку и обновляет клавиатуру сообщения с лидом.
+     *
+     * После оценки показываем:
+     *   - строку «✅ Оценено: <оценка>» как информационную (noop)
+     *   - кнопку «↩️ Изменить → <противоположная оценка>» — активную
+     *
+     * Это решает проблему «нажал — ничего не произошло»: пользователь видит,
+     * что оценка принята, и может её сменить одним нажатием.
+     */
     private fun handleFeedback(
         chatId:   Long,
         msgId:    Int,
@@ -425,18 +436,27 @@ class AimlyBot(
             LeadRating.BAD  -> "👎 Не лид"
         }
 
+        // Кнопка смены оценки — противоположная текущей
+        val (changeLabel, changeCb) = when (rating) {
+            LeadRating.GOOD -> "↩️ Изменить → 👎 Не лид"      to "feedback:bad:$leadId"
+            LeadRating.BAD  -> "↩️ Изменить → 👍 Хороший лид" to "feedback:good:$leadId"
+        }
+
         runCatching {
             feedbackService.submitFeedback(user, leadId, rating)
 
-            // После оценки: проверяем очередь и показываем что дальше.
-            // deliverNextFromQueue вызывается внутри submitFeedback — следующий лид
-            // уже отправлен к моменту когда мы читаем countByUserId.
+            // deliverNextFromQueue вызывается внутри submitFeedback —
+            // следующий лид уже отправлен к моменту когда читаем countByUserId.
             val queueAfter = pendingRepo.countByUserId(user.id)
 
             val statusRows = mutableListOf<InlineKeyboardRow>()
+            // Строка 1: информация о текущей оценке (не нажимаемая)
             statusRows.add(row(btn("✅ Оценено: $ratingLabel", "noop")))
+            // Строка 2: кнопка смены оценки на противоположную
+            statusRows.add(row(btn(changeLabel, changeCb)))
+
             if (queueAfter > 0) {
-                // Есть ещё лиды в очереди — зовём в меню где будет следующий
+                // Есть ещё лиды в очереди — приглашаем в меню
                 statusRows.add(row(btn("📬 Следующий лид →", "menu:leads")))
             } else {
                 statusRows.add(row(
@@ -469,6 +489,10 @@ class AimlyBot(
     /**
      * Отправляет уведомление о новом LIVE-лиде с кнопками 👍/👎.
      * Для лидов из ручного экспорта (MANUAL_EXPORT) — не вызывается.
+     *
+     * Изменения:
+     *  - Добавлен номер лида (#leadId) в заголовок сообщения.
+     *  - Добавлена строка о важности оценки — пользователь понимает зачем нажимать кнопки.
      */
     fun notifyNewLead(
         telegramChatId: Long,
@@ -516,11 +540,14 @@ class AimlyBot(
                 SendMessage.builder()
                     .chatId(telegramChatId.toString())
                     .text(
-                        "Новый лид  [мониторинг]\n\n" +
+                        // Задача 4: добавлен номер лида в заголовок
+                        "Лид #$leadId  [мониторинг]\n\n" +
                                 "Чат: $chatTitle\n" +
                                 "Ключевое слово: «$keyword»" +
                                 authorLine + "\n\n" +
-                                preview
+                                preview + "\n\n" +
+                                // Задача 3: важность оценки — коротко, не навязчиво
+                                "💡 Оцените лид — ИИ учится фильтровать точнее."
                     )
                     .replyMarkup(InlineKeyboardMarkup(rows))
                     .build()
@@ -534,25 +561,53 @@ class AimlyBot(
     // ─── Nudge: есть новый лид, но нужно оценить предыдущий ─────────────────
 
     /**
-     * Лёгкое уведомление — не показывает детали нового лида,
-     * а напоминает оценить уже показанный [pendingLeadId].
-     * [queueSize] — сколько лидов стоит в очереди (включая только что добавленный).
+     * Лёгкое уведомление — напоминает оценить уже показанный [pendingLeadId],
+     * пока новые лиды стоят в очереди.
+     *
+     * [queueSize]      — сколько лидов стоит в очереди (включая только что добавленный).
+     * [messagePreview] — фрагмент текста неоцененного лида (до 150 символов).
+     * [matchedKeyword] — ключевое слово по которому найден неоцененный лид.
+     *
+     * Задача 2: теперь показываем текст лида в nudge, чтобы пользователь
+     * не нажимал «вслепую», не помня о чём был лид.
      */
     fun notifyLeadPending(
         telegramChatId: Long,
         pendingLeadId:  Long,
         queueSize:      Long,
+        messagePreview: String = "",
+        matchedKeyword: String = "",
     ) {
         // queueSize включает только что добавленный лид, поэтому "новых" = queueSize
         val queueLine = when {
             queueSize == 1L -> "Пришёл новый лид — оцените предыдущий, чтобы получить его."
-            queueSize == 2L -> "Пришло ещё 2 новых лида. Оцените предыдущий — и они придут по очереди."
-            else            -> "Пришло ещё $queueSize новых лидов. Оцените предыдущий — и они придут по очереди."
+            queueSize == 2L -> "Пришло ещё 2 новых лида. Оцените предыдущий — они придут по очереди."
+            else            -> "Пришло ещё $queueSize новых лидов. Оцените предыдущий — они придут по очереди."
         }
 
-        val text = "📬 $queueLine\n\n" +
-                "💡 Оценки помогают ИИ точнее фильтровать лиды под ваш бизнес.\n\n" +
-                "👇 Лид #$pendingLeadId ждёт вашей оценки:"
+        // Блок с содержимым неоцененного лида (задача 2)
+        val leadPreviewBlock = buildString {
+            if (matchedKeyword.isNotBlank()) {
+                append("🔑 Ключевое слово: «$matchedKeyword»\n")
+            }
+            if (messagePreview.isNotBlank()) {
+                val trimmed = messagePreview.take(150)
+                val suffix  = if (messagePreview.length > 150) "…" else ""
+                append("💬 $trimmed$suffix")
+            }
+        }
+
+        val text = buildString {
+            append("📬 $queueLine\n\n")
+            // Задача 3: явно объясняем важность оценки
+            append("⭐ Оценки лидов очень важны — именно на их основе ИИ учится понимать ваш бизнес ")
+            append("и отсеивать нерелевантные сообщения. Чем больше оценок — тем точнее фильтрация.\n\n")
+            append("👇 Лид #$pendingLeadId ждёт вашей оценки:")
+            if (leadPreviewBlock.isNotBlank()) {
+                append("\n\n─────────────\n")
+                append(leadPreviewBlock)
+            }
+        }
 
         runCatching {
             telegramClient.execute(
