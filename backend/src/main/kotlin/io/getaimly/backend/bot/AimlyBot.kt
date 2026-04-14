@@ -516,7 +516,7 @@ class AimlyBot(
                 SendMessage.builder()
                     .chatId(telegramChatId.toString())
                     .text(
-                        "Новый лид  [монитор]\n\n" +
+                        "Новый лид  [мониторинг]\n\n" +
                                 "Чат: $chatTitle\n" +
                                 "Ключевое слово: «$keyword»" +
                                 authorLine + "\n\n" +

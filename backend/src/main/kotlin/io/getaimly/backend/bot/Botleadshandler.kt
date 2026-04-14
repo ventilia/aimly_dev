@@ -337,7 +337,7 @@ class BotLeadsHandler(
 
         val sourceLabel = when (lead.source.name) {
             "MANUAL_EXPORT" -> "📁 экспорт файла"
-            else            -> "📡 мониторинг"
+            else            -> "мониторинг"
         }
 
         val text = buildString {
