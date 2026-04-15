@@ -497,14 +497,23 @@ export default function DashboardOverview({ lang }: Props) {
     const [refCopied,     setRefCopied]     = useState(false)
 
     useEffect(() => {
-        leadsApi.list({ size: 20 })
-            .then(p => {
+        // Загружаем лиды и статус очереди одновременно
+        Promise.all([
+            leadsApi.list({ size: 20 }),
+            feedbackApi.getStatus(),
+        ])
+            .then(([p, fStatus]) => {
                 setTotalLeads(p.totalElements)
                 setNewLeads(p.newCount)
-                const firstActive = p.content.find(l => l.status !== 'IGNORED') ?? null
+                const activeLeads = p.content.filter(l => l.status !== 'IGNORED')
+                const firstActive = activeLeads[0] ?? null
                 setLastLead(firstActive)
-                // Первый неоценённый лид для блока очереди
-                const firstUnrated = p.content.find(l => l.myRating === null && l.status !== 'IGNORED') ?? null
+                setFeedbackStatus(fStatus)
+
+                // Первый неоценённый активный лид (myRating === null).
+                // myRating — поле приходит с бэкенда и является source of truth:
+                // отражает оценки сделанные как с сайта, так и через Telegram-бота.
+                const firstUnrated = activeLeads.find(l => l.myRating === null) ?? null
                 setPendingLead(firstUnrated)
             })
             .catch(() => {})
@@ -515,11 +524,6 @@ export default function DashboardOverview({ lang }: Props) {
 
         keywordsApi.list()
             .then(list => setKeywordsCount(list.filter(k => k.isActive).length))
-            .catch(() => {})
-
-        // Статус очереди оценок
-        feedbackApi.getStatus()
-            .then(setFeedbackStatus)
             .catch(() => {})
 
         referralApi.getStats()
@@ -577,12 +581,27 @@ export default function DashboardOverview({ lang }: Props) {
 
     /**
      * Оценка прямо с главной страницы.
-     * После успешной оценки убираем лид из блока ожидания и обновляем счётчик очереди.
+     * После успешной оценки:
+     * - Обновляем myRating у lastLead если это тот же лид
+     * - Показываем следующий неоценённый лид или скрываем блок
+     * - Обновляем счётчик очереди
      */
     const handleRateFromOverview = async (leadId: number, rating: 'GOOD' | 'BAD') => {
         const res = await feedbackApi.submit(leadId, rating)
-        // Убираем оценённый лид из блока — показываем следующий неоценённый если есть
-        setPendingLead(prev => (prev?.id === leadId ? null : prev))
+
+        // Обновляем myRating у lastLead если оценили именно его
+        setLastLead(prev => {
+            if (!prev || prev.id !== leadId) return prev
+            return { ...prev, myRating: rating }
+        })
+
+        // Убираем оценённый лид из блока ожидания
+        setPendingLead(prev => {
+            if (!prev || prev.id !== leadId) return prev
+            // Следующий неоценённый лид — нужна перезагрузка данных, но пока просто скрываем
+            return null
+        })
+
         if (res.queueEmpty) {
             setFeedbackStatus({ queueSize: 0, hasQueue: false })
         } else {
@@ -601,9 +620,12 @@ export default function DashboardOverview({ lang }: Props) {
     const paidReferrals  = referralStats?.paidReferrals  ?? 0
 
     // Показываем блок «ожидает оценки» если:
-    // — есть очередь (hasQueue) — это значит есть неоценённый уведомленный лид
-    // — ИЛИ нашли первый неоценённый лид в списке
-    const showPendingBlock = feedbackStatus?.hasQueue || (pendingLead !== null)
+    // — сервер сообщает что есть TG-очередь (hasQueue)
+    // — ИЛИ нашли первый неоценённый лид в списке (pendingLead !== null)
+    const showPendingBlock = feedbackStatus?.hasQueue || pendingLead !== null
+
+    // Блок «последний лид»: если он не оценён — показываем как обычно (кнопки оценки в pending-блоке).
+    // Если последний лид оценён, но есть очередь — показываем заглушку «оцените чтобы увидеть».
 
     return (
         <div className={s.page}>
@@ -650,7 +672,36 @@ export default function DashboardOverview({ lang }: Props) {
                     <a href="/dashboard/leads" style={{ fontSize: 13, color: 'var(--c-accent)', fontWeight: 600, textDecoration: 'none' }}>{l.viewAll}</a>
                 </div>
 
-                {lastLead ? (
+                {/* Кейс: последний лид заблокирован — нужно сначала оценить pendingLead */}
+                {lastLead && pendingLead && pendingLead.id !== lastLead.id && lastLead.myRating === null ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: '20px 0', textAlign: 'center' }}>
+                        <div style={{
+                            width:          44,
+                            height:         44,
+                            borderRadius:   '50%',
+                            background:     'rgba(245,158,11,.1)',
+                            color:          '#d97706',
+                            display:        'flex',
+                            alignItems:     'center',
+                            justifyContent: 'center',
+                        }}>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                            </svg>
+                        </div>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--c-ink)' }}>
+                            Оцените предыдущий лид, чтобы его увидеть
+                        </span>
+                        <span style={{ fontSize: 12, color: 'var(--c-ink-3)', maxWidth: 280, lineHeight: 1.5 }}>
+                            Система отправляет лиды последовательно — оцените текущий, чтобы разблокировать следующий
+                        </span>
+                        <a href="/dashboard/leads"
+                           style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '8px 16px', borderRadius: 9, background: 'rgba(245,158,11,.1)', border: '1.5px solid rgba(245,158,11,.4)', color: '#d97706', fontSize: 13, fontWeight: 700, textDecoration: 'none', marginTop: 4 }}>
+                            Перейти к оценке →
+                        </a>
+                    </div>
+                ) : lastLead ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
                             <div style={{ width: 44, height: 44, borderRadius: '50%', flexShrink: 0, background: 'var(--c-accent-soft)', color: 'var(--c-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 18, fontFamily: 'var(--font-head)' }}>

@@ -201,7 +201,11 @@ function ExportBadge() {
     )
 }
 
-// ─── Компонент кнопок оценки (правая колонка карточки) ──────────────────────
+// ─── Компонент кнопок оценки (встраивается в нижний левый угол карточки) ─────
+//
+// ИЗМЕНЕНИЕ: перенесено из правой колонки (отдельный блок с borderLeft)
+// в строку действий (leadFooter). Кнопки стали горизонтальными и компактными,
+// не ломают высоту карточки.
 
 interface FeedbackButtonsProps {
     leadId:    number
@@ -228,47 +232,11 @@ function FeedbackButtons({ leadId, rating, disabled, onVote }: FeedbackButtonsPr
 
     return (
         <div style={{
-            display:        'flex',
-            flexDirection:  'column',
-            alignItems:     'center',
-            gap:            6,
-            padding:        '12px 10px',
-            borderLeft:     '1px solid var(--c-border)',
-            flexShrink:     0,
-            alignSelf:      'stretch',
-            justifyContent: 'center',
-            minWidth:       56,
+            display:    'flex',
+            alignItems: 'center',
+            gap:        4,
+            flexShrink: 0,
         }}>
-            {/* Метка */}
-            {rating === null && !disabled && (
-                <span style={{
-                    fontSize:    9,
-                    color:       'var(--c-ink-3)',
-                    fontWeight:  600,
-                    letterSpacing: '.3px',
-                    textTransform: 'uppercase',
-                    textAlign:   'center',
-                    lineHeight:  1.2,
-                    marginBottom: 2,
-                }}>
-                    Оцените
-                </span>
-            )}
-            {rating !== null && (
-                <span style={{
-                    fontSize:    9,
-                    color:       isGood ? '#059669' : '#dc2626',
-                    fontWeight:  700,
-                    letterSpacing: '.3px',
-                    textTransform: 'uppercase',
-                    textAlign:   'center',
-                    lineHeight:  1.2,
-                    marginBottom: 2,
-                }}>
-                    {isGood ? 'Хороший' : 'Мусор'}
-                </span>
-            )}
-
             {/* Лайк */}
             <button
                 onClick={() => void handleVote('GOOD')}
@@ -278,14 +246,14 @@ function FeedbackButtons({ leadId, rating, disabled, onVote }: FeedbackButtonsPr
                     display:        'flex',
                     alignItems:     'center',
                     justifyContent: 'center',
-                    width:          36,
-                    height:         36,
-                    borderRadius:   10,
+                    gap:            4,
+                    padding:        '4px 9px',
+                    borderRadius:   8,
                     border:         isGood
-                        ? '2px solid rgba(16,185,129,.6)'
+                        ? '1.5px solid rgba(16,185,129,.6)'
                         : '1.5px solid var(--c-border)',
                     background:     isGood
-                        ? 'rgba(16,185,129,.15)'
+                        ? 'rgba(16,185,129,.13)'
                         : 'var(--c-bg)',
                     color:          isGood
                         ? '#059669'
@@ -294,7 +262,9 @@ function FeedbackButtons({ leadId, rating, disabled, onVote }: FeedbackButtonsPr
                     transition:     'all .15s',
                     opacity:        submitting ? 0.5 : 1,
                     flexShrink:     0,
-                    boxShadow:      isGood ? '0 0 0 3px rgba(16,185,129,.12)' : 'none',
+                    fontSize:       11,
+                    fontWeight:     600,
+                    fontFamily:     'var(--font-body)',
                 }}
                 onMouseEnter={e => {
                     if (!submitting && !disabled && !isGood) {
@@ -313,7 +283,8 @@ function FeedbackButtons({ leadId, rating, disabled, onVote }: FeedbackButtonsPr
                     }
                 }}
             >
-                <IconThumbUp size={16} />
+                <IconThumbUp size={13} />
+                {isGood && <span>Хороший</span>}
             </button>
 
             {/* Дизлайк */}
@@ -325,14 +296,14 @@ function FeedbackButtons({ leadId, rating, disabled, onVote }: FeedbackButtonsPr
                     display:        'flex',
                     alignItems:     'center',
                     justifyContent: 'center',
-                    width:          36,
-                    height:         36,
-                    borderRadius:   10,
+                    gap:            4,
+                    padding:        '4px 9px',
+                    borderRadius:   8,
                     border:         isBad
-                        ? '2px solid rgba(239,68,68,.55)'
+                        ? '1.5px solid rgba(239,68,68,.55)'
                         : '1.5px solid var(--c-border)',
                     background:     isBad
-                        ? 'rgba(239,68,68,.13)'
+                        ? 'rgba(239,68,68,.11)'
                         : 'var(--c-bg)',
                     color:          isBad
                         ? '#dc2626'
@@ -341,7 +312,9 @@ function FeedbackButtons({ leadId, rating, disabled, onVote }: FeedbackButtonsPr
                     transition:     'all .15s',
                     opacity:        submitting ? 0.5 : 1,
                     flexShrink:     0,
-                    boxShadow:      isBad ? '0 0 0 3px rgba(239,68,68,.1)' : 'none',
+                    fontSize:       11,
+                    fontWeight:     600,
+                    fontFamily:     'var(--font-body)',
                 }}
                 onMouseEnter={e => {
                     if (!submitting && !disabled && !isBad) {
@@ -360,7 +333,8 @@ function FeedbackButtons({ leadId, rating, disabled, onVote }: FeedbackButtonsPr
                     }
                 }}
             >
-                <IconThumbDown size={16} />
+                <IconThumbDown size={13} />
+                {isBad && <span>Мусор</span>}
             </button>
         </div>
     )
@@ -462,7 +436,7 @@ function FeedbackHint() {
 
 // ─── Оверлей блокировки карточки ─────────────────────────────────────────────
 
-function LockedOverlay({ pendingLeadNumber }: { pendingLeadNumber: number }) {
+function LockedOverlay({ pendingLeadId }: { pendingLeadId: number }) {
     return (
         <div style={{
             position:       'absolute',
@@ -481,34 +455,9 @@ function LockedOverlay({ pendingLeadNumber }: { pendingLeadNumber: number }) {
                 <IconLock />
             </span>
             <span style={{ fontSize: 13, color: 'var(--c-ink-2)', fontWeight: 600, textAlign: 'center', maxWidth: 240 }}>
-                Оцените лид #{pendingLeadNumber} чтобы увидеть этот
+                Оцените лид #{pendingLeadId} чтобы увидеть этот
             </span>
         </div>
-    )
-}
-
-// ─── Бейдж оценки (в заголовке карточки) ─────────────────────────────────────
-
-function RatingBadge({ rating }: { rating: 'GOOD' | 'BAD' }) {
-    const isGood = rating === 'GOOD'
-    return (
-        <span style={{
-            display:       'inline-flex',
-            alignItems:    'center',
-            gap:           4,
-            fontSize:      11,
-            fontWeight:    700,
-            padding:       '2px 8px',
-            borderRadius:  100,
-            background:    isGood ? 'rgba(16,185,129,.12)' : 'rgba(239,68,68,.1)',
-            color:         isGood ? '#059669' : '#dc2626',
-            border:        `1px solid ${isGood ? 'rgba(16,185,129,.3)' : 'rgba(239,68,68,.3)'}`,
-            flexShrink:    0,
-            whiteSpace:    'nowrap',
-        }}>
-            {isGood ? <IconThumbUp size={11} /> : <IconThumbDown size={11} />}
-            {isGood ? 'Хороший' : 'Нерелевантный'}
-        </span>
     )
 }
 
@@ -523,12 +472,13 @@ export default function LeadsPage() {
     const [updating,       setUpdating]       = useState<Set<number>>(new Set())
     const [expanded,       setExpanded]       = useState<Set<number>>(new Set())
     const [markingAll,     setMarkingAll]     = useState(false)
-    // Состояние очереди неоценённых лидов
+    // Состояние очереди неоценённых лидов — отражает реальный размер TG-очереди на бэкенде
     const [feedbackStatus, setFeedbackStatus] = useState<FeedbackStatus | null>(null)
     const [bannerDismissed, setBannerDismissed] = useState(false)
-    // Локальные оценки: leadId → rating (оптимистичные обновления до подтверждения сервера)
-    // После загрузки страницы localRatings пуст — данные берём из lead.myRating (с бэкенда)
-    const [localRatings, setLocalRatings]    = useState<Map<number, 'GOOD' | 'BAD' | null>>(new Map())
+    // Локальные оценки: leadId → rating (оптимистичные обновления)
+    // Используются только внутри сессии до следующей полной загрузки страницы.
+    // При перезагрузке страницы data.content[].myRating приходит с бэкенда — source of truth.
+    const [localRatings, setLocalRatings]     = useState<Map<number, 'GOOD' | 'BAD' | null>>(new Map())
 
     // Ref для polling — чтобы можно было остановить таймер при размонтировании
     const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -545,9 +495,23 @@ export default function LeadsPage() {
             setData(result)
             setFeedbackStatus(fStatus)
             dispatchLeadsCountChanged(result.newCount)
-            // При полной перезагрузке данных сбрасываем локальные оценки —
-            // теперь актуальные данные myRating пришли с бэкенда
-            setLocalRatings(new Map())
+            // ИСПРАВЛЕНИЕ: НЕ сбрасываем localRatings при загрузке.
+            // lead.myRating приходит с бэкенда и является актуальным.
+            // localRatings нужны только для оптимистичных обновлений текущей сессии —
+            // их жизненный цикл совпадает с монтированием компонента.
+            // Удаляем из localRatings только те ключи, для которых бэкенд вернул myRating
+            // (данные синхронизированы, локальная копия больше не нужна).
+            setLocalRatings(prev => {
+                if (prev.size === 0) return prev
+                const next = new Map(prev)
+                for (const lead of result.content) {
+                    // Если бэкенд вернул ту же оценку что у нас локально — чистим, чтобы
+                    // не дублировать. Если бэкенд вернул другую (изменили через бота) — тоже
+                    // используем данные бэкенда, поэтому удаляем локальную.
+                    next.delete(lead.id)
+                }
+                return next
+            })
         } catch (e: unknown) {
             setError(e instanceof Error ? e.message : 'Ошибка загрузки')
         } finally {
@@ -562,7 +526,6 @@ export default function LeadsPage() {
     // Каждые 30 секунд тихо обновляем myRating для всех лидов на странице.
     useEffect(() => {
         const poll = async () => {
-            // Если страница скрыта — пропускаем запрос
             if (document.hidden) return
             try {
                 const statusParam = filter || undefined
@@ -570,16 +533,13 @@ export default function LeadsPage() {
                     leadsApi.list({ status: statusParam, page, size: 20 }),
                     feedbackApi.getStatus(),
                 ])
-                // Обновляем только оценки (myRating) и статус очереди, не трогаем остальные данные,
-                // чтобы не сбрасывать раскрытые карточки и локальные изменения статуса
                 setData(prev => {
                     if (!prev) return result
-                    // Мержим свежие myRating из нового результата в старые данные
                     const updatedContent = prev.content.map(oldLead => {
                         const freshLead = result.content.find(fl => fl.id === oldLead.id)
                         if (!freshLead) return oldLead
-                        // Обновляем только myRating если нет локальной оценки (т.е. пользователь
-                        // не менял её в этой сессии — тогда приоритет у свежих данных с сервера)
+                        // Приоритет у localRatings — пока пользователь активно оценивает,
+                        // не перетираем его действия данными с поллинга
                         if (localRatings.has(oldLead.id)) return oldLead
                         return { ...oldLead, myRating: freshLead.myRating }
                     })
@@ -689,8 +649,7 @@ export default function LeadsPage() {
             next.set(leadId, rating)
             return next
         })
-        // Оптимистичное обновление myRating прямо в data (для корректной работы getRating
-        // в тех местах где localRatings ещё не успел обновиться — React батчинг)
+        // Оптимистичное обновление myRating прямо в data
         setData(prev => {
             if (!prev) return prev
             const content = prev.content.map(l =>
@@ -705,19 +664,14 @@ export default function LeadsPage() {
             // Обновляем статус лида согласно ответу бэкенда (NEW → VIEWED автоматически)
             setData(prev => {
                 if (!prev) return prev
+                const wasNew = prev.content.find(l => l.id === leadId)?.status === 'NEW'
                 const content = prev.content.map(l => {
                     if (l.id !== leadId) return l
                     const newStatus = res.leadStatus as Lead['status']
-                    // Если статус изменился с NEW на VIEWED — обновляем счётчик
-                    if (l.status === 'NEW' && newStatus !== 'NEW') {
-                        dispatchLeadsCountChanged(Math.max(0, (prev.newCount ?? 1) - 1))
-                        return { ...l, myRating: rating, status: newStatus }
-                    }
-                    return { ...l, myRating: rating }
+                    return { ...l, myRating: rating, status: newStatus }
                 })
-                const newCount = prev.content.find(l => l.id === leadId)?.status === 'NEW'
-                    ? Math.max(0, prev.newCount - 1)
-                    : prev.newCount
+                const newCount = wasNew ? Math.max(0, prev.newCount - 1) : prev.newCount
+                if (wasNew) dispatchLeadsCountChanged(newCount)
                 return { ...prev, content, newCount }
             })
 
@@ -732,6 +686,15 @@ export default function LeadsPage() {
                     return { queueSize: newSize, hasQueue: newSize > 0 }
                 })
             }
+
+            // После успешного сохранения на сервере синхронизируем localRatings:
+            // помечаем как «подтверждённые» — удаляем из localRatings, т.к. теперь
+            // lead.myRating в data уже обновлён корректно
+            setLocalRatings(prev => {
+                const next = new Map(prev)
+                next.delete(leadId)
+                return next
+            })
         } catch {
             // Откат: возвращаем предыдущее состояние
             setLocalRatings(prev => {
@@ -756,8 +719,8 @@ export default function LeadsPage() {
     /**
      * Получить актуальный рейтинг лида.
      * Приоритет: localRatings (оптимистичное) > lead.myRating (с бэкенда).
-     * localRatings сбрасывается при полной загрузке данных, поэтому при перезагрузке
-     * страницы корректно показываем данные с сервера.
+     * После успешной отправки на бэкенд localRatings для этого лида очищается,
+     * и управление переходит к lead.myRating который уже обновлён.
      */
     const getRating = (lead: Lead): 'GOOD' | 'BAD' | null => {
         if (localRatings.has(lead.id)) return localRatings.get(lead.id) ?? null
@@ -769,22 +732,37 @@ export default function LeadsPage() {
     )
 
     // ─── Логика блокировки ────────────────────────────────────────────────────
-    // Находим первый неоценённый лид в списке. Все лиды ПОСЛЕ него (без оценки) — заблокированы.
-    // Это воспроизводит логику бэкенда: пользователь должен оценивать по порядку.
-    const firstUnratedIndex = feedbackStatus?.hasQueue
-        ? visibleContent.findIndex(l => getRating(l) === null)
-        : -1
+    //
+    // ИСПРАВЛЕНИЕ: Блокировку определяем независимо от feedbackStatus.hasQueue.
+    // hasQueue отражает только TG-очередь (pending_lead_notifications).
+    // Нам нужно заблокировать лиды которые ИДУТ ПОСЛЕ первого неоценённого в списке.
+    //
+    // Алгоритм:
+    // 1. Находим индекс первого неоценённого лида в visibleContent.
+    // 2. Все последующие лиды (с бо́льшим индексом) без оценки — заблокированы.
+    // 3. Уже оценённые лиды (rating !== null) не блокируются никогда.
+    const firstUnratedIndex = visibleContent.findIndex(l => getRating(l) === null)
+
+    // Есть ли хоть один неоценённый лид — нужно для показа баннера
+    const hasUnratedLeads = firstUnratedIndex !== -1
 
     const isLeadLocked = (lead: Lead, idx: number): boolean => {
-        if (!feedbackStatus?.hasQueue) return false
-        if (firstUnratedIndex === -1) return false
-        return idx > firstUnratedIndex && getRating(lead) === null
+        // Если нет ни одного неоценённого — никто не заблокирован
+        if (!hasUnratedLeads) return false
+        // Первый неоценённый — не заблокирован, его надо оценить
+        if (idx === firstUnratedIndex) return false
+        // Лиды ДО первого неоценённого — не заблокированы (они уже оценены или раньше по списку)
+        if (idx < firstUnratedIndex) return false
+        // Лиды ПОСЛЕ первого неоценённого без оценки — заблокированы
+        return getRating(lead) === null
     }
 
-    // Номер первого неоценённого лида в пользовательской нумерации (1-based)
-    const pendingLeadNumber = firstUnratedIndex >= 0 ? firstUnratedIndex + 1 : null
+    // ID первого неоценённого лида для сообщения в оверлее (показываем порядковый номер)
+    const firstUnratedDisplayNum = firstUnratedIndex >= 0 ? firstUnratedIndex + 1 : null
 
-    const showBanner = feedbackStatus?.hasQueue && !bannerDismissed
+    // Баннер показываем если есть TG-очередь (пришли новые лиды и ждут оценки)
+    const showBanner = (feedbackStatus?.hasQueue || hasUnratedLeads) && !bannerDismissed
+    const bannerQueueSize = feedbackStatus?.queueSize ?? (hasUnratedLeads ? visibleContent.filter(l => getRating(l) === null).length : 0)
 
     if (loading) {
         return (
@@ -880,7 +858,7 @@ export default function LeadsPage() {
             {/* Баннер очереди */}
             {showBanner && (
                 <QueueBanner
-                    queueSize={feedbackStatus!.queueSize}
+                    queueSize={bannerQueueSize}
                     onDismiss={() => setBannerDismissed(true)}
                 />
             )}
@@ -903,7 +881,6 @@ export default function LeadsPage() {
                 <>
                     <div className={s.list}>
                         {visibleContent.map((lead, idx) => {
-                            const color      = STATUS_COLOR[lead.status] || STATUS_COLOR.NEW
                             const isNew      = lead.status === 'NEW'
                             const isViewed   = lead.status === 'VIEWED'
                             const isReplied  = lead.status === 'REPLIED'
@@ -926,402 +903,414 @@ export default function LeadsPage() {
                                     className={s.leadCard}
                                     style={{
                                         position: 'relative',
-                                        // Цветная левая полоса для новых лидов
+                                        // Цветная левая полоса
                                         ...(isNew      ? { borderLeftColor: '#dc2626', borderLeftWidth: 3 } : {}),
                                         ...(isArchived ? { opacity: 0.65 } : {}),
                                         ...(isExport && isNew ? { borderLeftColor: '#7c3aed' } : {}),
                                         // Заблокированные карточки — притушенные
                                         ...(locked ? { opacity: 0.55 } : {}),
-                                        // Цветная левая полоса по оценке (перекрывает статусную для оценённых)
+                                        // Цветная левая полоса по оценке (перекрывает статусную)
                                         ...(rating === 'GOOD' && !isNew ? { borderLeftColor: '#059669', borderLeftWidth: 3 } : {}),
                                         ...(rating === 'BAD' && !isNew  ? { borderLeftColor: '#dc2626', borderLeftWidth: 3, opacity: isArchived ? 0.65 : 0.85 } : {}),
                                     }}
                                 >
                                     {/* Оверлей блокировки */}
-                                    {locked && pendingLeadNumber !== null && (
-                                        <LockedOverlay pendingLeadNumber={pendingLeadNumber} />
+                                    {locked && firstUnratedDisplayNum !== null && (
+                                        <LockedOverlay pendingLeadId={firstUnratedDisplayNum} />
                                     )}
 
-                                    {/* ─── Основное содержимое карточки + правая колонка с оценкой ─── */}
-                                    <div style={{ display: 'flex', alignItems: 'stretch' }}>
+                                    {/* ─── Основное содержимое карточки (без правой колонки) ─── */}
+                                    <div style={{ flex: 1, minWidth: 0 }}>
 
-                                        {/* Левая часть — весь прежний контент */}
-                                        <div style={{ flex: 1, minWidth: 0 }}>
-
-                                            <div className={s.leadHead}>
-                                                <div className={s.leadMeta}>
-                                                    <div style={{
-                                                        width:          32,
-                                                        height:         32,
-                                                        borderRadius:   '50%',
-                                                        background:     isExport ? 'rgba(139,92,246,.1)' : 'var(--c-accent-soft)',
-                                                        color:          isExport ? '#7c3aed' : 'var(--c-accent)',
-                                                        display:        'flex',
-                                                        alignItems:     'center',
-                                                        justifyContent: 'center',
-                                                        fontWeight:     700,
-                                                        fontSize:       14,
-                                                        flexShrink:     0,
-                                                        fontFamily:     'var(--font-head)',
-                                                    }}>
-                                                        {(lead.authorName || lead.chatTitle || '?').charAt(0).toUpperCase()}
-                                                    </div>
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                                            <span className={s.leadChat}>{lead.chatTitle || lead.chatLink}</span>
-                                                            {isExport && <ExportBadge />}
-                                                            {/* Бейдж оценки — показываем рядом с чатом если оценён */}
-                                                            {rating !== null && <RatingBadge rating={rating} />}
-                                                        </div>
-                                                        <span className={s.leadDate}>
-                                                            {formatLeadDate(displayDate)}
-                                                            {isExport && (
-                                                                <span style={{ color: 'var(--c-ink-3)', fontSize: 10, marginLeft: 4 }}>
-                                                                    · дата сообщения
-                                                                </span>
-                                                            )}
-                                                        </span>
-                                                    </div>
-                                                    {lead.matchedKeyword && (
-                                                        <span style={{
-                                                            fontSize:     11,
-                                                            background:   'var(--c-accent-soft)',
-                                                            color:        'var(--c-accent)',
-                                                            padding:      '2px 8px',
-                                                            borderRadius: 100,
-                                                            fontWeight:   600,
-                                                        }}>
-                                                            {lead.matchedKeyword}
-                                                        </span>
-                                                    )}
+                                        <div className={s.leadHead}>
+                                            <div className={s.leadMeta}>
+                                                <div style={{
+                                                    width:          32,
+                                                    height:         32,
+                                                    borderRadius:   '50%',
+                                                    background:     isExport ? 'rgba(139,92,246,.1)' : 'var(--c-accent-soft)',
+                                                    color:          isExport ? '#7c3aed' : 'var(--c-accent)',
+                                                    display:        'flex',
+                                                    alignItems:     'center',
+                                                    justifyContent: 'center',
+                                                    fontWeight:     700,
+                                                    fontSize:       14,
+                                                    flexShrink:     0,
+                                                    fontFamily:     'var(--font-head)',
+                                                }}>
+                                                    {(lead.authorName || lead.chatTitle || '?').charAt(0).toUpperCase()}
                                                 </div>
-
-                                                <button
-                                                    onClick={() => {
-                                                        if (isNew)    void setStatus(lead, 'VIEWED')
-                                                        if (isViewed) void setStatus(lead, 'NEW')
-                                                    }}
-                                                    disabled={isUpdating || isReplied || isArchived}
-                                                    title={
-                                                        isNew    ? 'Нажмите — пометить прочитанным' :
-                                                            isViewed ? 'Нажмите — пометить непрочитанным' :
-                                                                STATUS_LABEL[lead.status]
-                                                    }
-                                                    style={{
-                                                        display:     'inline-flex',
-                                                        alignItems:  'center',
-                                                        gap:         5,
-                                                        padding:     '3px 10px',
-                                                        borderRadius: 100,
-                                                        border:      `1px solid ${color.text}44`,
-                                                        background:  color.bg,
-                                                        color:       color.text,
-                                                        fontSize:    11,
-                                                        fontWeight:  700,
-                                                        cursor:      (isReplied || isArchived) ? 'default' : 'pointer',
-                                                        flexShrink:  0,
-                                                        fontFamily:  'var(--font-body)',
-                                                        transition:  'opacity .15s',
-                                                    }}
-                                                    onMouseEnter={e => {
-                                                        if (!isReplied && !isArchived)
-                                                            e.currentTarget.style.opacity = '0.7'
-                                                    }}
-                                                    onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
-                                                >
-                                                    {isNew    ? <IconEye />    : null}
-                                                    {isViewed ? <IconEyeOff /> : null}
-                                                    {STATUS_LABEL[lead.status]}
-                                                </button>
-                                            </div>
-
-                                            <div className={s.leadBody}>
-                                                <button
-                                                    className={s.leadText}
-                                                    onClick={() => toggleExpand(lead.id)}
-                                                    style={{ textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: 0, width: '100%', fontFamily: 'var(--font-body)' }}
-                                                >
-                                                    <span style={{
-                                                        display:    '-webkit-box',
-                                                        WebkitLineClamp: isExpanded ? 'unset' : 4,
-                                                        WebkitBoxOrient: 'vertical' as const,
-                                                        overflow:   isExpanded ? 'visible' : 'hidden',
-                                                        whiteSpace: 'pre-wrap',
-                                                        wordBreak:  'break-word',
-                                                    } as React.CSSProperties}>
-                                                        {lead.messageText}
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                                        <span className={s.leadChat}>{lead.chatTitle || lead.chatLink}</span>
+                                                        {isExport && <ExportBadge />}
+                                                    </div>
+                                                    <span className={s.leadDate}>
+                                                        {formatLeadDate(displayDate)}
+                                                        {isExport && (
+                                                            <span style={{ color: 'var(--c-ink-3)', fontSize: 10, marginLeft: 4 }}>
+                                                                · дата сообщения
+                                                            </span>
+                                                        )}
                                                     </span>
-                                                </button>
-                                                {lead.messageText.length > 300 && (
-                                                    <button
-                                                        onClick={() => toggleExpand(lead.id)}
-                                                        style={{
-                                                            display:    'inline-flex',
-                                                            alignItems: 'center',
-                                                            gap:        4,
-                                                            marginTop:  4,
-                                                            background: 'none',
-                                                            border:     'none',
-                                                            color:      'var(--c-accent)',
-                                                            fontSize:   12,
-                                                            fontWeight: 600,
-                                                            cursor:     'pointer',
-                                                            padding:    0,
-                                                            fontFamily: 'var(--font-body)',
-                                                        }}
-                                                    >
-                                                        <IconChevron open={isExpanded} />
-                                                        {isExpanded ? 'Свернуть' : 'Развернуть'}
-                                                    </button>
+                                                </div>
+                                                {lead.matchedKeyword && (
+                                                    <span style={{
+                                                        fontSize:     11,
+                                                        background:   'var(--c-accent-soft)',
+                                                        color:        'var(--c-accent)',
+                                                        padding:      '2px 8px',
+                                                        borderRadius: 100,
+                                                        fontWeight:   600,
+                                                    }}>
+                                                        {lead.matchedKeyword}
+                                                    </span>
                                                 )}
                                             </div>
 
-                                            {isExpanded && (
-                                                <div style={{ padding: '0 16px 14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-                                                    {lead.aiValid !== null && lead.aiValid !== undefined && (
-                                                        <div style={{
-                                                            display:    'flex',
-                                                            alignItems: 'flex-start',
-                                                            gap:        8,
-                                                            padding:    '8px 12px',
-                                                            borderRadius: 9,
-                                                            background: lead.aiValid ? 'rgba(16,185,129,.08)' : 'rgba(239,68,68,.08)',
-                                                            border:     `1px solid ${lead.aiValid ? 'rgba(16,185,129,.2)' : 'rgba(239,68,68,.2)'}`,
+                                            {/* Кнопка переключения статуса (глаз) */}
+                                            <button
+                                                onClick={() => {
+                                                    if (isNew)    void setStatus(lead, 'VIEWED')
+                                                    if (isViewed) void setStatus(lead, 'NEW')
+                                                }}
+                                                disabled={isUpdating || (!isNew && !isViewed)}
+                                                title={isNew ? 'Отметить прочитанным' : isViewed ? 'Отметить непрочитанным' : STATUS_LABEL[lead.status]}
+                                                style={{
+                                                    display:        'flex',
+                                                    alignItems:     'center',
+                                                    gap:            5,
+                                                    padding:        '4px 10px',
+                                                    borderRadius:   100,
+                                                    border:         '1.5px solid var(--c-border)',
+                                                    fontSize:       11,
+                                                    fontWeight:     700,
+                                                    letterSpacing:  '.2px',
+                                                    cursor:         (isNew || isViewed) ? 'pointer' : 'default',
+                                                    fontFamily:     'var(--font-body)',
+                                                    flexShrink:     0,
+                                                    transition:     'all .15s',
+                                                    background:     STATUS_COLOR[lead.status]?.bg || 'transparent',
+                                                    color:          STATUS_COLOR[lead.status]?.text || 'var(--c-ink-3)',
+                                                    borderColor:    STATUS_COLOR[lead.status]?.text
+                                                        ? `${STATUS_COLOR[lead.status].text}44`
+                                                        : 'var(--c-border)',
+                                                }}
+                                            >
+                                                {isNew    && <IconEye />}
+                                                {isViewed && <IconEyeOff />}
+                                                {STATUS_LABEL[lead.status]}
+                                            </button>
+                                        </div>
+
+                                        {/* Текст сообщения */}
+                                        <div
+                                            className={s.leadText}
+                                            onClick={() => toggleExpand(lead.id)}
+                                            style={{
+                                                cursor:     'pointer',
+                                                WebkitLineClamp: isExpanded ? 'unset' : 3,
+                                            } as React.CSSProperties}
+                                        >
+                                            {lead.messageText}
+                                        </div>
+
+                                        {/* Контекст и AI-решение (раскрывается по клику) */}
+                                        {isExpanded && (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
+
+                                                {lead.aiValid !== null && lead.aiValid !== undefined && (
+                                                    <div style={{
+                                                        display:      'flex',
+                                                        alignItems:   'flex-start',
+                                                        gap:          8,
+                                                        padding:      '8px 12px',
+                                                        borderRadius: 9,
+                                                        background:   lead.aiValid ? 'rgba(16,185,129,.08)' : 'rgba(239,68,68,.08)',
+                                                        border:       `1px solid ${lead.aiValid ? 'rgba(16,185,129,.2)' : 'rgba(239,68,68,.2)'}`,
+                                                    }}>
+                                                        <span style={{
+                                                            fontSize:  11,
+                                                            fontWeight: 700,
+                                                            flexShrink: 0,
+                                                            color:     lead.aiValid ? '#10b981' : '#ef4444',
                                                         }}>
-                                                            <span style={{
-                                                                display:    'inline-flex',
-                                                                alignItems: 'center',
-                                                                gap:        4,
-                                                                fontSize:   12,
-                                                                fontWeight: 700,
-                                                                flexShrink: 0,
-                                                                color:      lead.aiValid ? '#10b981' : '#ef4444',
-                                                            }}>
-                                                                <IconAI valid={lead.aiValid} />
-                                                                AI {lead.aiValid ? 'одобрил' : 'отклонил'}
-                                                            </span>
-                                                            {lead.aiReason && (
-                                                                <span style={{ fontSize: 12, color: 'var(--c-ink-2)', lineHeight: 1.5 }}>
-                                                                    {lead.aiReason}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    )}
-
-                                                    {contextMsgs.length > 0 && (
-                                                        <div>
-                                                            <div style={{
-                                                                fontSize:       11,
-                                                                fontWeight:     700,
-                                                                textTransform:  'uppercase',
-                                                                letterSpacing:  '.5px',
-                                                                color:          'var(--c-ink-3)',
-                                                                marginBottom:   8,
-                                                            }}>
-                                                                Контекст чата
-                                                            </div>
-                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                                                {contextMsgs.map((msg, i) => (
-                                                                    <div key={i} style={{
-                                                                        fontSize:    13,
-                                                                        color:       'var(--c-ink-2)',
-                                                                        lineHeight:  1.5,
-                                                                        padding:     '6px 10px',
-                                                                        borderLeft:  '2px solid var(--c-border)',
-                                                                        background:  'var(--c-surface)',
-                                                                        borderRadius: '0 6px 6px 0',
-                                                                        wordBreak:   'break-word',
-                                                                        whiteSpace:  'pre-wrap',
-                                                                    }}>
-                                                                        {msg}
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
-
-                                            <div className={s.leadFooter}>
-                                                <div className={s.leadAuthor}>
-                                                    <span style={{ color: 'var(--c-ink-3)', flexShrink: 0 }}><IconUser /></span>
-                                                    <span className={s.authorName}>{lead.authorName || 'Аноним'}</span>
-                                                    {lead.authorUsername && (
-                                                        <span className={s.authorUsername}>@{lead.authorUsername}</span>
-                                                    )}
-                                                </div>
-
-                                                <div className={s.leadActions}>
-                                                    {/* AI бейдж */}
-                                                    {lead.aiValid !== null && lead.aiValid !== undefined && (
-                                                        <div
-                                                            className={s.aiBadge}
-                                                            style={{
-                                                                background: lead.aiValid ? 'rgba(16,185,129,.12)' : 'rgba(239,68,68,.12)',
-                                                                color:      lead.aiValid ? '#10b981' : '#ef4444',
-                                                            }}
-                                                        >
                                                             <IconAI valid={lead.aiValid} />
-                                                            AI
+                                                            AI {lead.aiValid ? 'одобрил' : 'отклонил'}
+                                                        </span>
+                                                        {lead.aiReason && (
+                                                            <span style={{ fontSize: 12, color: 'var(--c-ink-2)', lineHeight: 1.5 }}>
+                                                                {lead.aiReason}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                {contextMsgs.length > 0 && (
+                                                    <div>
+                                                        <div style={{
+                                                            fontSize:       11,
+                                                            fontWeight:     700,
+                                                            textTransform:  'uppercase',
+                                                            letterSpacing:  '.5px',
+                                                            color:          'var(--c-ink-3)',
+                                                            marginBottom:   8,
+                                                        }}>
+                                                            Контекст чата
                                                         </div>
-                                                    )}
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                                            {contextMsgs.map((msg, i) => (
+                                                                <div key={i} style={{
+                                                                    fontSize:    13,
+                                                                    color:       'var(--c-ink-2)',
+                                                                    lineHeight:  1.5,
+                                                                    padding:     '6px 10px',
+                                                                    borderLeft:  '2px solid var(--c-border)',
+                                                                    background:  'var(--c-surface)',
+                                                                    borderRadius: '0 6px 6px 0',
+                                                                    wordBreak:   'break-word',
+                                                                    whiteSpace:  'pre-wrap',
+                                                                }}>
+                                                                    {msg}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
 
-                                                    {(isNew || isViewed) && (
-                                                        <button
-                                                            onClick={() => void setStatus(lead, 'REPLIED')}
-                                                            disabled={isUpdating}
-                                                            title="Отметить как отвечено"
-                                                            style={{
-                                                                display:     'flex',
-                                                                alignItems:  'center',
-                                                                gap:         4,
-                                                                padding:     '5px 12px',
-                                                                borderRadius: 100,
-                                                                border:      '1.5px solid rgba(16,185,129,.45)',
-                                                                background:  'rgba(16,185,129,.08)',
-                                                                color:       '#059669',
-                                                                fontSize:    12,
-                                                                fontWeight:  700,
-                                                                cursor:      'pointer',
-                                                                fontFamily:  'var(--font-body)',
-                                                                transition:  'all .15s',
-                                                            }}
-                                                            onMouseEnter={e => {
-                                                                const btn = e.currentTarget as HTMLButtonElement
-                                                                btn.style.background  = 'rgba(16,185,129,.18)'
-                                                                btn.style.borderColor = 'rgba(16,185,129,.7)'
-                                                            }}
-                                                            onMouseLeave={e => {
-                                                                const btn = e.currentTarget as HTMLButtonElement
-                                                                btn.style.background  = 'rgba(16,185,129,.08)'
-                                                                btn.style.borderColor = 'rgba(16,185,129,.45)'
-                                                            }}
-                                                        >
-                                                            <IconCheck />
-                                                            Ответил
-                                                        </button>
-                                                    )}
+                                        {/* ─── Нижняя строка карточки ─── */}
+                                        <div className={s.leadFooter}>
+                                            {/* Автор */}
+                                            <div className={s.leadAuthor}>
+                                                <span style={{ color: 'var(--c-ink-3)', flexShrink: 0 }}><IconUser /></span>
+                                                <span className={s.authorName}>{lead.authorName || 'Аноним'}</span>
+                                                {lead.authorUsername && (
+                                                    <span className={s.authorUsername}>@{lead.authorUsername}</span>
+                                                )}
+                                            </div>
 
-                                                    {isReplied && (
-                                                        <button
-                                                            onClick={() => void setStatus(lead, 'VIEWED')}
-                                                            disabled={isUpdating}
-                                                            title="Вернуть в просмотренные"
-                                                            style={{
-                                                                display:     'flex',
-                                                                alignItems:  'center',
-                                                                gap:         4,
-                                                                padding:     '5px 12px',
-                                                                borderRadius: 100,
-                                                                border:      '1.5px solid var(--c-border)',
-                                                                background:  'none',
-                                                                color:       'var(--c-ink-3)',
-                                                                fontSize:    12,
-                                                                fontWeight:  600,
-                                                                cursor:      'pointer',
-                                                                fontFamily:  'var(--font-body)',
-                                                                transition:  'all .15s',
-                                                            }}
-                                                            onMouseEnter={e => {
-                                                                const btn = e.currentTarget as HTMLButtonElement
-                                                                btn.style.borderColor = '#d97706'
-                                                                btn.style.color       = '#d97706'
-                                                            }}
-                                                            onMouseLeave={e => {
-                                                                const btn = e.currentTarget as HTMLButtonElement
-                                                                btn.style.borderColor = 'var(--c-border)'
-                                                                btn.style.color       = 'var(--c-ink-3)'
-                                                            }}
-                                                        >
-                                                            <IconUndo />
-                                                            Вернуть
-                                                        </button>
-                                                    )}
+                                            {/* Действия */}
+                                            <div className={s.leadActions}>
+                                                {/* AI бейдж */}
+                                                {lead.aiValid !== null && lead.aiValid !== undefined && (
+                                                    <div
+                                                        className={s.aiBadge}
+                                                        style={{
+                                                            background: lead.aiValid ? 'rgba(16,185,129,.12)' : 'rgba(239,68,68,.12)',
+                                                            color:      lead.aiValid ? '#10b981' : '#ef4444',
+                                                        }}
+                                                    >
+                                                        <IconAI valid={lead.aiValid} />
+                                                        AI
+                                                    </div>
+                                                )}
 
-                                                    {!isArchived && (
-                                                        <button
-                                                            onClick={() => void setStatus(lead, 'IGNORED')}
-                                                            disabled={isUpdating}
-                                                            title="В архив"
-                                                            style={{
-                                                                display:     'flex',
-                                                                alignItems:  'center',
-                                                                gap:         4,
-                                                                padding:     '5px 12px',
-                                                                borderRadius: 100,
-                                                                border:      '1.5px solid var(--c-border)',
-                                                                background:  'none',
-                                                                color:       'var(--c-ink-3)',
-                                                                fontSize:    12,
-                                                                fontWeight:  600,
-                                                                cursor:      'pointer',
-                                                                fontFamily:  'var(--font-body)',
-                                                                transition:  'all .15s',
-                                                            }}
-                                                            onMouseEnter={e => {
-                                                                const btn = e.currentTarget as HTMLButtonElement
-                                                                btn.style.borderColor = '#6b7280'
-                                                                btn.style.color       = '#6b7280'
-                                                            }}
-                                                            onMouseLeave={e => {
-                                                                const btn = e.currentTarget as HTMLButtonElement
-                                                                btn.style.borderColor = 'var(--c-border)'
-                                                                btn.style.color       = 'var(--c-ink-3)'
-                                                            }}
-                                                        >
-                                                            <IconArchive />
-                                                            В архив
-                                                        </button>
-                                                    )}
+                                                {(isNew || isViewed) && (
+                                                    <button
+                                                        onClick={() => void setStatus(lead, 'REPLIED')}
+                                                        disabled={isUpdating}
+                                                        title="Отметить как отвечено"
+                                                        style={{
+                                                            display:     'flex',
+                                                            alignItems:  'center',
+                                                            gap:         4,
+                                                            padding:     '5px 12px',
+                                                            borderRadius: 100,
+                                                            border:      '1.5px solid rgba(16,185,129,.45)',
+                                                            background:  'rgba(16,185,129,.08)',
+                                                            color:       '#059669',
+                                                            fontSize:    12,
+                                                            fontWeight:  700,
+                                                            cursor:      'pointer',
+                                                            fontFamily:  'var(--font-body)',
+                                                            transition:  'all .15s',
+                                                        }}
+                                                        onMouseEnter={e => {
+                                                            const btn = e.currentTarget as HTMLButtonElement
+                                                            btn.style.background  = 'rgba(16,185,129,.18)'
+                                                            btn.style.borderColor = 'rgba(16,185,129,.7)'
+                                                        }}
+                                                        onMouseLeave={e => {
+                                                            const btn = e.currentTarget as HTMLButtonElement
+                                                            btn.style.background  = 'rgba(16,185,129,.08)'
+                                                            btn.style.borderColor = 'rgba(16,185,129,.45)'
+                                                        }}
+                                                    >
+                                                        <IconCheck />
+                                                        Ответил
+                                                    </button>
+                                                )}
 
-                                                    {isArchived && (
-                                                        <button
-                                                            onClick={() => void setStatus(lead, 'NEW')}
-                                                            disabled={isUpdating}
-                                                            title="Вернуть из архива"
-                                                            style={{
-                                                                display:     'flex',
-                                                                alignItems:  'center',
-                                                                gap:         4,
-                                                                padding:     '5px 12px',
-                                                                borderRadius: 100,
-                                                                border:      '1.5px solid var(--c-border)',
-                                                                background:  'none',
-                                                                color:       'var(--c-ink-3)',
-                                                                fontSize:    12,
-                                                                fontWeight:  600,
-                                                                cursor:      'pointer',
-                                                                fontFamily:  'var(--font-body)',
-                                                            }}
-                                                        >
-                                                            Восстановить
-                                                        </button>
-                                                    )}
+                                                {isReplied && (
+                                                    <button
+                                                        onClick={() => void setStatus(lead, 'VIEWED')}
+                                                        disabled={isUpdating}
+                                                        title="Вернуть в просмотренные"
+                                                        style={{
+                                                            display:     'flex',
+                                                            alignItems:  'center',
+                                                            gap:         4,
+                                                            padding:     '5px 12px',
+                                                            borderRadius: 100,
+                                                            border:      '1.5px solid var(--c-border)',
+                                                            background:  'none',
+                                                            color:       'var(--c-ink-3)',
+                                                            fontSize:    12,
+                                                            fontWeight:  600,
+                                                            cursor:      'pointer',
+                                                            fontFamily:  'var(--font-body)',
+                                                            transition:  'all .15s',
+                                                        }}
+                                                        onMouseEnter={e => {
+                                                            const btn = e.currentTarget as HTMLButtonElement
+                                                            btn.style.borderColor = '#d97706'
+                                                            btn.style.color       = '#d97706'
+                                                        }}
+                                                        onMouseLeave={e => {
+                                                            const btn = e.currentTarget as HTMLButtonElement
+                                                            btn.style.borderColor = 'var(--c-border)'
+                                                            btn.style.color       = 'var(--c-ink-3)'
+                                                        }}
+                                                    >
+                                                        <IconUndo />
+                                                        Вернуть
+                                                    </button>
+                                                )}
 
-                                                    {lead.messageLink && (
-                                                        <a
-                                                            href={lead.messageLink}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className={s.openLink}
-                                                            style={{ display: 'flex', alignItems: 'center', gap: 4 }}
-                                                            onClick={() => handleOpen(lead)}
-                                                        >
-                                                            Открыть
-                                                            <IconExternalLink />
-                                                        </a>
-                                                    )}
-                                                </div>
+                                                {!isArchived && (
+                                                    <button
+                                                        onClick={() => void setStatus(lead, 'IGNORED')}
+                                                        disabled={isUpdating}
+                                                        title="В архив"
+                                                        style={{
+                                                            display:     'flex',
+                                                            alignItems:  'center',
+                                                            gap:         4,
+                                                            padding:     '5px 12px',
+                                                            borderRadius: 100,
+                                                            border:      '1.5px solid var(--c-border)',
+                                                            background:  'none',
+                                                            color:       'var(--c-ink-3)',
+                                                            fontSize:    12,
+                                                            fontWeight:  600,
+                                                            cursor:      'pointer',
+                                                            fontFamily:  'var(--font-body)',
+                                                            transition:  'all .15s',
+                                                        }}
+                                                        onMouseEnter={e => {
+                                                            const btn = e.currentTarget as HTMLButtonElement
+                                                            btn.style.borderColor = '#6b7280'
+                                                            btn.style.color       = '#6b7280'
+                                                        }}
+                                                        onMouseLeave={e => {
+                                                            const btn = e.currentTarget as HTMLButtonElement
+                                                            btn.style.borderColor = 'var(--c-border)'
+                                                            btn.style.color       = 'var(--c-ink-3)'
+                                                        }}
+                                                    >
+                                                        <IconArchive />
+                                                        В архив
+                                                    </button>
+                                                )}
+
+                                                {isArchived && (
+                                                    <button
+                                                        onClick={() => void setStatus(lead, 'NEW')}
+                                                        disabled={isUpdating}
+                                                        title="Вернуть из архива"
+                                                        style={{
+                                                            display:     'flex',
+                                                            alignItems:  'center',
+                                                            gap:         4,
+                                                            padding:     '5px 12px',
+                                                            borderRadius: 100,
+                                                            border:      '1.5px solid var(--c-border)',
+                                                            background:  'none',
+                                                            color:       'var(--c-ink-3)',
+                                                            fontSize:    12,
+                                                            fontWeight:  600,
+                                                            cursor:      'pointer',
+                                                            fontFamily:  'var(--font-body)',
+                                                        }}
+                                                    >
+                                                        Восстановить
+                                                    </button>
+                                                )}
+
+                                                {lead.messageLink && (
+                                                    <a
+                                                        href={lead.messageLink}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className={s.openLink}
+                                                        style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                                                        onClick={() => handleOpen(lead)}
+                                                    >
+                                                        Открыть
+                                                        <IconExternalLink />
+                                                    </a>
+                                                )}
                                             </div>
                                         </div>
 
-                                        {/* ─── Правая колонка: кнопки оценки ─── */}
-                                        <FeedbackButtons
-                                            leadId={lead.id}
-                                            rating={rating}
-                                            disabled={locked}
-                                            onVote={handleVote}
-                                        />
+                                        {/* ─── Кнопки оценки — нижний левый угол карточки ─── */}
+                                        {/* ИСПРАВЛЕНИЕ: перенесены из правой колонки с borderLeft
+                                            в отдельную строку под footer-ом. Горизонтальные,
+                                            компактные, не ломают высоту и не создают лишних
+                                            вертикальных разделителей. */}
+                                        <div style={{
+                                            display:     'flex',
+                                            alignItems:  'center',
+                                            gap:         8,
+                                            marginTop:   8,
+                                            paddingTop:  8,
+                                            borderTop:   '1px solid var(--c-border)',
+                                        }}>
+                                            <span style={{
+                                                fontSize:      10,
+                                                fontWeight:    600,
+                                                color:         'var(--c-ink-3)',
+                                                textTransform: 'uppercase',
+                                                letterSpacing: '.3px',
+                                                flexShrink:    0,
+                                            }}>
+                                                Оценка:
+                                            </span>
+                                            <FeedbackButtons
+                                                leadId={lead.id}
+                                                rating={rating}
+                                                disabled={locked}
+                                                onVote={handleVote}
+                                            />
+                                            {/* Подсказка: раскрыть/свернуть карточку */}
+                                            <button
+                                                onClick={() => toggleExpand(lead.id)}
+                                                style={{
+                                                    marginLeft:  'auto',
+                                                    display:     'flex',
+                                                    alignItems:  'center',
+                                                    gap:         4,
+                                                    background:  'none',
+                                                    border:      'none',
+                                                    color:       'var(--c-ink-3)',
+                                                    fontSize:    11,
+                                                    cursor:      'pointer',
+                                                    padding:     '2px 4px',
+                                                    borderRadius: 4,
+                                                    fontFamily:  'var(--font-body)',
+                                                    flexShrink:  0,
+                                                    transition:  'color .15s',
+                                                }}
+                                                onMouseEnter={e => { e.currentTarget.style.color = 'var(--c-ink-1)' }}
+                                                onMouseLeave={e => { e.currentTarget.style.color = 'var(--c-ink-3)' }}
+                                            >
+                                                <IconChevron open={isExpanded} />
+                                                {isExpanded ? 'Свернуть' : 'Подробнее'}
+                                            </button>
+                                        </div>
+
                                     </div>
                                 </div>
                             )
