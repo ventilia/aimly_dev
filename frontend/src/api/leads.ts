@@ -30,7 +30,9 @@ export interface Lead {
     contextMessages: string[]
     source:          'LIVE' | 'MANUAL_EXPORT'
     messageDate:     string
-    // Оценка текущего пользователя: null — не оценён, 'GOOD'/'BAD' — оценён
+    // Оценка текущего пользователя: null — не оценён, 'GOOD'/'BAD' — оценён.
+    // Заполняется сервером из БД — сохраняется между перезагрузками и
+    // синхронизируется с оценками, сделанными через Telegram-бота.
     myRating:        'GOOD' | 'BAD' | null
 }
 
@@ -85,6 +87,8 @@ export interface FeedbackResponse {
     leadId:     number
     rating:     string
     queueEmpty: boolean
+    // Актуальный статус лида — может измениться с NEW на VIEWED автоматически при оценке
+    leadStatus: string
 }
 
 export const leadsApi = {
@@ -109,7 +113,7 @@ export const leadsApi = {
 export const feedbackApi = {
     /**
      * Получить статус очереди неоценённых лидов.
-     * Вызывается при загрузке страницы лидов.
+     * Вызывается при загрузке страницы лидов и главной страницы.
      */
     getStatus(): Promise<FeedbackStatus> {
         return req('/api/v1/leads/feedback-status')
@@ -118,6 +122,7 @@ export const feedbackApi = {
     /**
      * Отправить или изменить оценку лида.
      * rating: 'GOOD' | 'BAD'
+     * Возвращает leadStatus — актуальный статус лида (может измениться NEW→VIEWED).
      */
     submit(leadId: number, rating: 'GOOD' | 'BAD'): Promise<FeedbackResponse> {
         return req(`/api/v1/leads/${leadId}/feedback`, {

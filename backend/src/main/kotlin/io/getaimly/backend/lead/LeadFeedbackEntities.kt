@@ -88,6 +88,12 @@ interface LeadFeedbackRepository : JpaRepository<LeadFeedback, Long> {
 
     fun findByUserIdAndLeadId(userId: Long, leadId: Long): LeadFeedback?
 
+    /**
+     * Загружает оценки пользователя для набора лидов (одним запросом).
+     * Используется в LeadService.getLeads для добавления myRating в LeadDto.
+     */
+    fun findByUserIdAndLeadIdIn(userId: Long, leadIds: List<Long>): List<LeadFeedback>
+
     @Query("""
         SELECT f FROM LeadFeedback f
         WHERE f.user.id = :userId
