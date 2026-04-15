@@ -36,6 +36,9 @@ data class LeadDto(
     val contextMessages: List<String>,
     val source:          String,
     val messageDate:     String,
+    // Оценка пользователя: "GOOD", "BAD" или null (не оценён).
+    // Заполняется из таблицы lead_feedbacks при выдаче списка лидов.
+    val rating:          String?,
 )
 
 data class LeadPageDto(
@@ -74,10 +77,11 @@ class LeadService(
     private val subscriptionRepo: ChatSubscriptionRepository,
     private val keywordRepo:      KeywordRepository,
     private val userRepo:         UserRepository,
+    private val feedbackRepo:     LeadFeedbackRepository,
 
     @Lazy private val bot:            AimlyBot,
     private val aiService:            AiService,
-    private val feedbackService:      LeadFeedbackService,   // ← НОВЫЙ
+    private val feedbackService:      LeadFeedbackService,
     @Value("\${userbot.url:http://localhost:9090}") private val userbotUrl: String,
     @Value("\${internal.api-secret:aimly_internal_secret_change_in_prod}") private val internalSecret: String,
 ) {
@@ -119,8 +123,18 @@ class LeadService(
             log.info("[LEAD] Список запрошен: userId=${user.id} email=${user.email} filter=${status ?: "ALL"} page=$page size=$size")
         }
 
+        // Батч-загрузка оценок для текущей страницы одним запросом (без N+1).
+        val leadIds = result.content.map { it.id }
+        val ratingByLeadId: Map<Long, String> = if (leadIds.isNotEmpty()) {
+            feedbackRepo
+                .findByUserIdAndLeadIdIn(user.id, leadIds)
+                .associate { it.lead.id to it.rating.name }
+        } else {
+            emptyMap()
+        }
+
         return LeadPageDto(
-            content       = result.content.map { it.toDto() },
+            content       = result.content.map { it.toDto(rating = ratingByLeadId[it.id]) },
             totalElements = result.totalElements,
             totalPages    = result.totalPages,
             page          = result.number,
@@ -141,8 +155,11 @@ class LeadService(
         lead.status = newStatus
         val saved = leadRepo.save(lead)
 
+        // Сохраняем рейтинг в ответе, чтобы фронтенд не терял его при обновлении статуса.
+        val rating = feedbackRepo.findByUserIdAndLeadId(user.id, leadId)?.rating?.name
+
         log.info("[LEAD] Статус изменён: userId=${user.id} email=${user.email} leadId=$leadId $oldStatus → ${newStatus.name}")
-        return saved.toDto()
+        return saved.toDto(rating = rating)
     }
 
     @Transactional
@@ -266,8 +283,6 @@ class LeadService(
                 val isRelevant = result?.valid != false
                 if (isRelevant) {
                     if (req.isHistorical) {
-                        // Исторические лиды не проходят через очередь оценок —
-                        // они приходят пачкой при подключении чата и не должны блокировать
                         user.telegramId?.let { tgId ->
                             runCatching {
                                 bot.notifyNewLead(
@@ -284,7 +299,6 @@ class LeadService(
                             }.onFailure { log.warn("ошибка telegram уведомления leadId=#${notifPayload.leadId}: ${it.message}") }
                         }
                     } else {
-                        // LIVE-лиды — через очередь с оценками
                         feedbackService.deliverOrEnqueue(user, notifPayload)
                     }
                 }
@@ -307,7 +321,6 @@ class LeadService(
                     }.onFailure { log.warn("ошибка telegram уведомления leadId=#${notifPayload.leadId}: ${it.message}") }
                 }
             } else {
-                // Без AI-плана, но LIVE — тоже через очередь
                 feedbackService.deliverOrEnqueue(user, notifPayload)
             }
         }
@@ -557,7 +570,12 @@ class LeadService(
 
     private fun String.sanitize(): String = this.replace("\u0000", "").trim()
 
-    private fun Lead.toDto(): LeadDto {
+    /**
+     * Маппинг Lead → LeadDto.
+     * [rating] — оценка пользователя ("GOOD", "BAD" или null), передаётся снаружи
+     * чтобы не делать запрос в БД на каждый лид по отдельности.
+     */
+    private fun Lead.toDto(rating: String? = null): LeadDto {
         val sub = subscriptionId?.let { subscriptionRepo.findById(it).orElse(null) }
         val rawCtx = contextMessages
         val ctx = if (rawCtx.isNullOrBlank()) emptyList()
@@ -581,6 +599,7 @@ class LeadService(
             contextMessages = ctx,
             source          = source.name,
             messageDate     = displayDate.toString(),
+            rating          = rating,
         )
     }
 

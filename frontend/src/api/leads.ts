@@ -28,12 +28,10 @@ export interface Lead {
     aiValid:         boolean | null
     aiReason:        string | null
     contextMessages: string[]
-    // --- НОВЫЕ ПОЛЯ ---
-    // "LIVE" — найден ботом в реальном времени, "MANUAL_EXPORT" — из ручного экспорта файла
     source:          'LIVE' | 'MANUAL_EXPORT'
-    // Реальное время написания сообщения.
-    // Для LIVE = foundAt. Для MANUAL_EXPORT = реальная дата из файла экспорта.
     messageDate:     string
+    // Оценка пользователя. null = ещё не оценен.
+    rating:          'GOOD' | 'BAD' | null
 }
 
 export interface LeadPage {
@@ -78,6 +76,46 @@ export interface ImportResult {
     format:        string
 }
 
+// ─── Feedback API ─────────────────────────────────────────────────────────────
+
+export interface LeadFeedbackResponse {
+    leadId:     number
+    rating:     string
+    // true — очередь пуста (все ожидающие лиды доставлены либо их не было)
+    queueEmpty: boolean
+}
+
+export interface FeedbackStatusResponse {
+    queueSize:     number
+    hasQueue:      boolean
+    // ID первого неоцененного уведомленного лида. null — все лиды оценены.
+    pendingLeadId: number | null
+}
+
+export const feedbackApi = {
+    /**
+     * Отправить или изменить оценку лида.
+     * Повторный вызов с другим рейтингом меняет предыдущую оценку (upsert).
+     */
+    submit(leadId: number, rating: 'GOOD' | 'BAD'): Promise<LeadFeedbackResponse> {
+        return req(`/api/v1/leads/${leadId}/feedback`, {
+            method: 'POST',
+            body:   JSON.stringify({ rating }),
+        })
+    },
+
+    /**
+     * Получить состояние очереди оценок:
+     *   - queueSize     — сколько лидов ожидает доставки в TG
+     *   - pendingLeadId — ID лида, который нужно оценить прямо сейчас
+     */
+    getStatus(): Promise<FeedbackStatusResponse> {
+        return req('/api/v1/leads/feedback-status')
+    },
+}
+
+// ─── Leads API ────────────────────────────────────────────────────────────────
+
 export const leadsApi = {
     list(params: { status?: string; page?: number; size?: number } = {}): Promise<LeadPage> {
         const q = new URLSearchParams()
@@ -105,7 +143,6 @@ export const importApi = {
             method:      'POST',
             credentials: 'include',
             body:        formData,
-            // Content-Type не указываем — браузер сам выставит multipart/form-data с boundary
         }).then(async res => {
             if (!res.ok) {
                 const b = await res.json().catch(() => ({ error: `Ошибка ${res.status}` })) as { error?: string }
@@ -207,7 +244,6 @@ export interface AdminLeadDto {
     aiValid:        boolean | null
     aiReason:       string | null
     foundAt:        string
-    // --- НОВЫЕ ПОЛЯ ---
     source:         'LIVE' | 'MANUAL_EXPORT'
     messageDate:    string
 }

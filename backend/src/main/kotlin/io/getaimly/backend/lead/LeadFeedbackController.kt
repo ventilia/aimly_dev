@@ -2,17 +2,18 @@ package io.getaimly.backend.lead
 
 import io.getaimly.backend.user.User
 import org.slf4j.LoggerFactory
+import org.springframework.data.domain.PageRequest
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.*
 
 data class LeadFeedbackRequest(
-    val rating: String,  // "GOOD" or "BAD"
+    val rating: String,  // "GOOD" или "BAD"
 )
 
 data class LeadFeedbackResponse(
-    val leadId:  Long,
-    val rating:  String,
+    val leadId:     Long,
+    val rating:     String,
     // true — следующий лид из очереди уже отправлен в TG (либо очередь пуста)
     val queueEmpty: Boolean,
 )
@@ -26,6 +27,7 @@ data class LeadFeedbackResponse(
 class LeadFeedbackController(
     private val feedbackService: LeadFeedbackService,
     private val pendingRepo:     PendingLeadNotificationRepository,
+    private val leadRepo:        LeadRepository,
 ) {
     private val log = LoggerFactory.getLogger(LeadFeedbackController::class.java)
 
@@ -33,12 +35,6 @@ class LeadFeedbackController(
      * POST /api/v1/leads/{leadId}/feedback
      *
      * Body: { "rating": "GOOD" }  или  { "rating": "BAD" }
-     *
-     * Пример запроса с сайта:
-     *   fetch('/api/v1/leads/123/feedback', {
-     *     method: 'POST',
-     *     body: JSON.stringify({ rating: 'GOOD' }),
-     *   })
      */
     @PostMapping("/{leadId}/feedback")
     fun submitFeedback(
@@ -71,19 +67,34 @@ class LeadFeedbackController(
     /**
      * GET /api/v1/leads/feedback-status
      *
-     * Возвращает ID первого неоцененного лида (если есть).
-     * Фронтенд использует это при загрузке страницы лидов,
-     * чтобы определить — нужно ли показать "оцените предыдущий" блок.
+     * Возвращает состояние очереди оценок:
+     *   - queueSize     — количество лидов, ожидающих доставки в TG
+     *   - hasQueue      — есть ли очередь
+     *   - pendingLeadId — ID первого неоцененного уведомленного лида (null если все оценены).
+     *                     Именно этот лид блокирует очередь и должен быть оценен первым.
+     *
+     * Фронтенд использует это:
+     *   1) На странице лидов — для баннера очереди и подсветки неоцененного лида.
+     *   2) На главной странице — чтобы показать именно тот лид, который ждёт оценки.
      */
     @GetMapping("/feedback-status")
     fun getFeedbackStatus(
         @AuthenticationPrincipal user: User,
     ): ResponseEntity<Map<String, Any?>> {
         val queueSize = pendingRepo.countByUserId(user.id)
+
+        // Первый неоцененный уведомленный лид — тот, что нужно оценить прямо сейчас.
+        // findLatestNotifiedWithoutFeedback возвращает ID лида с tgNotifiedAt != null
+        // и без записи в lead_feedbacks для данного пользователя.
+        val pendingLeadId = leadRepo
+            .findLatestNotifiedWithoutFeedback(user.id, PageRequest.of(0, 1))
+            .firstOrNull()
+
         return ResponseEntity.ok(
             mapOf(
-                "queueSize" to queueSize,
-                "hasQueue"  to (queueSize > 0),
+                "queueSize"     to queueSize,
+                "hasQueue"      to (queueSize > 0),
+                "pendingLeadId" to pendingLeadId,
             )
         )
     }

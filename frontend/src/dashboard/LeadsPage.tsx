@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
-import { leadsApi, type Lead, type LeadPage } from '../api/leads'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { leadsApi, feedbackApi, type Lead, type LeadPage, type FeedbackStatusResponse } from '../api/leads'
 import { LEADS_COUNT_CHANGED } from './DashboardLayout'
 import s from './Leadspage.module.css'
 
@@ -31,19 +31,13 @@ function dispatchLeadsCountChanged(newCount: number) {
     )
 }
 
-// ─── Умное форматирование даты ────────────────────────────────────────────────
-// • Сегодня    → «сегодня, 14:32»
-// • Вчера      → «вчера, 09:15»
-// • Текущий год → «15 марта, 09:15»
-// • Другой год  → «15 мар 2023, 09:15»
+// ─── Форматирование даты ──────────────────────────────────────────────────────
 function formatLeadDate(iso: string): string {
     try {
-        // Kotlin LocalDateTime.toString() даёт формат "2024-03-15T14:32:00" без суффикса Z.
-        // Добавляем Z только если нет никакого zone-суффикса, чтобы браузер не трактовал как UTC+local.
         const normalized = iso.includes('T') && !iso.endsWith('Z') && !iso.includes('+') && !iso.includes('-', 10)
             ? iso + 'Z'
             : iso
-        const d   = new Date(normalized)
+        const d = new Date(normalized)
         if (isNaN(d.getTime())) return ''
         const now = new Date()
 
@@ -52,25 +46,21 @@ function formatLeadDate(iso: string): string {
 
         const time = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
 
-        if (d >= startOfToday) {
-            return `сегодня, ${time}`
-        }
-        if (d >= startOfYesterday) {
-            return `вчера, ${time}`
-        }
+        if (d >= startOfToday)     return `сегодня, ${time}`
+        if (d >= startOfYesterday) return `вчера, ${time}`
 
         const sameYear = d.getFullYear() === now.getFullYear()
         if (sameYear) {
-            const datePart = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
-            return `${datePart}, ${time}`
+            return `${d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}, ${time}`
         }
-
-        const datePart = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })
-        return `${datePart}, ${time}`
+        return `${d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })}, ${time}`
     } catch {
         return ''
     }
 }
+
+
+// ─── SVG-иконки ───────────────────────────────────────────────────────────────
 
 const IconUser = () => (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -139,7 +129,6 @@ const IconChevron = ({ open }: { open: boolean }) => (
     </svg>
 )
 
-// Иконка файла для тега "из экспорта"
 const IconFileImport = () => (
     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -149,23 +138,36 @@ const IconFileImport = () => (
     </svg>
 )
 
-// Тег «из экспорта» — показывается для лидов с source === 'MANUAL_EXPORT'
+const IconThumbUp = () => (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/>
+        <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
+    </svg>
+)
+
+const IconThumbDown = () => (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z"/>
+        <path d="M17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/>
+    </svg>
+)
+
+const IconClock = () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <polyline points="12 6 12 12 16 14"/>
+    </svg>
+)
+
+// ─── Компонент: тег «из экспорта» ─────────────────────────────────────────────
 function ExportBadge() {
     return (
         <span style={{
-            display:        'inline-flex',
-            alignItems:     'center',
-            gap:            4,
-            fontSize:       10,
-            fontWeight:     700,
-            padding:        '2px 7px',
-            borderRadius:   100,
-            background:     'rgba(139,92,246,.12)',
-            color:          '#7c3aed',
-            border:         '1px solid rgba(139,92,246,.25)',
-            letterSpacing:  '.2px',
-            flexShrink:     0,
-            whiteSpace:     'nowrap',
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 100,
+            background: 'rgba(139,92,246,.12)', color: '#7c3aed',
+            border: '1px solid rgba(139,92,246,.25)', letterSpacing: '.2px',
+            flexShrink: 0, whiteSpace: 'nowrap',
         }}>
             <IconFileImport />
             экспорт
@@ -173,15 +175,95 @@ function ExportBadge() {
     )
 }
 
+// ─── Компонент: строка оценки ─────────────────────────────────────────────────
+interface FeedbackRowProps {
+    rating:    'GOOD' | 'BAD' | null
+    submitting: boolean
+    onRate:    (r: 'GOOD' | 'BAD') => void
+}
+
+function FeedbackRow({ rating, submitting, onRate }: FeedbackRowProps) {
+    const hasRating = rating !== null
+
+    return (
+        <div className={s.feedbackRow}>
+            <span className={s.feedbackLabel}>
+                {hasRating ? 'Оценка:' : 'Оценить:'}
+            </span>
+
+            {/* Кнопка GOOD */}
+            <button
+                className={[
+                    s.feedbackBtn,
+                    rating === 'GOOD' ? s.feedbackBtnGood : '',
+                    hasRating && rating !== 'GOOD' ? s.feedbackBtnDimmed : '',
+                ].join(' ')}
+                onClick={() => onRate('GOOD')}
+                disabled={submitting}
+                title={rating === 'GOOD' ? 'Оценено как релевантный' : 'Отметить как релевантный'}
+            >
+                <IconThumbUp />
+                Релевантный
+            </button>
+
+            {/* Кнопка BAD */}
+            <button
+                className={[
+                    s.feedbackBtn,
+                    rating === 'BAD' ? s.feedbackBtnBad : '',
+                    hasRating && rating !== 'BAD' ? s.feedbackBtnDimmed : '',
+                ].join(' ')}
+                onClick={() => onRate('BAD')}
+                disabled={submitting}
+                title={rating === 'BAD' ? 'Оценено как нерелевантный' : 'Отметить как нерелевантный'}
+            >
+                <IconThumbDown />
+                Нерелевантный
+            </button>
+
+            {/* Подсказка при наличии оценки */}
+            {hasRating && !submitting && (
+                <span className={s.feedbackChangeHint} onClick={() => {}}>
+                    Изменить
+                </span>
+            )}
+
+            {submitting && (
+                <span style={{ fontSize: 11.5, color: 'var(--c-ink-3)', fontStyle: 'italic' }}>
+                    Сохраняем...
+                </span>
+            )}
+        </div>
+    )
+}
+
+
+// ─── Главный компонент ────────────────────────────────────────────────────────
 export default function LeadsPage() {
-    const [data,       setData]       = useState<LeadPage | null>(null)
-    const [loading,    setLoading]    = useState(true)
-    const [filter,     setFilter]     = useState('')
-    const [page,       setPage]       = useState(0)
-    const [error,      setError]      = useState('')
-    const [updating,   setUpdating]   = useState<Set<number>>(new Set())
-    const [expanded,   setExpanded]   = useState<Set<number>>(new Set())
-    const [markingAll, setMarkingAll] = useState(false)
+    const [data,         setData]         = useState<LeadPage | null>(null)
+    const [loading,      setLoading]      = useState(true)
+    const [filter,       setFilter]       = useState('')
+    const [page,         setPage]         = useState(0)
+    const [error,        setError]        = useState('')
+    const [updating,     setUpdating]     = useState<Set<number>>(new Set())
+    const [expanded,     setExpanded]     = useState<Set<number>>(new Set())
+    const [markingAll,   setMarkingAll]   = useState(false)
+    const [submitting,   setSubmitting]   = useState<Set<number>>(new Set())
+
+    // Состояние очереди оценок
+    const [feedbackStatus, setFeedbackStatus] = useState<FeedbackStatusResponse | null>(null)
+
+    // Ссылка на pending-лид для авто-скролла
+    const pendingRef = useRef<HTMLDivElement | null>(null)
+
+    const loadFeedbackStatus = useCallback(async () => {
+        try {
+            const status = await feedbackApi.getStatus()
+            setFeedbackStatus(status)
+        } catch {
+            // не критично
+        }
+    }, [])
 
     const load = useCallback(async () => {
         setLoading(true)
@@ -198,7 +280,10 @@ export default function LeadsPage() {
         }
     }, [filter, page])
 
-    useEffect(() => { load() }, [load])
+    useEffect(() => {
+        void load()
+        void loadFeedbackStatus()
+    }, [load, loadFeedbackStatus])
 
     const changeFilter = (value: string) => {
         setFilter(value)
@@ -208,11 +293,7 @@ export default function LeadsPage() {
     const toggleExpand = (id: number) => {
         setExpanded(prev => {
             const next = new Set(prev)
-            if (next.has(id)) {
-                next.delete(id)
-            } else {
-                next.add(id)
-            }
+            if (next.has(id)) next.delete(id); else next.add(id)
             return next
         })
     }
@@ -220,18 +301,11 @@ export default function LeadsPage() {
     const applyStatusUpdate = (updated: Lead, previousStatus: string) => {
         setData(prev => {
             if (!prev) return prev
-
             const content = prev.content.map(l => l.id === updated.id ? updated : l)
-
             let newCount = prev.newCount
-            if (previousStatus === 'NEW' && updated.status !== 'NEW') {
-                newCount = Math.max(0, newCount - 1)
-            } else if (previousStatus !== 'NEW' && updated.status === 'NEW') {
-                newCount = newCount + 1
-            }
-
+            if (previousStatus === 'NEW' && updated.status !== 'NEW') newCount = Math.max(0, newCount - 1)
+            else if (previousStatus !== 'NEW' && updated.status === 'NEW') newCount = newCount + 1
             dispatchLeadsCountChanged(newCount)
-
             return { ...prev, content, newCount }
         })
     }
@@ -271,14 +345,62 @@ export default function LeadsPage() {
     }
 
     const handleOpen = (lead: Lead) => {
-        if (lead.status === 'NEW') {
-            void setStatus(lead, 'VIEWED')
+        if (lead.status === 'NEW') void setStatus(lead, 'VIEWED')
+    }
+
+    /**
+     * Оценить лид — с оптимистичным обновлением UI.
+     * После успеха обновляем статус очереди.
+     */
+    const handleRate = async (lead: Lead, rating: 'GOOD' | 'BAD') => {
+        // Не даём повторно нажать ту же кнопку
+        if (lead.rating === rating) return
+
+        setSubmitting(prev => new Set(prev).add(lead.id))
+
+        // Оптимистичное обновление
+        const previousRating = lead.rating
+        setData(prev => {
+            if (!prev) return prev
+            return {
+                ...prev,
+                content: prev.content.map(l =>
+                    l.id === lead.id ? { ...l, rating } : l
+                ),
+            }
+        })
+
+        try {
+            await feedbackApi.submit(lead.id, rating)
+            // После успешной оценки обновляем статус очереди:
+            // следующий лид мог быть доставлен в TG, pendingLeadId изменился
+            await loadFeedbackStatus()
+        } catch {
+            // Откат при ошибке
+            setData(prev => {
+                if (!prev) return prev
+                return {
+                    ...prev,
+                    content: prev.content.map(l =>
+                        l.id === lead.id ? { ...l, rating: previousRating } : l
+                    ),
+                }
+            })
+        } finally {
+            setSubmitting(prev => { const s = new Set(prev); s.delete(lead.id); return s })
         }
+    }
+
+    const scrollToPending = () => {
+        pendingRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
 
     const visibleContent = (data?.content ?? []).filter(lead =>
         filter === '' ? lead.status !== 'IGNORED' : true
     )
+
+    const pendingLeadId = feedbackStatus?.pendingLeadId ?? null
+    const queueSize     = feedbackStatus?.queueSize     ?? 0
 
     if (loading) {
         return (
@@ -300,19 +422,17 @@ export default function LeadsPage() {
 
     return (
         <div className={s.page}>
+
+            {/* ─── Шапка страницы ─── */}
             <div className={s.header}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <h1 className={s.title}>Лиды</h1>
                     {(data?.newCount ?? 0) > 0 && (
                         <span style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            padding: '3px 10px',
-                            borderRadius: 100,
-                            background: 'rgba(239,68,68,.1)',
-                            color: '#dc2626',
-                            fontSize: 12,
-                            fontWeight: 700,
+                            display: 'inline-flex', alignItems: 'center',
+                            padding: '3px 10px', borderRadius: 100,
+                            background: 'rgba(239,68,68,.1)', color: '#dc2626',
+                            fontSize: 12, fontWeight: 700,
                         }}>
                             {data!.newCount} новых
                         </span>
@@ -322,19 +442,12 @@ export default function LeadsPage() {
                             onClick={handleMarkAllRead}
                             disabled={markingAll}
                             style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 5,
-                                padding: '4px 12px',
-                                borderRadius: 100,
-                                border: '1.5px solid var(--c-border)',
-                                background: 'none',
-                                color: 'var(--c-ink-2)',
-                                fontSize: 12,
-                                fontWeight: 600,
+                                display: 'inline-flex', alignItems: 'center', gap: 5,
+                                padding: '4px 12px', borderRadius: 100,
+                                border: '1.5px solid var(--c-border)', background: 'none',
+                                color: 'var(--c-ink-2)', fontSize: 12, fontWeight: 600,
                                 cursor: markingAll ? 'default' : 'pointer',
-                                fontFamily: 'var(--font-body)',
-                                transition: 'all .15s',
+                                fontFamily: 'var(--font-body)', transition: 'all .15s',
                                 opacity: markingAll ? 0.5 : 1,
                             }}
                             onMouseEnter={e => {
@@ -366,8 +479,32 @@ export default function LeadsPage() {
                 </div>
             </div>
 
+            {/* ─── Баннер очереди оценок ─── */}
+            {pendingLeadId !== null && (
+                <div className={s.queueBanner}>
+                    <div className={s.queueBannerIcon}>
+                        <IconClock />
+                    </div>
+                    <div className={s.queueBannerText}>
+                        <div className={s.queueBannerTitle}>
+                            Оцените лид, чтобы продолжить получать новые
+                        </div>
+                        <div className={s.queueBannerSub}>
+                            {queueSize > 0
+                                ? `Следующих лидов в очереди: ${queueSize}. Каждая оценка обучает систему.`
+                                : 'Ваша оценка помогает нейросети подбирать более точные лиды.'
+                            }
+                        </div>
+                    </div>
+                    <button className={s.queueBannerBtn} onClick={scrollToPending}>
+                        Перейти к лиду
+                    </button>
+                </div>
+            )}
+
             {error && <div className={s.error}>{error}</div>}
 
+            {/* ─── Список лидов ─── */}
             {visibleContent.length === 0 ? (
                 <div className={s.empty}>
                     <div className={s.emptyIcon}>
@@ -377,7 +514,8 @@ export default function LeadsPage() {
                     <span>
                         {filter === 'IGNORED'
                             ? 'Здесь будут лиды, перемещённые в архив'
-                            : 'Добавьте чаты и ключевые слова для мониторинга'}
+                            : 'Добавьте чаты и ключевые слова для мониторинга'
+                        }
                     </span>
                 </div>
             ) : (
@@ -392,11 +530,10 @@ export default function LeadsPage() {
                             const isExpanded = expanded.has(lead.id)
                             const isUpdating = updating.has(lead.id)
                             const isExport   = lead.source === 'MANUAL_EXPORT'
+                            const isPending  = lead.id === pendingLeadId
+                            const isRating   = submitting.has(lead.id)
 
                             const contextMsgs: string[] = lead.contextMessages ?? []
-
-                            // Для экспортных лидов показываем реальную дату сообщения (messageDate),
-                            // для живых — foundAt (момент обнаружения ботом).
                             const displayDate = isExport
                                 ? (lead.messageDate || lead.foundAt)
                                 : lead.foundAt
@@ -404,34 +541,47 @@ export default function LeadsPage() {
                             return (
                                 <div
                                     key={lead.id}
-                                    className={s.leadCard}
+                                    ref={isPending ? pendingRef : undefined}
+                                    className={[
+                                        s.leadCard,
+                                        isPending ? s.leadCardPending : '',
+                                    ].join(' ')}
                                     style={{
-                                        ...(isNew      ? { borderLeftColor: '#dc2626', borderLeftWidth: 3 } : {}),
-                                        ...(isArchived ? { opacity: 0.65 } : {}),
-                                        // Лиды из экспорта — чуть другой оттенок левой полосы (фиолетовый)
-                                        ...(isExport && isNew ? { borderLeftColor: '#7c3aed' } : {}),
+                                        ...(isNew && !isPending  ? { borderLeftColor: '#dc2626', borderLeftWidth: 3 } : {}),
+                                        ...(isArchived           ? { opacity: 0.65 } : {}),
+                                        ...(isExport && isNew && !isPending ? { borderLeftColor: '#7c3aed' } : {}),
                                     }}
                                 >
+                                    {/* ─── Шапка карточки ─── */}
                                     <div className={s.leadHead}>
                                         <div className={s.leadMeta}>
+                                            {/* Аватар-инициал */}
                                             <div style={{
-                                                width: 32, height: 32, borderRadius: '50%',
-                                                background: isExport ? 'rgba(139,92,246,.1)' : 'var(--c-accent-soft)',
-                                                color: isExport ? '#7c3aed' : 'var(--c-accent)',
+                                                width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+                                                background: isPending
+                                                    ? 'rgba(245,158,11,.12)'
+                                                    : isExport ? 'rgba(139,92,246,.1)' : 'var(--c-accent-soft)',
+                                                color: isPending
+                                                    ? '#b45309'
+                                                    : isExport ? '#7c3aed' : 'var(--c-accent)',
                                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                fontWeight: 700, fontSize: 14, flexShrink: 0,
-                                                fontFamily: 'var(--font-head)',
+                                                fontWeight: 700, fontSize: 14, fontFamily: 'var(--font-head)',
                                             }}>
                                                 {(lead.authorName || lead.chatTitle || '?').charAt(0).toUpperCase()}
                                             </div>
+
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                                     <span className={s.leadChat}>{lead.chatTitle || lead.chatLink}</span>
-                                                    {/* Тег "из экспорта" — задача 1 */}
-                                                    {isExport && <ExportBadge />}
+                                                    {isExport   && <ExportBadge />}
+                                                    {isPending  && (
+                                                        <span className={s.pendingBadge}>
+                                                            <IconClock />
+                                                            ожидает оценки
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 <span className={s.leadDate}>
-                                                    {/* Задача 2: для экспорта показываем реальную дату сообщения */}
                                                     {formatLeadDate(displayDate)}
                                                     {isExport && (
                                                         <span style={{ color: 'var(--c-ink-3)', fontSize: 10, marginLeft: 4 }}>
@@ -440,37 +590,31 @@ export default function LeadsPage() {
                                                     )}
                                                 </span>
                                             </div>
+
                                             {lead.matchedKeyword && (
                                                 <span style={{
-                                                    fontSize: 11,
-                                                    background: 'var(--c-accent-soft)',
-                                                    color: 'var(--c-accent)',
-                                                    padding: '2px 8px', borderRadius: 100, fontWeight: 600,
+                                                    fontSize: 11, background: 'var(--c-accent-soft)',
+                                                    color: 'var(--c-accent)', padding: '2px 8px',
+                                                    borderRadius: 100, fontWeight: 600,
                                                 }}>
                                                     {lead.matchedKeyword}
                                                 </span>
                                             )}
                                         </div>
 
+                                        {/* Кнопка статуса */}
                                         <button
                                             onClick={() => {
                                                 if (isNew)    void setStatus(lead, 'VIEWED')
                                                 if (isViewed) void setStatus(lead, 'NEW')
                                             }}
                                             disabled={isUpdating || isReplied || isArchived}
-                                            title={
-                                                isNew    ? 'Нажмите — пометить прочитанным' :
-                                                    isViewed ? 'Нажмите — пометить непрочитанным' :
-                                                        undefined
-                                            }
                                             style={{
                                                 ...color,
                                                 fontSize: 11, fontWeight: 700,
                                                 padding: '3px 10px', borderRadius: 100,
                                                 flexShrink: 0, letterSpacing: '.2px',
-                                                border: 'none',
-                                                background: color.bg,
-                                                color: color.text,
+                                                border: 'none', background: color.bg, color: color.text,
                                                 cursor: (isNew || isViewed) && !isUpdating ? 'pointer' : 'default',
                                                 transition: 'opacity .15s',
                                                 display: 'flex', alignItems: 'center', gap: 4,
@@ -484,12 +628,14 @@ export default function LeadsPage() {
                                         </button>
                                     </div>
 
+                                    {/* ─── Текст сообщения ─── */}
                                     <div className={s.leadTextBlock}>
                                         <div className={s.leadTextInner}>
                                             <div className={s.leadText}>{lead.messageText}</div>
                                         </div>
                                     </div>
 
+                                    {/* ─── Кнопка «Детали» ─── */}
                                     {(contextMsgs.length > 0 || (lead.aiValid !== null && lead.aiValid !== undefined)) && (
                                         <button
                                             onClick={() => toggleExpand(lead.id)}
@@ -511,6 +657,7 @@ export default function LeadsPage() {
                                         </button>
                                     )}
 
+                                    {/* ─── Раскрытые детали ─── */}
                                     {isExpanded && (
                                         <div style={{
                                             display: 'flex', flexDirection: 'column', gap: 10,
@@ -569,6 +716,7 @@ export default function LeadsPage() {
                                         </div>
                                     )}
 
+                                    {/* ─── Подвал: автор + действия ─── */}
                                     <div className={s.leadFooter}>
                                         <div className={s.leadAuthor}>
                                             <span style={{ color: 'var(--c-ink-3)', flexShrink: 0 }}><IconUser /></span>
@@ -596,7 +744,6 @@ export default function LeadsPage() {
                                                 <button
                                                     onClick={() => void setStatus(lead, 'REPLIED')}
                                                     disabled={isUpdating}
-                                                    title="Отметить как отвечено"
                                                     style={{
                                                         display: 'flex', alignItems: 'center', gap: 4,
                                                         padding: '5px 12px', borderRadius: 100,
@@ -624,14 +771,12 @@ export default function LeadsPage() {
                                                 <button
                                                     onClick={() => void setStatus(lead, 'VIEWED')}
                                                     disabled={isUpdating}
-                                                    title="Вернуть в просмотренные"
                                                     style={{
                                                         display: 'flex', alignItems: 'center', gap: 4,
                                                         padding: '5px 12px', borderRadius: 100,
                                                         border: '1.5px solid var(--c-border)',
-                                                        background: 'none',
-                                                        color: 'var(--c-ink-3)', fontSize: 12,
-                                                        fontWeight: 600, cursor: 'pointer',
+                                                        background: 'none', color: 'var(--c-ink-3)',
+                                                        fontSize: 12, fontWeight: 600, cursor: 'pointer',
                                                         fontFamily: 'var(--font-body)', transition: 'all .15s',
                                                     }}
                                                     onMouseEnter={e => {
@@ -652,14 +797,12 @@ export default function LeadsPage() {
                                                 <button
                                                     onClick={() => void setStatus(lead, 'IGNORED')}
                                                     disabled={isUpdating}
-                                                    title="В архив"
                                                     style={{
                                                         display: 'flex', alignItems: 'center', gap: 4,
                                                         padding: '5px 12px', borderRadius: 100,
                                                         border: '1.5px solid var(--c-border)',
-                                                        background: 'none',
-                                                        color: 'var(--c-ink-3)', fontSize: 12,
-                                                        fontWeight: 600, cursor: 'pointer',
+                                                        background: 'none', color: 'var(--c-ink-3)',
+                                                        fontSize: 12, fontWeight: 600, cursor: 'pointer',
                                                         fontFamily: 'var(--font-body)', transition: 'all .15s',
                                                     }}
                                                     onMouseEnter={e => {
@@ -680,14 +823,12 @@ export default function LeadsPage() {
                                                 <button
                                                     onClick={() => void setStatus(lead, 'NEW')}
                                                     disabled={isUpdating}
-                                                    title="Вернуть из архива"
                                                     style={{
                                                         display: 'flex', alignItems: 'center', gap: 4,
                                                         padding: '5px 12px', borderRadius: 100,
                                                         border: '1.5px solid var(--c-border)',
-                                                        background: 'none',
-                                                        color: 'var(--c-ink-3)', fontSize: 12,
-                                                        fontWeight: 600, cursor: 'pointer',
+                                                        background: 'none', color: 'var(--c-ink-3)',
+                                                        fontSize: 12, fontWeight: 600, cursor: 'pointer',
                                                         fontFamily: 'var(--font-body)', transition: 'all .15s',
                                                     }}
                                                 >
@@ -701,7 +842,6 @@ export default function LeadsPage() {
                                                     target="_blank"
                                                     rel="noopener noreferrer"
                                                     className={s.openLink}
-                                                    style={{ display: 'flex', alignItems: 'center', gap: 4 }}
                                                     onClick={() => handleOpen(lead)}
                                                 >
                                                     Открыть
@@ -710,6 +850,15 @@ export default function LeadsPage() {
                                             )}
                                         </div>
                                     </div>
+
+                                    {/* ─── Строка оценок ─── */}
+                                    {!isArchived && (
+                                        <FeedbackRow
+                                            rating={lead.rating ?? null}
+                                            submitting={isRating}
+                                            onRate={r => void handleRate(lead, r)}
+                                        />
+                                    )}
                                 </div>
                             )
                         })}

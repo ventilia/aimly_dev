@@ -57,6 +57,71 @@
 }
 
 
+/* ─── Баннер очереди оценок ──────────────────────────────────────────────── */
+
+.queueBanner {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: rgba(245, 158, 11, .07);
+    border: 1.5px solid rgba(245, 158, 11, .35);
+    border-radius: 12px;
+    padding: 13px 18px;
+}
+
+.queueBannerIcon {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: rgba(245, 158, 11, .15);
+    color: #b45309;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.queueBannerText {
+    flex: 1;
+    min-width: 0;
+}
+
+.queueBannerTitle {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: #92400e;
+    margin-bottom: 2px;
+}
+
+.queueBannerSub {
+    font-size: 12px;
+    color: #b45309;
+    line-height: 1.4;
+}
+
+.queueBannerBtn {
+    padding: 7px 16px;
+    border-radius: 8px;
+    border: 1.5px solid rgba(245, 158, 11, .45);
+    background: rgba(245, 158, 11, .12);
+    color: #92400e;
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: var(--font-body);
+    transition: all .15s;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.queueBannerBtn:hover {
+    background: rgba(245, 158, 11, .22);
+    border-color: rgba(245, 158, 11, .65);
+}
+
+
+/* ─── Ошибка и скелетоны ─────────────────────────────────────────────────── */
+
 .error {
     display: flex;
     align-items: center;
@@ -90,6 +155,8 @@
 }
 
 
+/* ─── Пустой список ──────────────────────────────────────────────────────── */
+
 .empty {
     display: flex;
     flex-direction: column;
@@ -114,6 +181,8 @@
 }
 
 
+/* ─── Список и карточки ──────────────────────────────────────────────────── */
+
 .list {
     display: flex;
     flex-direction: column;
@@ -137,6 +206,20 @@
     box-shadow: 0 2px 10px rgba(0, 0, 0, .04);
 }
 
+/* Подсветка: лид ожидает оценки (блокирует очередь) */
+.leadCardPending {
+    border-color: rgba(245, 158, 11, .55) !important;
+    border-left-width: 3px !important;
+    border-left-color: #f59e0b !important;
+}
+
+.leadCardPending:hover {
+    border-color: rgba(245, 158, 11, .75) !important;
+    box-shadow: 0 2px 12px rgba(245, 158, 11, .12) !important;
+}
+
+
+/* ─── Шапка карточки ─────────────────────────────────────────────────────── */
 
 .leadHead {
     display: flex;
@@ -170,42 +253,50 @@
 }
 
 
-.statusBtn {
-    padding: 4px 11px;
+/* ─── Метка «ожидает оценки» ─────────────────────────────────────────────── */
+
+.pendingBadge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
     border-radius: 100px;
-    border: none;
-    font-size: 11.5px;
-    font-weight: 600;
-    cursor: pointer;
-    font-family: var(--font-body);
-    transition: opacity .15s;
-    white-space: nowrap;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .15px;
+    background: rgba(245, 158, 11, .12);
+    color: #b45309;
+    border: 1px solid rgba(245, 158, 11, .3);
     flex-shrink: 0;
+    white-space: nowrap;
 }
 
-.statusBtn:hover:not(:disabled) { opacity: .75; }
-.statusBtn:disabled { opacity: .45; cursor: default; }
 
+/* ─── Текст сообщения ────────────────────────────────────────────────────── */
 
 .leadTextBlock {
-    border-left: 3px solid var(--c-border);
-    padding-left: 12px;
+    overflow: hidden;
 }
 
 .leadTextInner {
-
+    position: relative;
 }
 
 .leadText {
-    font-size: 14px;
-    color: var(--c-ink);
+    font-size: 13.5px;
+    color: var(--c-ink-2);
     line-height: 1.6;
     word-break: break-word;
-    /* Сохраняем переносы строк из оригинального сообщения */
     white-space: pre-wrap;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
 }
 
-/* нижняя строка */
+
+/* ─── Подвал карточки (автор + действия) ────────────────────────────────── */
+
 .leadFooter {
     display: flex;
     align-items: center;
@@ -222,28 +313,35 @@
 }
 
 .authorName {
-    font-size: 12.5px;
+    font-size: 13px;
     font-weight: 600;
     color: var(--c-ink-2);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    max-width: 160px;
 }
 
 .authorUsername {
-    font-size: 11.5px;
+    font-size: 12px;
     color: var(--c-ink-3);
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
 }
 
 .leadActions {
     display: flex;
     align-items: center;
     gap: 6px;
-    flex-shrink: 0;
+    flex-wrap: wrap;
 }
 
 .aiBadge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
     padding: 3px 8px;
     border-radius: 100px;
     font-size: 11px;
@@ -252,49 +350,170 @@
 }
 
 .openLink {
-    font-size: 12.5px;
+    padding: 5px 12px;
+    border-radius: 100px;
+    border: 1.5px solid var(--c-border);
+    background: none;
+    color: var(--c-ink-2);
+    font-size: 12px;
     font-weight: 600;
-    color: var(--c-accent);
     text-decoration: none;
-    transition: opacity .15s;
+    transition: all .15s;
     white-space: nowrap;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 4px;
 }
 
-.openLink:hover { opacity: .7; }
+.openLink:hover {
+    border-color: var(--c-accent);
+    color: var(--c-accent);
+}
 
+
+/* ─── Строка оценок ──────────────────────────────────────────────────────── */
+
+.feedbackRow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-top: 10px;
+    border-top: 1px solid var(--c-border);
+    flex-wrap: wrap;
+}
+
+.feedbackLabel {
+    font-size: 11.5px;
+    color: var(--c-ink-3);
+    font-weight: 500;
+    margin-right: 2px;
+    flex-shrink: 0;
+}
+
+.feedbackBtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 12px;
+    border-radius: 100px;
+    border: 1.5px solid var(--c-border);
+    background: none;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--font-body);
+    transition: all .15s;
+    color: var(--c-ink-3);
+    flex-shrink: 0;
+}
+
+.feedbackBtn:hover:not(:disabled) {
+    border-color: var(--c-ink-3);
+    color: var(--c-ink-2);
+}
+
+.feedbackBtn:disabled {
+    opacity: .5;
+    cursor: default;
+}
+
+/* Активная кнопка GOOD */
+.feedbackBtnGood {
+    border-color: rgba(16, 185, 129, .45);
+    background: rgba(16, 185, 129, .08);
+    color: #059669;
+}
+
+.feedbackBtnGood:hover:not(:disabled) {
+    border-color: rgba(16, 185, 129, .7);
+    background: rgba(16, 185, 129, .14);
+    color: #047857;
+}
+
+/* Активная кнопка BAD */
+.feedbackBtnBad {
+    border-color: rgba(239, 68, 68, .45);
+    background: rgba(239, 68, 68, .08);
+    color: #dc2626;
+}
+
+.feedbackBtnBad:hover:not(:disabled) {
+    border-color: rgba(239, 68, 68, .7);
+    background: rgba(239, 68, 68, .14);
+    color: #b91c1c;
+}
+
+/* Неактивная кнопка при уже выставленной оценке */
+.feedbackBtnDimmed {
+    opacity: .4;
+}
+
+/* Подсказка «Изменить оценку» */
+.feedbackChangeHint {
+    font-size: 11px;
+    color: var(--c-ink-3);
+    margin-left: 4px;
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    transition: color .15s;
+}
+
+.feedbackChangeHint:hover {
+    color: var(--c-accent);
+}
+
+
+/* ─── Пагинация ──────────────────────────────────────────────────────────── */
 
 .pagination {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 12px;
-    padding: 8px 0;
+    gap: 10px;
+    padding-top: 8px;
 }
 
 .pageBtn {
     padding: 7px 18px;
     border-radius: 8px;
     border: 1.5px solid var(--c-border);
-    background: none;
+    background: var(--c-surface);
     color: var(--c-ink-2);
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 600;
     cursor: pointer;
     font-family: var(--font-body);
     transition: all .15s;
 }
 
-.pageBtn:hover:not(:disabled) {
+.pageBtn:hover {
     border-color: var(--c-accent);
     color: var(--c-accent);
 }
 
-.pageBtn:disabled { opacity: .35; cursor: default; }
-
 .pageInfo {
     font-size: 13px;
     color: var(--c-ink-3);
+    font-weight: 500;
+    min-width: 48px;
+    text-align: center;
+}
+
+
+/* ─── Кнопка статуса ────────────────────────────────────────────────────── */
+
+.statusBtn {
+    padding: 4px 11px;
+    border-radius: 100px;
+    border: none;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--font-body);
+    transition: opacity .15s;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
 }
