@@ -111,20 +111,6 @@ interface LeadFeedbackRepository : JpaRepository<LeadFeedback, Long> {
     ): List<LeadFeedback>
 
     fun countByUserId(userId: Long): Long
-
-    /**
-     * Батч-загрузка оценок по списку лидов одним запросом.
-     * Используется в LeadService.getLeads() чтобы избежать N+1.
-     */
-    @Query("""
-        SELECT f FROM LeadFeedback f
-        WHERE f.user.id = :userId
-          AND f.lead.id IN :leadIds
-    """)
-    fun findByUserIdAndLeadIdIn(
-        @Param("userId")  userId:  Long,
-        @Param("leadIds") leadIds: List<Long>,
-    ): List<LeadFeedback>
 }
 
 @Repository
