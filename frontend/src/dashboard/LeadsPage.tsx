@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { leadsApi, type Lead, type LeadPage } from '../api/leads'
+import { leadsApi, feedbackApi, type Lead, type LeadPage, type FeedbackStatus } from '../api/leads'
 import { LEADS_COUNT_CHANGED } from './DashboardLayout'
 import s from './Leadspage.module.css'
 
@@ -31,15 +31,8 @@ function dispatchLeadsCountChanged(newCount: number) {
     )
 }
 
-// ─── Умное форматирование даты ────────────────────────────────────────────────
-// • Сегодня    → «сегодня, 14:32»
-// • Вчера      → «вчера, 09:15»
-// • Текущий год → «15 марта, 09:15»
-// • Другой год  → «15 мар 2023, 09:15»
 function formatLeadDate(iso: string): string {
     try {
-        // Kotlin LocalDateTime.toString() даёт формат "2024-03-15T14:32:00" без суффикса Z.
-        // Добавляем Z только если нет никакого zone-суффикса, чтобы браузер не трактовал как UTC+local.
         const normalized = iso.includes('T') && !iso.endsWith('Z') && !iso.includes('+') && !iso.includes('-', 10)
             ? iso + 'Z'
             : iso
@@ -52,25 +45,20 @@ function formatLeadDate(iso: string): string {
 
         const time = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
 
-        if (d >= startOfToday) {
-            return `сегодня, ${time}`
-        }
-        if (d >= startOfYesterday) {
-            return `вчера, ${time}`
-        }
+        if (d >= startOfToday)     return `сегодня, ${time}`
+        if (d >= startOfYesterday) return `вчера, ${time}`
 
         const sameYear = d.getFullYear() === now.getFullYear()
         if (sameYear) {
-            const datePart = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
-            return `${datePart}, ${time}`
+            return `${d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}, ${time}`
         }
-
-        const datePart = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })
-        return `${datePart}, ${time}`
+        return `${d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })}, ${time}`
     } catch {
         return ''
     }
 }
+
+// ─── SVG иконки ──────────────────────────────────────────────────────────────
 
 const IconUser = () => (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -139,7 +127,6 @@ const IconChevron = ({ open }: { open: boolean }) => (
     </svg>
 )
 
-// Иконка файла для тега "из экспорта"
 const IconFileImport = () => (
     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -149,23 +136,54 @@ const IconFileImport = () => (
     </svg>
 )
 
-// Тег «из экспорта» — показывается для лидов с source === 'MANUAL_EXPORT'
+// Иконка большого пальца вверх (лайк)
+const IconThumbUp = () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/>
+        <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
+    </svg>
+)
+
+// Иконка большого пальца вниз (дизлайк)
+const IconThumbDown = () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z"/>
+        <path d="M17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/>
+    </svg>
+)
+
+// Иконка замка — для заблокированных лидов
+const IconLock = () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+    </svg>
+)
+
+// Иконка колокольчика — для баннера очереди
+const IconBell = () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+        <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+    </svg>
+)
+
 function ExportBadge() {
     return (
         <span style={{
-            display:        'inline-flex',
-            alignItems:     'center',
-            gap:            4,
-            fontSize:       10,
-            fontWeight:     700,
-            padding:        '2px 7px',
-            borderRadius:   100,
-            background:     'rgba(139,92,246,.12)',
-            color:          '#7c3aed',
-            border:         '1px solid rgba(139,92,246,.25)',
-            letterSpacing:  '.2px',
-            flexShrink:     0,
-            whiteSpace:     'nowrap',
+            display:       'inline-flex',
+            alignItems:    'center',
+            gap:           4,
+            fontSize:      10,
+            fontWeight:    700,
+            padding:       '2px 7px',
+            borderRadius:  100,
+            background:    'rgba(139,92,246,.12)',
+            color:         '#7c3aed',
+            border:        '1px solid rgba(139,92,246,.25)',
+            letterSpacing: '.2px',
+            flexShrink:    0,
+            whiteSpace:    'nowrap',
         }}>
             <IconFileImport />
             экспорт
@@ -173,24 +191,268 @@ function ExportBadge() {
     )
 }
 
+// ─── Компонент кнопок оценки ──────────────────────────────────────────────────
+
+interface FeedbackButtonsProps {
+    leadId:    number
+    rating:    'GOOD' | 'BAD' | null
+    disabled?: boolean
+    onVote:    (leadId: number, rating: 'GOOD' | 'BAD') => Promise<void>
+}
+
+function FeedbackButtons({ leadId, rating, disabled, onVote }: FeedbackButtonsProps) {
+    const [submitting, setSubmitting] = useState(false)
+
+    const handleVote = async (r: 'GOOD' | 'BAD') => {
+        if (submitting || disabled) return
+        setSubmitting(true)
+        try {
+            await onVote(leadId, r)
+        } finally {
+            setSubmitting(false)
+        }
+    }
+
+    const isGood = rating === 'GOOD'
+    const isBad  = rating === 'BAD'
+
+    return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            {/* Подсказка если ещё нет оценки */}
+            {rating === null && !disabled && (
+                <span style={{
+                    fontSize: 11, color: 'var(--c-ink-3)', marginRight: 4,
+                    fontStyle: 'italic',
+                }}>
+                    Оцените лид
+                </span>
+            )}
+
+            {/* Лайк */}
+            <button
+                onClick={() => void handleVote('GOOD')}
+                disabled={submitting || disabled}
+                title={isGood ? 'Хороший лид (нажмите ещё раз чтобы изменить)' : 'Хороший лид'}
+                style={{
+                    display:        'flex',
+                    alignItems:     'center',
+                    justifyContent: 'center',
+                    width:          30,
+                    height:         30,
+                    borderRadius:   8,
+                    border:         isGood
+                        ? '1.5px solid rgba(16,185,129,.5)'
+                        : '1.5px solid var(--c-border)',
+                    background:     isGood
+                        ? 'rgba(16,185,129,.12)'
+                        : 'none',
+                    color:          isGood
+                        ? '#059669'
+                        : 'var(--c-ink-3)',
+                    cursor:         (submitting || disabled) ? 'not-allowed' : 'pointer',
+                    transition:     'all .15s',
+                    opacity:        submitting ? 0.5 : 1,
+                    flexShrink:     0,
+                }}
+                onMouseEnter={e => {
+                    if (!submitting && !disabled && !isGood) {
+                        const btn = e.currentTarget as HTMLButtonElement
+                        btn.style.borderColor = 'rgba(16,185,129,.4)'
+                        btn.style.color       = '#059669'
+                        btn.style.background  = 'rgba(16,185,129,.06)'
+                    }
+                }}
+                onMouseLeave={e => {
+                    if (!isGood) {
+                        const btn = e.currentTarget as HTMLButtonElement
+                        btn.style.borderColor = 'var(--c-border)'
+                        btn.style.color       = 'var(--c-ink-3)'
+                        btn.style.background  = 'none'
+                    }
+                }}
+            >
+                <IconThumbUp />
+            </button>
+
+            {/* Дизлайк */}
+            <button
+                onClick={() => void handleVote('BAD')}
+                disabled={submitting || disabled}
+                title={isBad ? 'Нерелевантный лид (нажмите ещё раз чтобы изменить)' : 'Нерелевантный лид'}
+                style={{
+                    display:        'flex',
+                    alignItems:     'center',
+                    justifyContent: 'center',
+                    width:          30,
+                    height:         30,
+                    borderRadius:   8,
+                    border:         isBad
+                        ? '1.5px solid rgba(239,68,68,.5)'
+                        : '1.5px solid var(--c-border)',
+                    background:     isBad
+                        ? 'rgba(239,68,68,.1)'
+                        : 'none',
+                    color:          isBad
+                        ? '#dc2626'
+                        : 'var(--c-ink-3)',
+                    cursor:         (submitting || disabled) ? 'not-allowed' : 'pointer',
+                    transition:     'all .15s',
+                    opacity:        submitting ? 0.5 : 1,
+                    flexShrink:     0,
+                }}
+                onMouseEnter={e => {
+                    if (!submitting && !disabled && !isBad) {
+                        const btn = e.currentTarget as HTMLButtonElement
+                        btn.style.borderColor = 'rgba(239,68,68,.4)'
+                        btn.style.color       = '#dc2626'
+                        btn.style.background  = 'rgba(239,68,68,.06)'
+                    }
+                }}
+                onMouseLeave={e => {
+                    if (!isBad) {
+                        const btn = e.currentTarget as HTMLButtonElement
+                        btn.style.borderColor = 'var(--c-border)'
+                        btn.style.color       = 'var(--c-ink-3)'
+                        btn.style.background  = 'none'
+                    }
+                }}
+            >
+                <IconThumbDown />
+            </button>
+        </div>
+    )
+}
+
+// ─── Баннер: очередь неоценённых лидов ───────────────────────────────────────
+
+function QueueBanner({ queueSize, onDismiss }: { queueSize: number; onDismiss: () => void }) {
+    return (
+        <div style={{
+            display:       'flex',
+            alignItems:    'center',
+            gap:           10,
+            padding:       '10px 16px',
+            borderRadius:  10,
+            background:    'rgba(245,158,11,.08)',
+            border:        '1px solid rgba(245,158,11,.25)',
+            marginBottom:  16,
+        }}>
+            <span style={{ color: '#d97706', flexShrink: 0 }}>
+                <IconBell />
+            </span>
+            <span style={{ fontSize: 13, color: 'var(--c-ink-2)', flex: 1 }}>
+                <strong style={{ color: 'var(--c-ink-1)', fontWeight: 700 }}>
+                    {queueSize} {queueSize === 1 ? 'лид ожидает' : queueSize < 5 ? 'лида ожидают' : 'лидов ожидают'} оценки.
+                </strong>
+                {' '}Оцените лиды ниже, чтобы получать новые уведомления в Telegram.
+            </span>
+            <button
+                onClick={onDismiss}
+                style={{
+                    background:    'none',
+                    border:        'none',
+                    color:         'var(--c-ink-3)',
+                    cursor:        'pointer',
+                    padding:       '2px 6px',
+                    borderRadius:  4,
+                    fontSize:      16,
+                    lineHeight:    1,
+                    flexShrink:    0,
+                    transition:    'color .15s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.color = 'var(--c-ink-1)' }}
+                onMouseLeave={e => { e.currentTarget.style.color = 'var(--c-ink-3)' }}
+                title="Скрыть"
+            >
+                ×
+            </button>
+        </div>
+    )
+}
+
+// ─── Оверлей блокировки карточки ─────────────────────────────────────────────
+
+function LockedOverlay({ pendingLeadIndex }: { pendingLeadIndex: number }) {
+    return (
+        <div style={{
+            position:       'absolute',
+            inset:          0,
+            borderRadius:   'inherit',
+            background:     'rgba(var(--c-bg-rgb, 255,255,255), 0.82)',
+            backdropFilter: 'blur(3px)',
+            display:        'flex',
+            flexDirection:  'column',
+            alignItems:     'center',
+            justifyContent: 'center',
+            gap:            8,
+            zIndex:         10,
+        }}>
+            <span style={{ color: 'var(--c-ink-3)' }}>
+                <IconLock />
+            </span>
+            <span style={{ fontSize: 13, color: 'var(--c-ink-2)', fontWeight: 600, textAlign: 'center', maxWidth: 240 }}>
+                Оцените лид #{pendingLeadIndex} чтобы увидеть этот
+            </span>
+        </div>
+    )
+}
+
+// ─── Бейдж оценки (в заголовке карточки) ─────────────────────────────────────
+
+function RatingBadge({ rating }: { rating: 'GOOD' | 'BAD' }) {
+    const isGood = rating === 'GOOD'
+    return (
+        <span style={{
+            display:       'inline-flex',
+            alignItems:    'center',
+            gap:           4,
+            fontSize:      11,
+            fontWeight:    700,
+            padding:       '2px 8px',
+            borderRadius:  100,
+            background:    isGood ? 'rgba(16,185,129,.12)' : 'rgba(239,68,68,.1)',
+            color:         isGood ? '#059669' : '#dc2626',
+            border:        `1px solid ${isGood ? 'rgba(16,185,129,.3)' : 'rgba(239,68,68,.3)'}`,
+            flexShrink:    0,
+            whiteSpace:    'nowrap',
+        }}>
+            {isGood ? <IconThumbUp /> : <IconThumbDown />}
+            {isGood ? 'Хороший' : 'Нерелевантный'}
+        </span>
+    )
+}
+
+// ─── Главный компонент ────────────────────────────────────────────────────────
+
 export default function LeadsPage() {
-    const [data,       setData]       = useState<LeadPage | null>(null)
-    const [loading,    setLoading]    = useState(true)
-    const [filter,     setFilter]     = useState('')
-    const [page,       setPage]       = useState(0)
-    const [error,      setError]      = useState('')
-    const [updating,   setUpdating]   = useState<Set<number>>(new Set())
-    const [expanded,   setExpanded]   = useState<Set<number>>(new Set())
-    const [markingAll, setMarkingAll] = useState(false)
+    const [data,           setData]           = useState<LeadPage | null>(null)
+    const [loading,        setLoading]        = useState(true)
+    const [filter,         setFilter]         = useState('')
+    const [page,           setPage]           = useState(0)
+    const [error,          setError]          = useState('')
+    const [updating,       setUpdating]       = useState<Set<number>>(new Set())
+    const [expanded,       setExpanded]       = useState<Set<number>>(new Set())
+    const [markingAll,     setMarkingAll]     = useState(false)
+    // Состояние очереди неоценённых лидов
+    const [feedbackStatus, setFeedbackStatus] = useState<FeedbackStatus | null>(null)
+    const [bannerDismissed, setBannerDismissed] = useState(false)
+    // Локальные оценки: leadId → rating (для оптимистичных обновлений)
+    const [localRatings, setLocalRatings]    = useState<Map<number, 'GOOD' | 'BAD' | null>>(new Map())
 
     const load = useCallback(async () => {
         setLoading(true)
         setError('')
         try {
             const statusParam = filter || undefined
-            const result = await leadsApi.list({ status: statusParam, page, size: 20 })
+            const [result, fStatus] = await Promise.all([
+                leadsApi.list({ status: statusParam, page, size: 20 }),
+                feedbackApi.getStatus(),
+            ])
             setData(result)
+            setFeedbackStatus(fStatus)
             dispatchLeadsCountChanged(result.newCount)
+            // При перезагрузке сбрасываем локальные оценки — данные свежие с бекенда
+            setLocalRatings(new Map())
         } catch (e: unknown) {
             setError(e instanceof Error ? e.message : 'Ошибка загрузки')
         } finally {
@@ -208,11 +470,8 @@ export default function LeadsPage() {
     const toggleExpand = (id: number) => {
         setExpanded(prev => {
             const next = new Set(prev)
-            if (next.has(id)) {
-                next.delete(id)
-            } else {
-                next.add(id)
-            }
+            if (next.has(id)) next.delete(id)
+            else next.add(id)
             return next
         })
     }
@@ -220,18 +479,13 @@ export default function LeadsPage() {
     const applyStatusUpdate = (updated: Lead, previousStatus: string) => {
         setData(prev => {
             if (!prev) return prev
-
-            const content = prev.content.map(l => l.id === updated.id ? updated : l)
-
-            let newCount = prev.newCount
-            if (previousStatus === 'NEW' && updated.status !== 'NEW') {
+            const content  = prev.content.map(l => l.id === updated.id ? updated : l)
+            let newCount   = prev.newCount
+            if (previousStatus === 'NEW' && updated.status !== 'NEW')
                 newCount = Math.max(0, newCount - 1)
-            } else if (previousStatus !== 'NEW' && updated.status === 'NEW') {
+            else if (previousStatus !== 'NEW' && updated.status === 'NEW')
                 newCount = newCount + 1
-            }
-
             dispatchLeadsCountChanged(newCount)
-
             return { ...prev, content, newCount }
         })
     }
@@ -276,9 +530,82 @@ export default function LeadsPage() {
         }
     }
 
+    /**
+     * Отправить или изменить оценку.
+     * Оптимистично обновляем UI, затем шлём запрос.
+     * Если бекенд вернул queueEmpty: true — снимаем блокировку.
+     */
+    const handleVote = async (leadId: number, rating: 'GOOD' | 'BAD') => {
+        // Оптимистичное обновление
+        setLocalRatings(prev => {
+            const next = new Map(prev)
+            next.set(leadId, rating)
+            return next
+        })
+
+        try {
+            const res = await feedbackApi.submit(leadId, rating)
+
+            // После успешной оценки обновляем статус очереди
+            if (res.queueEmpty) {
+                setFeedbackStatus({ queueSize: 0, hasQueue: false })
+            } else {
+                // Уменьшаем очередь на 1 если оценили впервые (не изменение)
+                setFeedbackStatus(prev => {
+                    if (!prev) return prev
+                    // Проверяем: была ли уже оценка у этого лида
+                    const wasRated = (data?.content.find(l => l.id === leadId)?.myRating ?? localRatings.get(leadId) ?? null) !== null
+                    if (wasRated) return prev  // изменение оценки — очередь не меняется
+                    const newSize = Math.max(0, prev.queueSize - 1)
+                    return { queueSize: newSize, hasQueue: newSize > 0 }
+                })
+            }
+
+            // Обновляем myRating в data (если бекенд возвращает это поле)
+            setData(prev => {
+                if (!prev) return prev
+                const content = prev.content.map(l =>
+                    l.id === leadId ? { ...l, myRating: rating } : l
+                )
+                return { ...prev, content }
+            })
+        } catch {
+            // Откатываем оптимистичное обновление
+            setLocalRatings(prev => {
+                const next = new Map(prev)
+                next.delete(leadId)
+                return next
+            })
+        }
+    }
+
+    /**
+     * Получить актуальный рейтинг лида:
+     * приоритет — локальное состояние (оптимистичное), потом данные с бекенда.
+     */
+    const getRating = (lead: Lead): 'GOOD' | 'BAD' | null => {
+        if (localRatings.has(lead.id)) return localRatings.get(lead.id) ?? null
+        return lead.myRating ?? null
+    }
+
     const visibleContent = (data?.content ?? []).filter(lead =>
         filter === '' ? lead.status !== 'IGNORED' : true
     )
+
+    // Индексы лидов, которые заблокированы (не первый неоценённый + те что после него)
+    // Логика: блокируем лид если очередь > 0 и лид не имеет оценки И это не первый в очереди
+    const firstUnratedIndex = feedbackStatus?.hasQueue
+        ? visibleContent.findIndex(l => getRating(l) === null)
+        : -1
+
+    // Лид заблокирован если: очередь есть И он идёт после первого неоценённого
+    const isLeadLocked = (lead: Lead, idx: number): boolean => {
+        if (!feedbackStatus?.hasQueue) return false
+        if (firstUnratedIndex === -1) return false
+        return idx > firstUnratedIndex && getRating(lead) === null
+    }
+
+    const showBanner = feedbackStatus?.hasQueue && !bannerDismissed
 
     if (loading) {
         return (
@@ -305,13 +632,13 @@ export default function LeadsPage() {
                     <h1 className={s.title}>Лиды</h1>
                     {(data?.newCount ?? 0) > 0 && (
                         <span style={{
-                            display: 'inline-flex',
+                            display:    'inline-flex',
                             alignItems: 'center',
-                            padding: '3px 10px',
+                            padding:    '3px 10px',
                             borderRadius: 100,
                             background: 'rgba(239,68,68,.1)',
-                            color: '#dc2626',
-                            fontSize: 12,
+                            color:      '#dc2626',
+                            fontSize:   12,
                             fontWeight: 700,
                         }}>
                             {data!.newCount} новых
@@ -322,30 +649,32 @@ export default function LeadsPage() {
                             onClick={handleMarkAllRead}
                             disabled={markingAll}
                             style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 5,
-                                padding: '4px 12px',
+                                display:     'inline-flex',
+                                alignItems:  'center',
+                                gap:         5,
+                                padding:     '4px 12px',
                                 borderRadius: 100,
-                                border: '1.5px solid var(--c-border)',
-                                background: 'none',
-                                color: 'var(--c-ink-2)',
-                                fontSize: 12,
-                                fontWeight: 600,
-                                cursor: markingAll ? 'default' : 'pointer',
-                                fontFamily: 'var(--font-body)',
-                                transition: 'all .15s',
-                                opacity: markingAll ? 0.5 : 1,
+                                border:      '1.5px solid var(--c-border)',
+                                background:  'none',
+                                color:       'var(--c-ink-2)',
+                                fontSize:    12,
+                                fontWeight:  600,
+                                cursor:      markingAll ? 'default' : 'pointer',
+                                fontFamily:  'var(--font-body)',
+                                transition:  'all .15s',
+                                opacity:     markingAll ? 0.5 : 1,
                             }}
                             onMouseEnter={e => {
                                 if (!markingAll) {
-                                    (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--c-accent)'
-                                    ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--c-accent)'
+                                    const btn = e.currentTarget as HTMLButtonElement
+                                    btn.style.borderColor = 'var(--c-accent)'
+                                    btn.style.color       = 'var(--c-accent)'
                                 }
                             }}
                             onMouseLeave={e => {
-                                (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--c-border)'
-                                ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--c-ink-2)'
+                                const btn = e.currentTarget as HTMLButtonElement
+                                btn.style.borderColor = 'var(--c-border)'
+                                btn.style.color       = 'var(--c-ink-2)'
                             }}
                         >
                             <IconCheck />
@@ -366,6 +695,14 @@ export default function LeadsPage() {
                 </div>
             </div>
 
+            {/* Баннер очереди */}
+            {showBanner && (
+                <QueueBanner
+                    queueSize={feedbackStatus!.queueSize}
+                    onDismiss={() => setBannerDismissed(true)}
+                />
+            )}
+
             {error && <div className={s.error}>{error}</div>}
 
             {visibleContent.length === 0 ? (
@@ -383,7 +720,7 @@ export default function LeadsPage() {
             ) : (
                 <>
                     <div className={s.list}>
-                        {visibleContent.map(lead => {
+                        {visibleContent.map((lead, idx) => {
                             const color      = STATUS_COLOR[lead.status] || STATUS_COLOR.NEW
                             const isNew      = lead.status === 'NEW'
                             const isViewed   = lead.status === 'VIEWED'
@@ -392,11 +729,11 @@ export default function LeadsPage() {
                             const isExpanded = expanded.has(lead.id)
                             const isUpdating = updating.has(lead.id)
                             const isExport   = lead.source === 'MANUAL_EXPORT'
+                            const locked     = isLeadLocked(lead, idx)
+                            const rating     = getRating(lead)
 
                             const contextMsgs: string[] = lead.contextMessages ?? []
 
-                            // Для экспортных лидов показываем реальную дату сообщения (messageDate),
-                            // для живых — foundAt (момент обнаружения ботом).
                             const displayDate = isExport
                                 ? (lead.messageDate || lead.foundAt)
                                 : lead.foundAt
@@ -406,32 +743,45 @@ export default function LeadsPage() {
                                     key={lead.id}
                                     className={s.leadCard}
                                     style={{
+                                        position: 'relative',
                                         ...(isNew      ? { borderLeftColor: '#dc2626', borderLeftWidth: 3 } : {}),
                                         ...(isArchived ? { opacity: 0.65 } : {}),
-                                        // Лиды из экспорта — чуть другой оттенок левой полосы (фиолетовый)
                                         ...(isExport && isNew ? { borderLeftColor: '#7c3aed' } : {}),
+                                        // Заблокированные карточки — чуть притушенные
+                                        ...(locked ? { opacity: 0.55 } : {}),
                                     }}
                                 >
+                                    {/* Оверлей блокировки */}
+                                    {locked && (
+                                        <LockedOverlay pendingLeadIndex={firstUnratedIndex + 1} />
+                                    )}
+
                                     <div className={s.leadHead}>
                                         <div className={s.leadMeta}>
                                             <div style={{
-                                                width: 32, height: 32, borderRadius: '50%',
-                                                background: isExport ? 'rgba(139,92,246,.1)' : 'var(--c-accent-soft)',
-                                                color: isExport ? '#7c3aed' : 'var(--c-accent)',
-                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                fontWeight: 700, fontSize: 14, flexShrink: 0,
-                                                fontFamily: 'var(--font-head)',
+                                                width:          32,
+                                                height:         32,
+                                                borderRadius:   '50%',
+                                                background:     isExport ? 'rgba(139,92,246,.1)' : 'var(--c-accent-soft)',
+                                                color:          isExport ? '#7c3aed' : 'var(--c-accent)',
+                                                display:        'flex',
+                                                alignItems:     'center',
+                                                justifyContent: 'center',
+                                                fontWeight:     700,
+                                                fontSize:       14,
+                                                flexShrink:     0,
+                                                fontFamily:     'var(--font-head)',
                                             }}>
                                                 {(lead.authorName || lead.chatTitle || '?').charAt(0).toUpperCase()}
                                             </div>
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                                     <span className={s.leadChat}>{lead.chatTitle || lead.chatLink}</span>
-                                                    {/* Тег "из экспорта" — задача 1 */}
                                                     {isExport && <ExportBadge />}
+                                                    {/* Бейдж оценки — показываем рядом с чатом */}
+                                                    {rating !== null && <RatingBadge rating={rating} />}
                                                 </div>
                                                 <span className={s.leadDate}>
-                                                    {/* Задача 2: для экспорта показываем реальную дату сообщения */}
                                                     {formatLeadDate(displayDate)}
                                                     {isExport && (
                                                         <span style={{ color: 'var(--c-ink-3)', fontSize: 10, marginLeft: 4 }}>
@@ -442,10 +792,12 @@ export default function LeadsPage() {
                                             </div>
                                             {lead.matchedKeyword && (
                                                 <span style={{
-                                                    fontSize: 11,
-                                                    background: 'var(--c-accent-soft)',
-                                                    color: 'var(--c-accent)',
-                                                    padding: '2px 8px', borderRadius: 100, fontWeight: 600,
+                                                    fontSize:     11,
+                                                    background:   'var(--c-accent-soft)',
+                                                    color:        'var(--c-accent)',
+                                                    padding:      '2px 8px',
+                                                    borderRadius: 100,
+                                                    fontWeight:   600,
                                                 }}>
                                                     {lead.matchedKeyword}
                                                 </span>
@@ -465,16 +817,21 @@ export default function LeadsPage() {
                                             }
                                             style={{
                                                 ...color,
-                                                fontSize: 11, fontWeight: 700,
-                                                padding: '3px 10px', borderRadius: 100,
-                                                flexShrink: 0, letterSpacing: '.2px',
-                                                border: 'none',
+                                                fontSize:   11,
+                                                fontWeight: 700,
+                                                padding:    '3px 10px',
+                                                borderRadius: 100,
+                                                flexShrink: 0,
+                                                letterSpacing: '.2px',
+                                                border:     'none',
                                                 background: color.bg,
-                                                color: color.text,
-                                                cursor: (isNew || isViewed) && !isUpdating ? 'pointer' : 'default',
+                                                color:      color.text,
+                                                cursor:     (isNew || isViewed) && !isUpdating ? 'pointer' : 'default',
                                                 transition: 'opacity .15s',
-                                                display: 'flex', alignItems: 'center', gap: 4,
-                                                opacity: isUpdating ? 0.5 : 1,
+                                                display:    'flex',
+                                                alignItems: 'center',
+                                                gap:        4,
+                                                opacity:    isUpdating ? 0.5 : 1,
                                             }}
                                         >
                                             {STATUS_LABEL[lead.status] ?? lead.status}
@@ -494,11 +851,19 @@ export default function LeadsPage() {
                                         <button
                                             onClick={() => toggleExpand(lead.id)}
                                             style={{
-                                                display: 'flex', alignItems: 'center', gap: 5,
-                                                padding: '4px 0', background: 'none', border: 'none',
-                                                color: 'var(--c-ink-3)', fontSize: 12, fontWeight: 500,
-                                                cursor: 'pointer', fontFamily: 'var(--font-body)',
-                                                width: 'fit-content', transition: 'color .15s',
+                                                display:    'flex',
+                                                alignItems: 'center',
+                                                gap:        5,
+                                                padding:    '4px 0',
+                                                background: 'none',
+                                                border:     'none',
+                                                color:      'var(--c-ink-3)',
+                                                fontSize:   12,
+                                                fontWeight: 500,
+                                                cursor:     'pointer',
+                                                fontFamily: 'var(--font-body)',
+                                                width:      'fit-content',
+                                                transition: 'color .15s',
                                             }}
                                             onMouseEnter={e => { e.currentTarget.style.color = 'var(--c-accent)' }}
                                             onMouseLeave={e => { e.currentTarget.style.color = 'var(--c-ink-3)' }}
@@ -513,22 +878,33 @@ export default function LeadsPage() {
 
                                     {isExpanded && (
                                         <div style={{
-                                            display: 'flex', flexDirection: 'column', gap: 10,
-                                            padding: '10px 14px', background: 'var(--c-bg)',
-                                            borderRadius: 10, border: '1px solid var(--c-border)',
+                                            display:       'flex',
+                                            flexDirection: 'column',
+                                            gap:           10,
+                                            padding:       '10px 14px',
+                                            background:    'var(--c-bg)',
+                                            borderRadius:  10,
+                                            border:        '1px solid var(--c-border)',
                                         }}>
                                             {lead.aiValid !== null && lead.aiValid !== undefined && (
                                                 <div style={{
-                                                    display: 'flex', alignItems: 'flex-start', gap: 8,
-                                                    padding: '8px 12px', borderRadius: 8,
-                                                    background: lead.aiValid ? 'rgba(16,185,129,.08)' : 'rgba(239,68,68,.08)',
-                                                    border: `1px solid ${lead.aiValid ? 'rgba(16,185,129,.2)' : 'rgba(239,68,68,.2)'}`,
+                                                    display:     'flex',
+                                                    alignItems:  'flex-start',
+                                                    gap:         8,
+                                                    padding:     '8px 12px',
+                                                    borderRadius: 8,
+                                                    background:  lead.aiValid ? 'rgba(16,185,129,.08)' : 'rgba(239,68,68,.08)',
+                                                    border:      `1px solid ${lead.aiValid ? 'rgba(16,185,129,.2)' : 'rgba(239,68,68,.2)'}`,
                                                 }}>
                                                     <span style={{
-                                                        display: 'flex', alignItems: 'center', gap: 4,
-                                                        fontSize: 11, fontWeight: 700,
-                                                        color: lead.aiValid ? '#10b981' : '#ef4444',
-                                                        flexShrink: 0, marginTop: 1,
+                                                        display:    'flex',
+                                                        alignItems: 'center',
+                                                        gap:        4,
+                                                        fontSize:   11,
+                                                        fontWeight: 700,
+                                                        color:      lead.aiValid ? '#10b981' : '#ef4444',
+                                                        flexShrink: 0,
+                                                        marginTop:  1,
                                                     }}>
                                                         <IconAI valid={lead.aiValid} />
                                                         AI {lead.aiValid ? 'одобрил' : 'отклонил'}
@@ -544,21 +920,27 @@ export default function LeadsPage() {
                                             {contextMsgs.length > 0 && (
                                                 <div>
                                                     <div style={{
-                                                        fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
-                                                        letterSpacing: '.5px', color: 'var(--c-ink-3)', marginBottom: 8,
+                                                        fontSize:       11,
+                                                        fontWeight:     700,
+                                                        textTransform:  'uppercase',
+                                                        letterSpacing:  '.5px',
+                                                        color:          'var(--c-ink-3)',
+                                                        marginBottom:   8,
                                                     }}>
                                                         Контекст чата
                                                     </div>
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                                                         {contextMsgs.map((msg, i) => (
                                                             <div key={i} style={{
-                                                                fontSize: 13, color: 'var(--c-ink-2)', lineHeight: 1.5,
-                                                                padding: '6px 10px',
-                                                                borderLeft: '2px solid var(--c-border)',
-                                                                background: 'var(--c-surface)',
+                                                                fontSize:    13,
+                                                                color:       'var(--c-ink-2)',
+                                                                lineHeight:  1.5,
+                                                                padding:     '6px 10px',
+                                                                borderLeft:  '2px solid var(--c-border)',
+                                                                background:  'var(--c-surface)',
                                                                 borderRadius: '0 6px 6px 0',
-                                                                wordBreak: 'break-word',
-                                                                whiteSpace: 'pre-wrap',
+                                                                wordBreak:   'break-word',
+                                                                whiteSpace:  'pre-wrap',
                                                             }}>
                                                                 {msg}
                                                             </div>
@@ -579,12 +961,13 @@ export default function LeadsPage() {
                                         </div>
 
                                         <div className={s.leadActions}>
+                                            {/* AI бейдж */}
                                             {lead.aiValid !== null && lead.aiValid !== undefined && (
                                                 <div
                                                     className={s.aiBadge}
                                                     style={{
                                                         background: lead.aiValid ? 'rgba(16,185,129,.12)' : 'rgba(239,68,68,.12)',
-                                                        color: lead.aiValid ? '#10b981' : '#ef4444',
+                                                        color:      lead.aiValid ? '#10b981' : '#ef4444',
                                                     }}
                                                 >
                                                     <IconAI valid={lead.aiValid} />
@@ -592,27 +975,36 @@ export default function LeadsPage() {
                                                 </div>
                                             )}
 
+                                            {/* Разделитель между статусными кнопками и оценкой */}
                                             {(isNew || isViewed) && (
                                                 <button
                                                     onClick={() => void setStatus(lead, 'REPLIED')}
                                                     disabled={isUpdating}
                                                     title="Отметить как отвечено"
                                                     style={{
-                                                        display: 'flex', alignItems: 'center', gap: 4,
-                                                        padding: '5px 12px', borderRadius: 100,
-                                                        border: '1.5px solid rgba(16,185,129,.45)',
-                                                        background: 'rgba(16,185,129,.08)',
-                                                        color: '#059669', fontSize: 12,
-                                                        fontWeight: 700, cursor: 'pointer',
-                                                        fontFamily: 'var(--font-body)', transition: 'all .15s',
+                                                        display:     'flex',
+                                                        alignItems:  'center',
+                                                        gap:         4,
+                                                        padding:     '5px 12px',
+                                                        borderRadius: 100,
+                                                        border:      '1.5px solid rgba(16,185,129,.45)',
+                                                        background:  'rgba(16,185,129,.08)',
+                                                        color:       '#059669',
+                                                        fontSize:    12,
+                                                        fontWeight:  700,
+                                                        cursor:      'pointer',
+                                                        fontFamily:  'var(--font-body)',
+                                                        transition:  'all .15s',
                                                     }}
                                                     onMouseEnter={e => {
-                                                        (e.currentTarget as HTMLButtonElement).style.background = 'rgba(16,185,129,.18)'
-                                                        ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(16,185,129,.7)'
+                                                        const btn = e.currentTarget as HTMLButtonElement
+                                                        btn.style.background  = 'rgba(16,185,129,.18)'
+                                                        btn.style.borderColor = 'rgba(16,185,129,.7)'
                                                     }}
                                                     onMouseLeave={e => {
-                                                        (e.currentTarget as HTMLButtonElement).style.background = 'rgba(16,185,129,.08)'
-                                                        ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(16,185,129,.45)'
+                                                        const btn = e.currentTarget as HTMLButtonElement
+                                                        btn.style.background  = 'rgba(16,185,129,.08)'
+                                                        btn.style.borderColor = 'rgba(16,185,129,.45)'
                                                     }}
                                                 >
                                                     <IconCheck />
@@ -626,21 +1018,29 @@ export default function LeadsPage() {
                                                     disabled={isUpdating}
                                                     title="Вернуть в просмотренные"
                                                     style={{
-                                                        display: 'flex', alignItems: 'center', gap: 4,
-                                                        padding: '5px 12px', borderRadius: 100,
-                                                        border: '1.5px solid var(--c-border)',
-                                                        background: 'none',
-                                                        color: 'var(--c-ink-3)', fontSize: 12,
-                                                        fontWeight: 600, cursor: 'pointer',
-                                                        fontFamily: 'var(--font-body)', transition: 'all .15s',
+                                                        display:     'flex',
+                                                        alignItems:  'center',
+                                                        gap:         4,
+                                                        padding:     '5px 12px',
+                                                        borderRadius: 100,
+                                                        border:      '1.5px solid var(--c-border)',
+                                                        background:  'none',
+                                                        color:       'var(--c-ink-3)',
+                                                        fontSize:    12,
+                                                        fontWeight:  600,
+                                                        cursor:      'pointer',
+                                                        fontFamily:  'var(--font-body)',
+                                                        transition:  'all .15s',
                                                     }}
                                                     onMouseEnter={e => {
-                                                        (e.currentTarget as HTMLButtonElement).style.borderColor = '#d97706'
-                                                        ;(e.currentTarget as HTMLButtonElement).style.color = '#d97706'
+                                                        const btn = e.currentTarget as HTMLButtonElement
+                                                        btn.style.borderColor = '#d97706'
+                                                        btn.style.color       = '#d97706'
                                                     }}
                                                     onMouseLeave={e => {
-                                                        (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--c-border)'
-                                                        ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--c-ink-3)'
+                                                        const btn = e.currentTarget as HTMLButtonElement
+                                                        btn.style.borderColor = 'var(--c-border)'
+                                                        btn.style.color       = 'var(--c-ink-3)'
                                                     }}
                                                 >
                                                     <IconUndo />
@@ -654,21 +1054,29 @@ export default function LeadsPage() {
                                                     disabled={isUpdating}
                                                     title="В архив"
                                                     style={{
-                                                        display: 'flex', alignItems: 'center', gap: 4,
-                                                        padding: '5px 12px', borderRadius: 100,
-                                                        border: '1.5px solid var(--c-border)',
-                                                        background: 'none',
-                                                        color: 'var(--c-ink-3)', fontSize: 12,
-                                                        fontWeight: 600, cursor: 'pointer',
-                                                        fontFamily: 'var(--font-body)', transition: 'all .15s',
+                                                        display:     'flex',
+                                                        alignItems:  'center',
+                                                        gap:         4,
+                                                        padding:     '5px 12px',
+                                                        borderRadius: 100,
+                                                        border:      '1.5px solid var(--c-border)',
+                                                        background:  'none',
+                                                        color:       'var(--c-ink-3)',
+                                                        fontSize:    12,
+                                                        fontWeight:  600,
+                                                        cursor:      'pointer',
+                                                        fontFamily:  'var(--font-body)',
+                                                        transition:  'all .15s',
                                                     }}
                                                     onMouseEnter={e => {
-                                                        (e.currentTarget as HTMLButtonElement).style.borderColor = '#6b7280'
-                                                        ;(e.currentTarget as HTMLButtonElement).style.color = '#6b7280'
+                                                        const btn = e.currentTarget as HTMLButtonElement
+                                                        btn.style.borderColor = '#6b7280'
+                                                        btn.style.color       = '#6b7280'
                                                     }}
                                                     onMouseLeave={e => {
-                                                        (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--c-border)'
-                                                        ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--c-ink-3)'
+                                                        const btn = e.currentTarget as HTMLButtonElement
+                                                        btn.style.borderColor = 'var(--c-border)'
+                                                        btn.style.color       = 'var(--c-ink-3)'
                                                     }}
                                                 >
                                                     <IconArchive />
@@ -682,13 +1090,18 @@ export default function LeadsPage() {
                                                     disabled={isUpdating}
                                                     title="Вернуть из архива"
                                                     style={{
-                                                        display: 'flex', alignItems: 'center', gap: 4,
-                                                        padding: '5px 12px', borderRadius: 100,
-                                                        border: '1.5px solid var(--c-border)',
-                                                        background: 'none',
-                                                        color: 'var(--c-ink-3)', fontSize: 12,
-                                                        fontWeight: 600, cursor: 'pointer',
-                                                        fontFamily: 'var(--font-body)', transition: 'all .15s',
+                                                        display:     'flex',
+                                                        alignItems:  'center',
+                                                        gap:         4,
+                                                        padding:     '5px 12px',
+                                                        borderRadius: 100,
+                                                        border:      '1.5px solid var(--c-border)',
+                                                        background:  'none',
+                                                        color:       'var(--c-ink-3)',
+                                                        fontSize:    12,
+                                                        fontWeight:  600,
+                                                        cursor:      'pointer',
+                                                        fontFamily:  'var(--font-body)',
                                                     }}
                                                 >
                                                     Восстановить
@@ -708,6 +1121,23 @@ export default function LeadsPage() {
                                                     <IconExternalLink />
                                                 </a>
                                             )}
+
+                                            {/* Разделитель перед кнопками оценки */}
+                                            <div style={{
+                                                width:       1,
+                                                height:      20,
+                                                background:  'var(--c-border)',
+                                                flexShrink:  0,
+                                                alignSelf:   'center',
+                                            }} />
+
+                                            {/* Кнопки оценки — всегда видны, заблокированы если карточка locked */}
+                                            <FeedbackButtons
+                                                leadId={lead.id}
+                                                rating={rating}
+                                                disabled={locked}
+                                                onVote={handleVote}
+                                            />
                                         </div>
                                     </div>
                                 </div>
