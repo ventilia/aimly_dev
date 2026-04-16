@@ -42,12 +42,12 @@ class LeadFeedbackService(
 
     /**
      * Максимальное число примеров для AI-промпта.
-     * Ограничено 10, чтобы не перегружать контекст токенами.
-     * Приоритет: оценки по тому же ключевому слову (до 4) → общие последние (до 6).
+     * Увеличено до 20 для более точной персонализации.
+     * Приоритет: оценки по тому же ключевому слову (до 8) → общие последние (до 12).
      */
-    private val MAX_PROMPT_EXAMPLES = 10
-    private val MAX_BY_KEYWORD      = 4
-    private val MAX_GENERAL         = MAX_PROMPT_EXAMPLES - MAX_BY_KEYWORD  // 6
+    private val MAX_PROMPT_EXAMPLES = 20
+    private val MAX_BY_KEYWORD      = 8
+    private val MAX_GENERAL         = MAX_PROMPT_EXAMPLES - MAX_BY_KEYWORD  // 12
 
     // ─── Основная точка входа ─────────────────────────────────────────────────
 
@@ -55,8 +55,8 @@ class LeadFeedbackService(
      * Вызывается после AI-решения (или сразу, если AI выключен).
      * Либо отправляет уведомление немедленно, либо ставит в очередь + шлёт nudge.
      *
-     * Задача 2: при отправке nudge теперь передаём текст и ключевое слово
-     * неоцененного лида, чтобы пользователь видел о чём идёт речь.
+     * При отправке nudge передаём текст и ключевое слово неоцененного лида,
+     * чтобы пользователь видел о чём идёт речь.
      */
     @Transactional
     fun deliverOrEnqueue(user: User, payload: LeadNotificationPayload) {
@@ -73,7 +73,7 @@ class LeadFeedbackService(
 
             val queueSize = pendingRepo.countByUserId(user.id)
 
-            // Получаем данные неоцененного лида для превью в nudge (задача 2)
+            // Получаем данные неоцененного лида для превью в nudge
             val pendingLead      = leadRepo.findById(pendingLeadId).orElse(null)
             val messagePreview   = pendingLead?.messageText?.take(150) ?: ""
             val matchedKeyword   = pendingLead?.matchedKeyword ?: ""
@@ -103,6 +103,10 @@ class LeadFeedbackService(
      * Сохраняет оценку и доставляет следующий лид из очереди.
      * Вызывается из bot-callback и REST API.
      * Поддерживает upsert — повторная оценка меняет предыдущую.
+     *
+     * При первичной оценке (не upsert) автоматически помечает лид как VIEWED,
+     * если он ещё имеет статус NEW. Это гарантирует, что оценённый лид
+     * не остаётся «непрочитанным» в счётчике новых лидов.
      */
     @Transactional
     fun submitFeedback(user: User, leadId: Long, rating: LeadRating): LeadFeedback {
@@ -127,6 +131,16 @@ class LeadFeedbackService(
             )
         )
 
+        // Автоматически помечаем лид прочитанным при первичной оценке.
+        // При изменении оценки статус не трогаем — он уже был обновлён ранее.
+        if (!isChange && lead.status == LeadStatus.NEW) {
+            lead.status = LeadStatus.VIEWED
+            leadRepo.save(lead)
+            log.info(
+                "[FEEDBACK] Лид авто-помечен VIEWED: userId=${user.id} leadId=#$leadId"
+            )
+        }
+
         log.info(
             "[FEEDBACK] Оценка${if (isChange) " изменена" else ""}: " +
                     "userId=${user.id} leadId=#$leadId rating=$rating keyword=\"${lead.matchedKeyword}\""
@@ -145,9 +159,9 @@ class LeadFeedbackService(
     /**
      * Формирует список примеров оценок для вставки в AI-промпт.
      *
-     * Логика выборки (не более MAX_PROMPT_EXAMPLES = 10 итого):
-     *   1. До MAX_BY_KEYWORD (4) оценок по тому же ключевому слову — самые релевантные.
-     *   2. До MAX_GENERAL (6) последних общих оценок — для контекста.
+     * Логика выборки (не более MAX_PROMPT_EXAMPLES = 20 итого):
+     *   1. До MAX_BY_KEYWORD (8) оценок по тому же ключевому слову — самые релевантные.
+     *   2. До MAX_GENERAL (12) последних общих оценок — для контекста.
      *
      * Возвращает пустой список если накопленных оценок меньше MIN_FEEDBACKS_FOR_PROMPT (3) —
      * до этого порога данных недостаточно для значимой персонализации.

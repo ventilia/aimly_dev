@@ -413,10 +413,13 @@ class AimlyBot(
      *
      * После оценки показываем:
      *   - строку «✅ Оценено: <оценка>» как информационную (noop)
+     *   - строку «🟡 Прочитан» — индикатор того, что лид авто-помечен VIEWED (noop)
      *   - кнопку «↩️ Изменить → <противоположная оценка>» — активную
      *
-     * Это решает проблему «нажал — ничего не произошло»: пользователь видит,
-     * что оценка принята, и может её сменить одним нажатием.
+     * Авто-пометка статуса происходит внутри [LeadFeedbackService.submitFeedback]:
+     * при первичной оценке лид переводится NEW → VIEWED. Строка «🟡 Прочитан»
+     * в клавиатуре даёт пользователю мгновенный визуальный сигнал об этом —
+     * не нужно открывать список лидов.
      */
     private fun handleFeedback(
         chatId:   Long,
@@ -443,6 +446,8 @@ class AimlyBot(
         }
 
         runCatching {
+            val leadWasNew = leadRepository.findById(leadId).orElse(null)?.status == LeadStatus.NEW
+
             feedbackService.submitFeedback(user, leadId, rating)
 
             // deliverNextFromQueue вызывается внутри submitFeedback —
@@ -452,7 +457,12 @@ class AimlyBot(
             val statusRows = mutableListOf<InlineKeyboardRow>()
             // Строка 1: информация о текущей оценке (не нажимаемая)
             statusRows.add(row(btn("✅ Оценено: $ratingLabel", "noop")))
-            // Строка 2: кнопка смены оценки на противоположную
+            // Строка 2: статус «Прочитан» — отображаем только если лид был NEW
+            // и теперь авто-переведён в VIEWED. Даёт мгновенный визуальный сигнал.
+            if (leadWasNew) {
+                statusRows.add(row(btn("🟡 Прочитан", "noop")))
+            }
+            // Строка 3: кнопка смены оценки на противоположную
             statusRows.add(row(btn(changeLabel, changeCb)))
 
             if (queueAfter > 0) {
@@ -477,7 +487,7 @@ class AimlyBot(
                 log.debug("[BOT][FEEDBACK] editMarkup ошибка: ${it.message}")
             }
 
-            log.info("[BOT][FEEDBACK] Оценка принята: userId=${user.id} leadId=#$leadId rating=$rating queueAfter=$queueAfter")
+            log.info("[BOT][FEEDBACK] Оценка принята: userId=${user.id} leadId=#$leadId rating=$rating queueAfter=$queueAfter leadWasNew=$leadWasNew")
         }.onFailure {
             log.warn("[BOT][FEEDBACK] Ошибка оценки: userId=${user.id} leadId=#$leadId ${it.message}")
             sender.editText(chatId, msgId, "❌ Ошибка сохранения оценки. Попробуйте ещё раз.")
