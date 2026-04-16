@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Lang } from '../i18n/translations'
 import { authApi, referralApi, type ReferralStatsDto } from '../api/auth'
@@ -485,38 +485,45 @@ export default function DashboardOverview({ lang }: Props) {
     const [chatsCount,    setChatsCount]    = useState<number | null>(null)
     const [keywordsCount, setKeywordsCount] = useState<number | null>(null)
 
-    const [lastLead, setLastLead] = useState<Lead | null>(null)
+    // Последний активный лид (не IGNORED) — показываем в блоке «Последний лид»
+    const [lastLead,    setLastLead]    = useState<Lead | null>(null)
+    // Список активных лидов — нужен для поиска первого неоценённого
+    const [activeLeads, setActiveLeads] = useState<Lead[]>([])
 
     // Очередь неоценённых лидов
-    const [feedbackStatus,  setFeedbackStatus]  = useState<FeedbackStatus | null>(null)
+    const [feedbackStatus, setFeedbackStatus] = useState<FeedbackStatus | null>(null)
     // Первый неоценённый лид — показываем превью на главной
-    const [pendingLead,     setPendingLead]     = useState<Lead | null>(null)
+    const [pendingLead,    setPendingLead]    = useState<Lead | null>(null)
 
     // ── Referral ────────────────────────────────────────────────────────────
     const [referralStats, setReferralStats] = useState<ReferralStatsDto | null>(null)
     const [refCopied,     setRefCopied]     = useState(false)
 
-    useEffect(() => {
-        // Загружаем лиды и статус очереди одновременно
-        Promise.all([
+    // Ref для тихого фонового обновления
+    const silentRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const isSilentRefreshing = useRef(false)
+
+    // ─── Основная загрузка ───────────────────────────────────────────────────
+    const loadLeadsData = useCallback(async () => {
+        const [p, fStatus] = await Promise.all([
             leadsApi.list({ size: 20 }),
             feedbackApi.getStatus(),
         ])
-            .then(([p, fStatus]) => {
-                setTotalLeads(p.totalElements)
-                setNewLeads(p.newCount)
-                const activeLeads = p.content.filter(l => l.status !== 'IGNORED')
-                const firstActive = activeLeads[0] ?? null
-                setLastLead(firstActive)
-                setFeedbackStatus(fStatus)
+        const active = p.content.filter(l => l.status !== 'IGNORED')
+        setTotalLeads(p.totalElements)
+        setNewLeads(p.newCount)
+        setActiveLeads(active)
+        setLastLead(active[0] ?? null)
+        setFeedbackStatus(fStatus)
 
-                // Первый неоценённый активный лид (myRating === null).
-                // myRating — поле приходит с бэкенда и является source of truth:
-                // отражает оценки сделанные как с сайта, так и через Telegram-бота.
-                const firstUnrated = activeLeads.find(l => l.myRating === null) ?? null
-                setPendingLead(firstUnrated)
-            })
-            .catch(() => {})
+        // Первый неоценённый активный лид (myRating === null).
+        // myRating — source of truth с бэкенда: учитывает оценки как с сайта, так и из TG-бота.
+        const firstUnrated = active.find(l => l.myRating === null) ?? null
+        setPendingLead(firstUnrated)
+    }, [])
+
+    useEffect(() => {
+        loadLeadsData().catch(() => {})
 
         chatsApi.list()
             .then(list => setChatsCount(list.filter(c => c.isActive).length))
@@ -529,7 +536,59 @@ export default function DashboardOverview({ lang }: Props) {
         referralApi.getStats()
             .then(setReferralStats)
             .catch(() => {})
+    }, [loadLeadsData])
+
+    // ─── Тихое обновление при возвращении на вкладку ────────────────────────
+    // Заменяет поллинг. Срабатывает только когда пользователь возвращается к
+    // открытой вкладке — синхронизирует оценки сделанные через Telegram-бота.
+    const silentRefresh = useCallback(async () => {
+        if (isSilentRefreshing.current) return
+        isSilentRefreshing.current = true
+        try {
+            const [p, fStatus] = await Promise.all([
+                leadsApi.list({ size: 20 }),
+                feedbackApi.getStatus(),
+            ])
+            const active = p.content.filter(l => l.status !== 'IGNORED')
+            setTotalLeads(p.totalElements)
+            setNewLeads(p.newCount)
+            setActiveLeads(active)
+            setLastLead(prev => {
+                if (!prev) return active[0] ?? null
+                // Обновляем myRating последнего лида если он остался тем же
+                const fresh = active.find(l => l.id === prev.id)
+                return fresh ?? active[0] ?? null
+            })
+            setFeedbackStatus(fStatus)
+            const firstUnrated = active.find(l => l.myRating === null) ?? null
+            setPendingLead(firstUnrated)
+        } catch {
+            // Тихий — ошибки не показываем
+        } finally {
+            isSilentRefreshing.current = false
+        }
     }, [])
+
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (!document.hidden) {
+                if (silentRefreshTimer.current) clearTimeout(silentRefreshTimer.current)
+                silentRefreshTimer.current = setTimeout(() => void silentRefresh(), 300)
+            }
+        }
+        const handleFocus = () => {
+            if (silentRefreshTimer.current) clearTimeout(silentRefreshTimer.current)
+            silentRefreshTimer.current = setTimeout(() => void silentRefresh(), 300)
+        }
+
+        document.addEventListener('visibilitychange', handleVisibilityChange)
+        window.addEventListener('focus', handleFocus)
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange)
+            window.removeEventListener('focus', handleFocus)
+            if (silentRefreshTimer.current) clearTimeout(silentRefreshTimer.current)
+        }
+    }, [silentRefresh])
 
     if (!user) return null
 
@@ -581,27 +640,29 @@ export default function DashboardOverview({ lang }: Props) {
 
     /**
      * Оценка прямо с главной страницы.
-     * После успешной оценки:
-     * - Обновляем myRating у lastLead если это тот же лид
-     * - Показываем следующий неоценённый лид или скрываем блок
-     * - Обновляем счётчик очереди
+     *
+     * После успешной оценки перезагружаем список лидов с сервера чтобы:
+     * 1. Получить свежий myRating у оценённого лида (синхронизация с ботом)
+     * 2. Найти следующий неоценённый лид для блока ожидания
+     * 3. Обновить lastLead если он изменился
+     *
+     * Это идентично тому, как бэкенд работает в связке с ботом:
+     * после оценки → deliverNextFromQueue → следующий лид доставляется в TG.
+     * Фронт должен показать актуальное состояние очереди.
      */
     const handleRateFromOverview = async (leadId: number, rating: 'GOOD' | 'BAD') => {
         const res = await feedbackApi.submit(leadId, rating)
 
-        // Обновляем myRating у lastLead если оценили именно его
+        // Оптимистично обновляем myRating у оценённого лида
         setLastLead(prev => {
             if (!prev || prev.id !== leadId) return prev
-            return { ...prev, myRating: rating }
+            return { ...prev, myRating: rating, status: res.leadStatus as Lead['status'] }
         })
+        setActiveLeads(prev => prev.map(l =>
+            l.id === leadId ? { ...l, myRating: rating, status: res.leadStatus as Lead['status'] } : l
+        ))
 
-        // Убираем оценённый лид из блока ожидания
-        setPendingLead(prev => {
-            if (!prev || prev.id !== leadId) return prev
-            // Следующий неоценённый лид — нужна перезагрузка данных, но пока просто скрываем
-            return null
-        })
-
+        // Обновляем счётчик очереди
         if (res.queueEmpty) {
             setFeedbackStatus({ queueSize: 0, hasQueue: false })
         } else {
@@ -609,6 +670,27 @@ export default function DashboardOverview({ lang }: Props) {
                 if (!prev) return prev
                 const newSize = Math.max(0, prev.queueSize - 1)
                 return { queueSize: newSize, hasQueue: newSize > 0 }
+            })
+        }
+
+        // Перезагружаем список лидов чтобы найти следующий неоценённый.
+        // Делаем это асинхронно — UI уже обновлён оптимистично.
+        try {
+            const fresh = await leadsApi.list({ size: 20 })
+            const freshActive = fresh.content.filter(l => l.status !== 'IGNORED')
+            setActiveLeads(freshActive)
+            setLastLead(freshActive[0] ?? null)
+            setTotalLeads(fresh.totalElements)
+            setNewLeads(fresh.newCount)
+            const nextUnrated = freshActive.find(l => l.myRating === null) ?? null
+            setPendingLead(nextUnrated)
+        } catch {
+            // Если не удалось перезагрузить — убираем оценённый лид из pending вручную
+            setPendingLead(prev => {
+                if (!prev || prev.id !== leadId) return prev
+                // Ищем следующий неоценённый в локальном кэше
+                const nextUnrated = activeLeads.find(l => l.id !== leadId && l.myRating === null) ?? null
+                return nextUnrated
             })
         }
     }
@@ -619,13 +701,22 @@ export default function DashboardOverview({ lang }: Props) {
     const totalReferrals = referralStats?.totalReferrals ?? 0
     const paidReferrals  = referralStats?.paidReferrals  ?? 0
 
-    // Показываем блок «ожидает оценки» если:
-    // — сервер сообщает что есть TG-очередь (hasQueue)
-    // — ИЛИ нашли первый неоценённый лид в списке (pendingLead !== null)
-    const showPendingBlock = feedbackStatus?.hasQueue || pendingLead !== null
+    // Блок «ожидает оценки» показываем если есть хоть один неоценённый лид.
+    // pendingLead — первый неоценённый с бэкенда (source of truth, учитывает TG-бота).
+    const showPendingBlock = pendingLead !== null
 
-    // Блок «последний лид»: если он не оценён — показываем как обычно (кнопки оценки в pending-блоке).
-    // Если последний лид оценён, но есть очередь — показываем заглушку «оцените чтобы увидеть».
+    // Блок «последний лид»:
+    // — Показываем lastLead если он оценён (или нет неоценённых перед ним)
+    // — Если lastLead НЕ оценён И есть pendingLead который отличается от lastLead —
+    //   значит lastLead заблокирован (бэкенд его ещё не доставил в TG), показываем заглушку.
+    //
+    // Логика: pendingLead — это лид, который БЫЛ последним отправленным и ждёт оценки.
+    // lastLead — новый лид, который ещё не отправлен в TG (в очереди).
+    // Пользователь должен оценить pendingLead чтобы увидеть lastLead.
+    const lastLeadIsBlocked = lastLead !== null
+        && pendingLead !== null
+        && pendingLead.id !== lastLead.id
+        && lastLead.myRating === null
 
     return (
         <div className={s.page}>
@@ -672,8 +763,8 @@ export default function DashboardOverview({ lang }: Props) {
                     <a href="/dashboard/leads" style={{ fontSize: 13, color: 'var(--c-accent)', fontWeight: 600, textDecoration: 'none' }}>{l.viewAll}</a>
                 </div>
 
-                {/* Кейс: последний лид заблокирован — нужно сначала оценить pendingLead */}
-                {lastLead && pendingLead && pendingLead.id !== lastLead.id && lastLead.myRating === null ? (
+                {/* Кейс: новый лид заблокирован — нужно сначала оценить pendingLead */}
+                {lastLeadIsBlocked ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: '20px 0', textAlign: 'center' }}>
                         <div style={{
                             width:          44,
