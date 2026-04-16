@@ -201,11 +201,7 @@ function ExportBadge() {
     )
 }
 
-// ─── Компонент кнопок оценки (встраивается в нижний левый угол карточки) ─────
-//
-// ИЗМЕНЕНИЕ: перенесено из правой колонки (отдельный блок с borderLeft)
-// в строку действий (leadFooter). Кнопки стали горизонтальными и компактными,
-// не ломают высоту карточки.
+// ─── Компонент кнопок оценки ──────────────────────────────────────────────────
 
 interface FeedbackButtonsProps {
     leadId:    number
@@ -341,8 +337,17 @@ function FeedbackButtons({ leadId, rating, disabled, onVote }: FeedbackButtonsPr
 }
 
 // ─── Баннер: очередь неоценённых лидов ───────────────────────────────────────
+//
+// queueSize — количество неоценённых лидов на текущей странице (не TG-очередь).
+// Текст изменён: "чтобы увидеть новые" вместо "чтобы получать уведомления в Telegram".
 
 function QueueBanner({ queueSize, onDismiss }: { queueSize: number; onDismiss: () => void }) {
+    const label = queueSize === 1
+        ? 'лид ожидает'
+        : queueSize < 5
+            ? 'лида ожидают'
+            : 'лидов ожидают'
+
     return (
         <div style={{
             display:       'flex',
@@ -359,9 +364,9 @@ function QueueBanner({ queueSize, onDismiss }: { queueSize: number; onDismiss: (
             </span>
             <span style={{ fontSize: 13, color: 'var(--c-ink-2)', flex: 1 }}>
                 <strong style={{ color: 'var(--c-ink-1)', fontWeight: 700 }}>
-                    {queueSize} {queueSize === 1 ? 'лид ожидает' : queueSize < 5 ? 'лида ожидают' : 'лидов ожидают'} оценки.
+                    {queueSize} {label} оценки.
                 </strong>
-                {' '}Оцените лиды ниже, чтобы получать новые уведомления в Telegram.
+                {' '}Оцените лиды ниже, чтобы увидеть новые.
             </span>
             <button
                 onClick={onDismiss}
@@ -472,17 +477,17 @@ export default function LeadsPage() {
     const [updating,       setUpdating]       = useState<Set<number>>(new Set())
     const [expanded,       setExpanded]       = useState<Set<number>>(new Set())
     const [markingAll,     setMarkingAll]     = useState(false)
-    // Состояние очереди неоценённых лидов — отражает реальный размер TG-очереди на бэкенде
+    // Состояние TG-очереди (только для справки, не для подсчёта неоценённых)
     const [feedbackStatus, setFeedbackStatus] = useState<FeedbackStatus | null>(null)
     const [bannerDismissed, setBannerDismissed] = useState(false)
-    // Локальные оценки: leadId → rating (оптимистичные обновления)
-    // Используются только внутри сессии до следующей полной загрузки страницы.
-    // При перезагрузке страницы data.content[].myRating приходит с бэкенда — source of truth.
+    // Локальные оценки: leadId → rating (оптимистичные обновления текущей сессии)
+    // При перезагрузке страницы lead.myRating с бэкенда — source of truth.
     const [localRatings, setLocalRatings]     = useState<Map<number, 'GOOD' | 'BAD' | null>>(new Map())
 
     // Ref для polling — чтобы можно было остановить таймер при размонтировании
     const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+    // ─── Полная загрузка (со скелетоном) ────────────────────────────────────
     const load = useCallback(async () => {
         setLoading(true)
         setError('')
@@ -495,19 +500,11 @@ export default function LeadsPage() {
             setData(result)
             setFeedbackStatus(fStatus)
             dispatchLeadsCountChanged(result.newCount)
-            // ИСПРАВЛЕНИЕ: НЕ сбрасываем localRatings при загрузке.
-            // lead.myRating приходит с бэкенда и является актуальным.
-            // localRatings нужны только для оптимистичных обновлений текущей сессии —
-            // их жизненный цикл совпадает с монтированием компонента.
-            // Удаляем из localRatings только те ключи, для которых бэкенд вернул myRating
-            // (данные синхронизированы, локальная копия больше не нужна).
+            // Синхронизируем localRatings: удаляем те, что уже подтверждены бэкендом
             setLocalRatings(prev => {
                 if (prev.size === 0) return prev
                 const next = new Map(prev)
                 for (const lead of result.content) {
-                    // Если бэкенд вернул ту же оценку что у нас локально — чистим, чтобы
-                    // не дублировать. Если бэкенд вернул другую (изменили через бота) — тоже
-                    // используем данные бэкенда, поэтому удаляем локальную.
                     next.delete(lead.id)
                 }
                 return next
@@ -519,43 +516,68 @@ export default function LeadsPage() {
         }
     }, [filter, page])
 
+    // ─── Тихое фоновое обновление (без скелетона) ───────────────────────────
+    // Используется поллингом и visibilitychange — не прерывает работу пользователя.
+    const silentRefresh = useCallback(async () => {
+        if (document.hidden) return
+        try {
+            const statusParam = filter || undefined
+            const [result, fStatus] = await Promise.all([
+                leadsApi.list({ status: statusParam, page, size: 20 }),
+                feedbackApi.getStatus(),
+            ])
+            setFeedbackStatus(fStatus)
+            dispatchLeadsCountChanged(result.newCount)
+            setData(prev => {
+                if (!prev) return result
+                // Обновляем myRating и status для каждого лида данными с бэкенда,
+                // но не трогаем лиды у которых есть ещё не подтверждённое localRatings
+                const updatedContent = prev.content.map(oldLead => {
+                    const freshLead = result.content.find(fl => fl.id === oldLead.id)
+                    if (!freshLead) return oldLead
+                    // Если есть локальное оптимистичное обновление — приоритет у него
+                    if (localRatings.has(oldLead.id)) return oldLead
+                    return { ...oldLead, myRating: freshLead.myRating, status: freshLead.status }
+                })
+                return { ...prev, content: updatedContent, newCount: result.newCount }
+            })
+            // Чистим localRatings для лидов которые уже синхронизированы
+            setLocalRatings(prev => {
+                if (prev.size === 0) return prev
+                const next = new Map(prev)
+                for (const lead of result.content) {
+                    next.delete(lead.id)
+                }
+                return next
+            })
+        } catch {
+            // Тихий поллинг — ошибки не показываем
+        }
+    }, [filter, page, localRatings])
+
     useEffect(() => { load() }, [load])
 
-    // ─── Фоновый поллинг оценок ──────────────────────────────────────────────
-    // Синхронизируем оценки сделанные через Telegram-бота без перезагрузки страницы.
-    // Каждые 30 секунд тихо обновляем myRating для всех лидов на странице.
+    // ─── Фоновый поллинг каждые 30 сек ──────────────────────────────────────
+    // Синхронизирует оценки сделанные через Telegram-бота.
     useEffect(() => {
-        const poll = async () => {
-            if (document.hidden) return
-            try {
-                const statusParam = filter || undefined
-                const [result, fStatus] = await Promise.all([
-                    leadsApi.list({ status: statusParam, page, size: 20 }),
-                    feedbackApi.getStatus(),
-                ])
-                setData(prev => {
-                    if (!prev) return result
-                    const updatedContent = prev.content.map(oldLead => {
-                        const freshLead = result.content.find(fl => fl.id === oldLead.id)
-                        if (!freshLead) return oldLead
-                        // Приоритет у localRatings — пока пользователь активно оценивает,
-                        // не перетираем его действия данными с поллинга
-                        if (localRatings.has(oldLead.id)) return oldLead
-                        return { ...oldLead, myRating: freshLead.myRating }
-                    })
-                    return { ...prev, content: updatedContent }
-                })
-                setFeedbackStatus(fStatus)
-            } catch {
-                // Поллинг тихий — ошибки не показываем
-            }
-        }
-
-        pollTimerRef.current = setInterval(poll, RATINGS_POLL_INTERVAL)
+        pollTimerRef.current = setInterval(silentRefresh, RATINGS_POLL_INTERVAL)
         return () => {
             if (pollTimerRef.current) clearInterval(pollTimerRef.current)
         }
-    }, [filter, page, localRatings])
+    }, [silentRefresh])
+
+    // ─── Обновление при возврате на вкладку ─────────────────────────────────
+    // Ключевое для кооперации бот ↔ фронт: если пользователь оценил лид в боте
+    // и переключился обратно на сайт — данные обновятся сразу, не через 30 сек.
+    useEffect(() => {
+        const onVisibilityChange = () => {
+            if (!document.hidden) {
+                void silentRefresh()
+            }
+        }
+        document.addEventListener('visibilitychange', onVisibilityChange)
+        return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+    }, [silentRefresh])
 
     const changeFilter = (value: string) => {
         setFilter(value)
@@ -643,13 +665,12 @@ export default function LeadsPage() {
 
         const wasAlreadyRated = prevRating !== null
 
-        // Оптимистичное обновление localRatings
+        // Оптимистичное обновление
         setLocalRatings(prev => {
             const next = new Map(prev)
             next.set(leadId, rating)
             return next
         })
-        // Оптимистичное обновление myRating прямо в data
         setData(prev => {
             if (!prev) return prev
             const content = prev.content.map(l =>
@@ -675,11 +696,10 @@ export default function LeadsPage() {
                 return { ...prev, content, newCount }
             })
 
-            // Обновляем размер очереди
+            // Обновляем TG-очередь
             if (res.queueEmpty) {
                 setFeedbackStatus({ queueSize: 0, hasQueue: false })
             } else if (!wasAlreadyRated) {
-                // Первичная оценка — уменьшаем очередь на 1
                 setFeedbackStatus(prev => {
                     if (!prev) return prev
                     const newSize = Math.max(0, prev.queueSize - 1)
@@ -687,16 +707,14 @@ export default function LeadsPage() {
                 })
             }
 
-            // После успешного сохранения на сервере синхронизируем localRatings:
-            // помечаем как «подтверждённые» — удаляем из localRatings, т.к. теперь
-            // lead.myRating в data уже обновлён корректно
+            // Подтверждаем: удаляем из localRatings (теперь data.content[].myRating актуален)
             setLocalRatings(prev => {
                 const next = new Map(prev)
                 next.delete(leadId)
                 return next
             })
         } catch {
-            // Откат: возвращаем предыдущее состояние
+            // Откат при ошибке сети
             setLocalRatings(prev => {
                 const next = new Map(prev)
                 if (prevRating === null) {
@@ -719,8 +737,6 @@ export default function LeadsPage() {
     /**
      * Получить актуальный рейтинг лида.
      * Приоритет: localRatings (оптимистичное) > lead.myRating (с бэкенда).
-     * После успешной отправки на бэкенд localRatings для этого лида очищается,
-     * и управление переходит к lead.myRating который уже обновлён.
      */
     const getRating = (lead: Lead): 'GOOD' | 'BAD' | null => {
         if (localRatings.has(lead.id)) return localRatings.get(lead.id) ?? null
@@ -733,36 +749,30 @@ export default function LeadsPage() {
 
     // ─── Логика блокировки ────────────────────────────────────────────────────
     //
-    // ИСПРАВЛЕНИЕ: Блокировку определяем независимо от feedbackStatus.hasQueue.
-    // hasQueue отражает только TG-очередь (pending_lead_notifications).
-    // Нам нужно заблокировать лиды которые ИДУТ ПОСЛЕ первого неоценённого в списке.
+    // Блокировка идентична логике бота: оценивай лиды последовательно.
+    // Первый неоценённый лид — доступен. Все следующие неоценённые — заблокированы.
+    // Уже оценённые лиды не блокируются никогда.
     //
-    // Алгоритм:
-    // 1. Находим индекс первого неоценённого лида в visibleContent.
-    // 2. Все последующие лиды (с бо́льшим индексом) без оценки — заблокированы.
-    // 3. Уже оценённые лиды (rating !== null) не блокируются никогда.
+    // Источник данных: lead.myRating с бэкенда (сохраняется между сессиями,
+    // синхронизирует оценки сделанные через Telegram-бота).
     const firstUnratedIndex = visibleContent.findIndex(l => getRating(l) === null)
 
-    // Есть ли хоть один неоценённый лид — нужно для показа баннера
-    const hasUnratedLeads = firstUnratedIndex !== -1
-
     const isLeadLocked = (lead: Lead, idx: number): boolean => {
-        // Если нет ни одного неоценённого — никто не заблокирован
-        if (!hasUnratedLeads) return false
-        // Первый неоценённый — не заблокирован, его надо оценить
-        if (idx === firstUnratedIndex) return false
-        // Лиды ДО первого неоценённого — не заблокированы (они уже оценены или раньше по списку)
-        if (idx < firstUnratedIndex) return false
-        // Лиды ПОСЛЕ первого неоценённого без оценки — заблокированы
-        return getRating(lead) === null
+        if (firstUnratedIndex === -1) return false   // Все оценены — никто не заблокирован
+        if (idx <= firstUnratedIndex) return false   // До первого неоцененного (включительно) — не блокируем
+        return getRating(lead) === null               // После первого неоцененного без оценки — заблокирован
     }
 
-    // ID первого неоценённого лида для сообщения в оверлее (показываем порядковый номер)
-    const firstUnratedDisplayNum = firstUnratedIndex >= 0 ? firstUnratedIndex + 1 : null
+    // ─── Баннер ──────────────────────────────────────────────────────────────
+    //
+    // ИСПРАВЛЕНИЕ: считаем количество неоценённых лидов на текущей странице,
+    // а не размер TG-очереди (feedbackStatus.queueSize).
+    // feedbackStatus.queueSize — это лиды ожидающие отправки в Telegram,
+    // а не неоцененные лиды на странице. Это разные понятия.
+    const unratedCount = visibleContent.filter(l => getRating(l) === null).length
 
-    // Баннер показываем если есть TG-очередь (пришли новые лиды и ждут оценки)
-    const showBanner = (feedbackStatus?.hasQueue || hasUnratedLeads) && !bannerDismissed
-    const bannerQueueSize = feedbackStatus?.queueSize ?? (hasUnratedLeads ? visibleContent.filter(l => getRating(l) === null).length : 0)
+    // Баннер показываем только если есть реально неоценённые лиды на странице
+    const showBanner = unratedCount > 0 && !bannerDismissed
 
     if (loading) {
         return (
@@ -855,10 +865,10 @@ export default function LeadsPage() {
             {/* Подсказка про важность оценок — показывается один раз, скрывается навсегда */}
             <FeedbackHint />
 
-            {/* Баннер очереди */}
+            {/* Баннер очереди — показывается только если есть реально неоцененные лиды */}
             {showBanner && (
                 <QueueBanner
-                    queueSize={bannerQueueSize}
+                    queueSize={unratedCount}
                     onDismiss={() => setBannerDismissed(true)}
                 />
             )}
@@ -900,366 +910,268 @@ export default function LeadsPage() {
                             return (
                                 <div
                                     key={lead.id}
-                                    className={s.leadCard}
-                                    style={{
-                                        position: 'relative',
-                                        // Цветная левая полоса
-                                        ...(isNew      ? { borderLeftColor: '#dc2626', borderLeftWidth: 3 } : {}),
-                                        ...(isArchived ? { opacity: 0.65 } : {}),
-                                        ...(isExport && isNew ? { borderLeftColor: '#7c3aed' } : {}),
-                                        // Заблокированные карточки — притушенные
-                                        ...(locked ? { opacity: 0.55 } : {}),
-                                        // Цветная левая полоса по оценке (перекрывает статусную)
-                                        ...(rating === 'GOOD' && !isNew ? { borderLeftColor: '#059669', borderLeftWidth: 3 } : {}),
-                                        ...(rating === 'BAD' && !isNew  ? { borderLeftColor: '#dc2626', borderLeftWidth: 3, opacity: isArchived ? 0.65 : 0.85 } : {}),
-                                    }}
+                                    className={`${s.card} ${isNew ? s.cardNew : ''}`}
+                                    style={{ position: 'relative', opacity: locked ? 0.55 : 1, transition: 'opacity .2s' }}
                                 >
-                                    {/* Оверлей блокировки */}
-                                    {locked && firstUnratedDisplayNum !== null && (
-                                        <LockedOverlay pendingLeadId={firstUnratedDisplayNum} />
+                                    {locked && (
+                                        <LockedOverlay pendingLeadId={visibleContent[firstUnratedIndex].id} />
                                     )}
 
-                                    {/* ─── Основное содержимое карточки (без правой колонки) ─── */}
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-
-                                        <div className={s.leadHead}>
-                                            <div className={s.leadMeta}>
-                                                <div style={{
-                                                    width:          32,
-                                                    height:         32,
-                                                    borderRadius:   '50%',
-                                                    background:     isExport ? 'rgba(139,92,246,.1)' : 'var(--c-accent-soft)',
-                                                    color:          isExport ? '#7c3aed' : 'var(--c-accent)',
-                                                    display:        'flex',
-                                                    alignItems:     'center',
-                                                    justifyContent: 'center',
-                                                    fontWeight:     700,
-                                                    fontSize:       14,
-                                                    flexShrink:     0,
-                                                    fontFamily:     'var(--font-head)',
-                                                }}>
-                                                    {(lead.authorName || lead.chatTitle || '?').charAt(0).toUpperCase()}
-                                                </div>
-                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                                        <span className={s.leadChat}>{lead.chatTitle || lead.chatLink}</span>
-                                                        {isExport && <ExportBadge />}
-                                                    </div>
-                                                    <span className={s.leadDate}>
-                                                        {formatLeadDate(displayDate)}
-                                                        {isExport && (
-                                                            <span style={{ color: 'var(--c-ink-3)', fontSize: 10, marginLeft: 4 }}>
-                                                                · дата сообщения
-                                                            </span>
-                                                        )}
-                                                    </span>
-                                                </div>
-                                                {lead.matchedKeyword && (
-                                                    <span style={{
-                                                        fontSize:     11,
-                                                        background:   'var(--c-accent-soft)',
-                                                        color:        'var(--c-accent)',
-                                                        padding:      '2px 8px',
-                                                        borderRadius: 100,
-                                                        fontWeight:   600,
-                                                    }}>
-                                                        {lead.matchedKeyword}
-                                                    </span>
-                                                )}
+                                    <div className={s.cardInner}>
+                                        {/* ─── Верхняя строка: автор + мета ─── */}
+                                        <div className={s.cardHead}>
+                                            <div className={s.avatar}>
+                                                {(lead.authorName || lead.chatTitle || '?').charAt(0).toUpperCase()}
                                             </div>
-
-                                            {/* Кнопка переключения статуса (глаз) */}
-                                            <button
-                                                onClick={() => {
-                                                    if (isNew)    void setStatus(lead, 'VIEWED')
-                                                    if (isViewed) void setStatus(lead, 'NEW')
-                                                }}
-                                                disabled={isUpdating || (!isNew && !isViewed)}
-                                                title={isNew ? 'Отметить прочитанным' : isViewed ? 'Отметить непрочитанным' : STATUS_LABEL[lead.status]}
-                                                style={{
-                                                    display:        'flex',
-                                                    alignItems:     'center',
-                                                    gap:            5,
-                                                    padding:        '4px 10px',
-                                                    borderRadius:   100,
-                                                    border:         '1.5px solid var(--c-border)',
-                                                    fontSize:       11,
-                                                    fontWeight:     700,
-                                                    letterSpacing:  '.2px',
-                                                    cursor:         (isNew || isViewed) ? 'pointer' : 'default',
-                                                    fontFamily:     'var(--font-body)',
-                                                    flexShrink:     0,
-                                                    transition:     'all .15s',
-                                                    background:     STATUS_COLOR[lead.status]?.bg || 'transparent',
-                                                    color:          STATUS_COLOR[lead.status]?.text || 'var(--c-ink-3)',
-                                                    borderColor:    STATUS_COLOR[lead.status]?.text
-                                                        ? `${STATUS_COLOR[lead.status].text}44`
-                                                        : 'var(--c-border)',
-                                                }}
-                                            >
-                                                {isNew    && <IconEye />}
-                                                {isViewed && <IconEyeOff />}
-                                                {STATUS_LABEL[lead.status]}
-                                            </button>
+                                            <div className={s.meta}>
+                                                <div className={s.metaTop}>
+                                                    {lead.authorName?.trim() && (
+                                                        <span className={s.authorName}>{lead.authorName}</span>
+                                                    )}
+                                                    {lead.authorUsername?.trim() && (
+                                                        <span className={s.authorHandle}>@{lead.authorUsername}</span>
+                                                    )}
+                                                    {!lead.authorName?.trim() && !lead.authorUsername?.trim() && (
+                                                        <span className={s.authorName} style={{ color: 'var(--c-ink-3)' }}>Аноним</span>
+                                                    )}
+                                                    <span
+                                                        style={{
+                                                            display:    'inline-flex',
+                                                            alignItems: 'center',
+                                                            padding:    '2px 8px',
+                                                            borderRadius: 100,
+                                                            fontSize:   10,
+                                                            fontWeight: 700,
+                                                            letterSpacing: '.3px',
+                                                            background: STATUS_COLOR[lead.status]?.bg ?? 'var(--c-bg)',
+                                                            color:      STATUS_COLOR[lead.status]?.text ?? 'var(--c-ink-3)',
+                                                        }}
+                                                    >
+                                                        {STATUS_LABEL[lead.status] ?? lead.status}
+                                                    </span>
+                                                    {isExport && <ExportBadge />}
+                                                </div>
+                                                <div className={s.metaBot}>
+                                                    <span className={s.chatName}>{lead.chatTitle || lead.chatLink}</span>
+                                                    <span className={s.dot}>·</span>
+                                                    <span className={s.date}>{formatLeadDate(displayDate)}</span>
+                                                </div>
+                                            </div>
                                         </div>
 
-                                        {/* Текст сообщения */}
-                                        <div
-                                            className={s.leadText}
-                                            onClick={() => toggleExpand(lead.id)}
-                                            style={{
-                                                cursor:     'pointer',
-                                                WebkitLineClamp: isExpanded ? 'unset' : 3,
-                                            } as React.CSSProperties}
-                                        >
+                                        {/* ─── Ключевое слово + AI ─── */}
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+                                            {lead.matchedKeyword && (
+                                                <span style={{
+                                                    display:     'inline-flex',
+                                                    alignItems:  'center',
+                                                    gap:         4,
+                                                    fontSize:    11,
+                                                    fontWeight:  700,
+                                                    padding:     '2px 9px',
+                                                    borderRadius: 100,
+                                                    background:  'var(--c-accent-soft)',
+                                                    color:       'var(--c-accent)',
+                                                }}>
+                                                    <IconUser />
+                                                    {lead.matchedKeyword}
+                                                </span>
+                                            )}
+                                            {lead.aiValid !== null && lead.aiValid !== undefined && (
+                                                <span style={{
+                                                    display:    'inline-flex',
+                                                    alignItems: 'center',
+                                                    gap:        4,
+                                                    fontSize:   11,
+                                                    fontWeight: 700,
+                                                    padding:    '2px 9px',
+                                                    borderRadius: 100,
+                                                    background: lead.aiValid ? 'rgba(16,185,129,.1)' : 'rgba(239,68,68,.08)',
+                                                    color:      lead.aiValid ? '#059669' : '#dc2626',
+                                                }}>
+                                                    <IconAI valid={lead.aiValid} />
+                                                    AI {lead.aiValid ? '✓' : '✗'}
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        {/* ─── Текст сообщения ─── */}
+                                        <div className={s.msgText}>
                                             {lead.messageText}
                                         </div>
 
-                                        {/* Контекст и AI-решение (раскрывается по клику) */}
-                                        {isExpanded && (
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
-
-                                                {lead.aiValid !== null && lead.aiValid !== undefined && (
-                                                    <div style={{
-                                                        display:      'flex',
-                                                        alignItems:   'flex-start',
-                                                        gap:          8,
-                                                        padding:      '8px 12px',
-                                                        borderRadius: 9,
-                                                        background:   lead.aiValid ? 'rgba(16,185,129,.08)' : 'rgba(239,68,68,.08)',
-                                                        border:       `1px solid ${lead.aiValid ? 'rgba(16,185,129,.2)' : 'rgba(239,68,68,.2)'}`,
-                                                    }}>
-                                                        <span style={{
-                                                            fontSize:  11,
-                                                            fontWeight: 700,
-                                                            flexShrink: 0,
-                                                            color:     lead.aiValid ? '#10b981' : '#ef4444',
-                                                        }}>
-                                                            <IconAI valid={lead.aiValid} />
-                                                            AI {lead.aiValid ? 'одобрил' : 'отклонил'}
-                                                        </span>
-                                                        {lead.aiReason && (
-                                                            <span style={{ fontSize: 12, color: 'var(--c-ink-2)', lineHeight: 1.5 }}>
-                                                                {lead.aiReason}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                )}
-
-                                                {contextMsgs.length > 0 && (
-                                                    <div>
-                                                        <div style={{
-                                                            fontSize:       11,
-                                                            fontWeight:     700,
-                                                            textTransform:  'uppercase',
-                                                            letterSpacing:  '.5px',
-                                                            color:          'var(--c-ink-3)',
-                                                            marginBottom:   8,
-                                                        }}>
-                                                            Контекст чата
-                                                        </div>
-                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                                            {contextMsgs.map((msg, i) => (
-                                                                <div key={i} style={{
-                                                                    fontSize:    13,
-                                                                    color:       'var(--c-ink-2)',
-                                                                    lineHeight:  1.5,
-                                                                    padding:     '6px 10px',
-                                                                    borderLeft:  '2px solid var(--c-border)',
-                                                                    background:  'var(--c-surface)',
-                                                                    borderRadius: '0 6px 6px 0',
-                                                                    wordBreak:   'break-word',
-                                                                    whiteSpace:  'pre-wrap',
-                                                                }}>
-                                                                    {msg}
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                )}
+                                        {/* ─── AI-причина (раскрывается) ─── */}
+                                        {isExpanded && lead.aiReason && (
+                                            <div style={{
+                                                marginTop:  6,
+                                                padding:    '8px 12px',
+                                                borderRadius: 8,
+                                                background: lead.aiValid ? 'rgba(16,185,129,.06)' : 'rgba(239,68,68,.06)',
+                                                border:     `1px solid ${lead.aiValid ? 'rgba(16,185,129,.15)' : 'rgba(239,68,68,.15)'}`,
+                                                fontSize:   12,
+                                                color:      'var(--c-ink-2)',
+                                                lineHeight: 1.5,
+                                            }}>
+                                                <strong style={{ color: lead.aiValid ? '#059669' : '#dc2626', marginRight: 5 }}>
+                                                    AI:
+                                                </strong>
+                                                {lead.aiReason}
                                             </div>
                                         )}
 
-                                        {/* ─── Нижняя строка карточки ─── */}
-                                        <div className={s.leadFooter}>
-                                            {/* Автор */}
-                                            <div className={s.leadAuthor}>
-                                                <span style={{ color: 'var(--c-ink-3)', flexShrink: 0 }}><IconUser /></span>
-                                                <span className={s.authorName}>{lead.authorName || 'Аноним'}</span>
-                                                {lead.authorUsername && (
-                                                    <span className={s.authorUsername}>@{lead.authorUsername}</span>
-                                                )}
-                                            </div>
-
-                                            {/* Действия */}
-                                            <div className={s.leadActions}>
-                                                {/* AI бейдж */}
-                                                {lead.aiValid !== null && lead.aiValid !== undefined && (
-                                                    <div
-                                                        className={s.aiBadge}
-                                                        style={{
-                                                            background: lead.aiValid ? 'rgba(16,185,129,.12)' : 'rgba(239,68,68,.12)',
-                                                            color:      lead.aiValid ? '#10b981' : '#ef4444',
-                                                        }}
-                                                    >
-                                                        <IconAI valid={lead.aiValid} />
-                                                        AI
+                                        {/* ─── Контекстные сообщения ─── */}
+                                        {isExpanded && contextMsgs.length > 0 && (
+                                            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--c-ink-3)', textTransform: 'uppercase', letterSpacing: '.3px' }}>
+                                                    Контекст
+                                                </div>
+                                                {contextMsgs.map((msg, i) => (
+                                                    <div key={i} style={{ fontSize: 12, color: 'var(--c-ink-3)', padding: '6px 10px', background: 'var(--c-bg)', borderRadius: 7, border: '1px solid var(--c-border)', lineHeight: 1.5 }}>
+                                                        {msg}
                                                     </div>
-                                                )}
-
-                                                {(isNew || isViewed) && (
-                                                    <button
-                                                        onClick={() => void setStatus(lead, 'REPLIED')}
-                                                        disabled={isUpdating}
-                                                        title="Отметить как отвечено"
-                                                        style={{
-                                                            display:     'flex',
-                                                            alignItems:  'center',
-                                                            gap:         4,
-                                                            padding:     '5px 12px',
-                                                            borderRadius: 100,
-                                                            border:      '1.5px solid rgba(16,185,129,.45)',
-                                                            background:  'rgba(16,185,129,.08)',
-                                                            color:       '#059669',
-                                                            fontSize:    12,
-                                                            fontWeight:  700,
-                                                            cursor:      'pointer',
-                                                            fontFamily:  'var(--font-body)',
-                                                            transition:  'all .15s',
-                                                        }}
-                                                        onMouseEnter={e => {
-                                                            const btn = e.currentTarget as HTMLButtonElement
-                                                            btn.style.background  = 'rgba(16,185,129,.18)'
-                                                            btn.style.borderColor = 'rgba(16,185,129,.7)'
-                                                        }}
-                                                        onMouseLeave={e => {
-                                                            const btn = e.currentTarget as HTMLButtonElement
-                                                            btn.style.background  = 'rgba(16,185,129,.08)'
-                                                            btn.style.borderColor = 'rgba(16,185,129,.45)'
-                                                        }}
-                                                    >
-                                                        <IconCheck />
-                                                        Ответил
-                                                    </button>
-                                                )}
-
-                                                {isReplied && (
-                                                    <button
-                                                        onClick={() => void setStatus(lead, 'VIEWED')}
-                                                        disabled={isUpdating}
-                                                        title="Вернуть в просмотренные"
-                                                        style={{
-                                                            display:     'flex',
-                                                            alignItems:  'center',
-                                                            gap:         4,
-                                                            padding:     '5px 12px',
-                                                            borderRadius: 100,
-                                                            border:      '1.5px solid var(--c-border)',
-                                                            background:  'none',
-                                                            color:       'var(--c-ink-3)',
-                                                            fontSize:    12,
-                                                            fontWeight:  600,
-                                                            cursor:      'pointer',
-                                                            fontFamily:  'var(--font-body)',
-                                                            transition:  'all .15s',
-                                                        }}
-                                                        onMouseEnter={e => {
-                                                            const btn = e.currentTarget as HTMLButtonElement
-                                                            btn.style.borderColor = '#d97706'
-                                                            btn.style.color       = '#d97706'
-                                                        }}
-                                                        onMouseLeave={e => {
-                                                            const btn = e.currentTarget as HTMLButtonElement
-                                                            btn.style.borderColor = 'var(--c-border)'
-                                                            btn.style.color       = 'var(--c-ink-3)'
-                                                        }}
-                                                    >
-                                                        <IconUndo />
-                                                        Вернуть
-                                                    </button>
-                                                )}
-
-                                                {!isArchived && (
-                                                    <button
-                                                        onClick={() => void setStatus(lead, 'IGNORED')}
-                                                        disabled={isUpdating}
-                                                        title="В архив"
-                                                        style={{
-                                                            display:     'flex',
-                                                            alignItems:  'center',
-                                                            gap:         4,
-                                                            padding:     '5px 12px',
-                                                            borderRadius: 100,
-                                                            border:      '1.5px solid var(--c-border)',
-                                                            background:  'none',
-                                                            color:       'var(--c-ink-3)',
-                                                            fontSize:    12,
-                                                            fontWeight:  600,
-                                                            cursor:      'pointer',
-                                                            fontFamily:  'var(--font-body)',
-                                                            transition:  'all .15s',
-                                                        }}
-                                                        onMouseEnter={e => {
-                                                            const btn = e.currentTarget as HTMLButtonElement
-                                                            btn.style.borderColor = '#6b7280'
-                                                            btn.style.color       = '#6b7280'
-                                                        }}
-                                                        onMouseLeave={e => {
-                                                            const btn = e.currentTarget as HTMLButtonElement
-                                                            btn.style.borderColor = 'var(--c-border)'
-                                                            btn.style.color       = 'var(--c-ink-3)'
-                                                        }}
-                                                    >
-                                                        <IconArchive />
-                                                        В архив
-                                                    </button>
-                                                )}
-
-                                                {isArchived && (
-                                                    <button
-                                                        onClick={() => void setStatus(lead, 'NEW')}
-                                                        disabled={isUpdating}
-                                                        title="Вернуть из архива"
-                                                        style={{
-                                                            display:     'flex',
-                                                            alignItems:  'center',
-                                                            gap:         4,
-                                                            padding:     '5px 12px',
-                                                            borderRadius: 100,
-                                                            border:      '1.5px solid var(--c-border)',
-                                                            background:  'none',
-                                                            color:       'var(--c-ink-3)',
-                                                            fontSize:    12,
-                                                            fontWeight:  600,
-                                                            cursor:      'pointer',
-                                                            fontFamily:  'var(--font-body)',
-                                                        }}
-                                                    >
-                                                        Восстановить
-                                                    </button>
-                                                )}
-
-                                                {lead.messageLink && (
-                                                    <a
-                                                        href={lead.messageLink}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className={s.openLink}
-                                                        style={{ display: 'flex', alignItems: 'center', gap: 4 }}
-                                                        onClick={() => handleOpen(lead)}
-                                                    >
-                                                        Открыть
-                                                        <IconExternalLink />
-                                                    </a>
-                                                )}
+                                                ))}
                                             </div>
+                                        )}
+
+                                        {/* ─── Футер: действия ─── */}
+                                        <div className={s.leadFooter}>
+                                            {!isArchived && !isReplied && (
+                                                <button
+                                                    onClick={() => void setStatus(lead, 'REPLIED')}
+                                                    disabled={isUpdating}
+                                                    title="Отмечено как отвеченное"
+                                                    style={{
+                                                        display:     'flex',
+                                                        alignItems:  'center',
+                                                        gap:         4,
+                                                        padding:     '5px 12px',
+                                                        borderRadius: 100,
+                                                        border:      '1.5px solid rgba(16,185,129,.4)',
+                                                        background:  'rgba(16,185,129,.08)',
+                                                        color:       '#059669',
+                                                        fontSize:    12,
+                                                        fontWeight:  600,
+                                                        cursor:      'pointer',
+                                                        fontFamily:  'var(--font-body)',
+                                                        transition:  'all .15s',
+                                                    }}
+                                                    onMouseEnter={e => {
+                                                        const btn = e.currentTarget as HTMLButtonElement
+                                                        btn.style.background  = 'rgba(16,185,129,.15)'
+                                                        btn.style.borderColor = 'rgba(16,185,129,.7)'
+                                                    }}
+                                                    onMouseLeave={e => {
+                                                        const btn = e.currentTarget as HTMLButtonElement
+                                                        btn.style.background  = 'rgba(16,185,129,.08)'
+                                                        btn.style.borderColor = 'rgba(16,185,129,.4)'
+                                                    }}
+                                                >
+                                                    <IconCheck />
+                                                    Отвечено
+                                                </button>
+                                            )}
+
+                                            {isReplied && (
+                                                <button
+                                                    onClick={() => void setStatus(lead, 'VIEWED')}
+                                                    disabled={isUpdating}
+                                                    title="Отменить отметку"
+                                                    style={{
+                                                        display:     'flex',
+                                                        alignItems:  'center',
+                                                        gap:         4,
+                                                        padding:     '5px 12px',
+                                                        borderRadius: 100,
+                                                        border:      '1.5px solid var(--c-border)',
+                                                        background:  'none',
+                                                        color:       'var(--c-ink-3)',
+                                                        fontSize:    12,
+                                                        fontWeight:  600,
+                                                        cursor:      'pointer',
+                                                        fontFamily:  'var(--font-body)',
+                                                    }}
+                                                >
+                                                    <IconUndo />
+                                                    Отменить
+                                                </button>
+                                            )}
+
+                                            {!isArchived && (
+                                                <button
+                                                    onClick={() => void setStatus(lead, 'IGNORED')}
+                                                    disabled={isUpdating}
+                                                    title="Переместить в архив"
+                                                    style={{
+                                                        display:     'flex',
+                                                        alignItems:  'center',
+                                                        gap:         4,
+                                                        padding:     '5px 12px',
+                                                        borderRadius: 100,
+                                                        border:      '1.5px solid var(--c-border)',
+                                                        background:  'none',
+                                                        color:       'var(--c-ink-3)',
+                                                        fontSize:    12,
+                                                        fontWeight:  600,
+                                                        cursor:      'pointer',
+                                                        fontFamily:  'var(--font-body)',
+                                                        transition:  'all .15s',
+                                                    }}
+                                                    onMouseEnter={e => {
+                                                        const btn = e.currentTarget as HTMLButtonElement
+                                                        btn.style.borderColor = '#6b7280'
+                                                        btn.style.color       = '#6b7280'
+                                                    }}
+                                                    onMouseLeave={e => {
+                                                        const btn = e.currentTarget as HTMLButtonElement
+                                                        btn.style.borderColor = 'var(--c-border)'
+                                                        btn.style.color       = 'var(--c-ink-3)'
+                                                    }}
+                                                >
+                                                    <IconArchive />
+                                                    В архив
+                                                </button>
+                                            )}
+
+                                            {isArchived && (
+                                                <button
+                                                    onClick={() => void setStatus(lead, 'NEW')}
+                                                    disabled={isUpdating}
+                                                    title="Вернуть из архива"
+                                                    style={{
+                                                        display:     'flex',
+                                                        alignItems:  'center',
+                                                        gap:         4,
+                                                        padding:     '5px 12px',
+                                                        borderRadius: 100,
+                                                        border:      '1.5px solid var(--c-border)',
+                                                        background:  'none',
+                                                        color:       'var(--c-ink-3)',
+                                                        fontSize:    12,
+                                                        fontWeight:  600,
+                                                        cursor:      'pointer',
+                                                        fontFamily:  'var(--font-body)',
+                                                    }}
+                                                >
+                                                    Восстановить
+                                                </button>
+                                            )}
+
+                                            {lead.messageLink && (
+                                                <a
+                                                    href={lead.messageLink}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className={s.openLink}
+                                                    style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                                                    onClick={() => handleOpen(lead)}
+                                                >
+                                                    Открыть
+                                                    <IconExternalLink />
+                                                </a>
+                                            )}
                                         </div>
 
-                                        {/* ─── Кнопки оценки — нижний левый угол карточки ─── */}
-                                        {/* ИСПРАВЛЕНИЕ: перенесены из правой колонки с borderLeft
-                                            в отдельную строку под footer-ом. Горизонтальные,
-                                            компактные, не ломают высоту и не создают лишних
-                                            вертикальных разделителей. */}
+                                        {/* ─── Кнопки оценки ─── */}
                                         <div style={{
                                             display:     'flex',
                                             alignItems:  'center',
@@ -1284,7 +1196,7 @@ export default function LeadsPage() {
                                                 disabled={locked}
                                                 onVote={handleVote}
                                             />
-                                            {/* Подсказка: раскрыть/свернуть карточку */}
+                                            {/* Кнопка раскрытия/сворачивания карточки */}
                                             <button
                                                 onClick={() => toggleExpand(lead.id)}
                                                 style={{

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Lang } from '../i18n/translations'
 import { authApi, referralApi, type ReferralStatsDto } from '../api/auth'
@@ -47,11 +47,13 @@ const txt = {
         linkNote:       'Если ссылка не открывается — проверьте настройки приватности чата',
         viewAll:        'Все лиды →',
         // Feedback / очередь
-        pendingTitle:   'Есть неоценённый лид',
-        pendingTitleMulti: (n: number) => `${n} лида ожидают вашей оценки`,
-        pendingDesc:    'Оцените его, чтобы следующий лид из очереди пришёл в Telegram.',
-        pendingDescMulti: 'Оценивайте лиды по порядку — это разблокирует очередь и улучшает AI-фильтрацию.',
-        pendingBtn:     'Оценить лид →',
+        pendingTitle:        'Есть неоценённый лид',
+        pendingTitleMulti:   (n: number) => `${n} лида ожидают оценки`,
+        pendingDesc:         'Оцените его, чтобы следующий лид из очереди пришёл в Telegram.',
+        pendingDescMulti:    'Оценивайте лиды по порядку — это разблокирует очередь и улучшает AI-фильтрацию.',
+        pendingBtn:          'Оценить лид →',
+        pendingLockedTitle:  'Оцените лид, чтобы увидеть следующий',
+        pendingLockedDesc:   'Система отправляет лиды последовательно — оцените текущий, чтобы разблокировать следующий.',
         // Referral
         refTitle:       'Реферальная программа',
         refSub:         'Приглашайте друзей — получайте бонусные дни',
@@ -104,11 +106,13 @@ const txt = {
         linkNote:       'If the link does not open — check the chat privacy settings',
         viewAll:        'All leads →',
         // Feedback / queue
-        pendingTitle:   'A lead awaits your rating',
-        pendingTitleMulti: (n: number) => `${n} leads are waiting for your rating`,
-        pendingDesc:    'Rate it so the next lead in the queue gets delivered to Telegram.',
-        pendingDescMulti: 'Rate leads in order — this unblocks the queue and improves AI filtering.',
-        pendingBtn:     'Rate lead →',
+        pendingTitle:        'A lead awaits your rating',
+        pendingTitleMulti:   (n: number) => `${n} leads are waiting for your rating`,
+        pendingDesc:         'Rate it so the next lead in the queue gets delivered to Telegram.',
+        pendingDescMulti:    'Rate leads in order — this unblocks the queue and improves AI filtering.',
+        pendingBtn:          'Rate lead →',
+        pendingLockedTitle:  'Rate this lead to see the next one',
+        pendingLockedDesc:   'The system delivers leads in order — rate the current one to unlock the next.',
         // Referral
         refTitle:       'Referral program',
         refSub:         'Invite friends — earn bonus days',
@@ -156,7 +160,6 @@ const IconExternal = () => (
     </svg>
 )
 
-// Иконка большого пальца вверх для карточки последнего лида на главной
 const IconThumbUp = () => (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/>
@@ -164,7 +167,6 @@ const IconThumbUp = () => (
     </svg>
 )
 
-// Иконка большого пальца вниз
 const IconThumbDown = () => (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z"/>
@@ -172,7 +174,6 @@ const IconThumbDown = () => (
     </svg>
 )
 
-// Иконка колокольчика
 const IconBell = () => (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
@@ -181,6 +182,9 @@ const IconBell = () => (
 )
 
 // ─── Блок «Ожидает оценки» на главной ────────────────────────────────────────
+//
+// queueSize здесь — количество неоценённых лидов среди загруженных (не TG-очередь).
+// Это корректнее: TG-очередь может быть пустой, но неоценённые лиды — есть.
 
 interface PendingFeedbackBlockProps {
     queueSize:    number
@@ -196,6 +200,12 @@ function PendingFeedbackBlock({
     const l = txt[lang]
     const [submitting, setSubmitting] = useState<'GOOD' | 'BAD' | null>(null)
     const [localRating, setLocalRating] = useState<'GOOD' | 'BAD' | null>(null)
+
+    // Сбрасываем локальный рейтинг при смене лида
+    useEffect(() => {
+        setLocalRating(null)
+        setSubmitting(null)
+    }, [pendingLead?.id])
 
     const handleVote = async (rating: 'GOOD' | 'BAD') => {
         if (submitting || !pendingLead) return
@@ -308,29 +318,21 @@ function PendingFeedbackBlock({
                             )}
                         </div>
                         <div style={{
-                            fontSize:   13,
-                            color:      'var(--c-ink-2)',
-                            lineHeight: 1.5,
-                            display:    '-webkit-box',
+                            fontSize:       13,
+                            color:          'var(--c-ink-2)',
+                            lineHeight:     1.5,
+                            overflow:       'hidden',
+                            display:        '-webkit-box',
                             WebkitLineClamp: 3,
-                            WebkitBoxOrient: 'vertical' as const,
-                            overflow:   'hidden',
-                            wordBreak:  'break-word',
-                            whiteSpace: 'pre-wrap',
+                            WebkitBoxOrient: 'vertical',
                         } as React.CSSProperties}>
                             {pendingLead.messageText}
                         </div>
                     </div>
 
-                    {/* Кнопки оценки прямо в блоке */}
+                    {/* Кнопки оценки / подтверждение */}
                     {localRating === null ? (
-                        <div style={{
-                            display:       'flex',
-                            flexDirection: 'column',
-                            gap:           6,
-                            flexShrink:    0,
-                            alignSelf:     'center',
-                        }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0, alignSelf: 'center' }}>
                             <button
                                 onClick={() => void handleVote('GOOD')}
                                 disabled={!!submitting}
@@ -401,19 +403,16 @@ function PendingFeedbackBlock({
                     ) : (
                         /* Подтверждение оценки */
                         <div style={{
-                            display:       'flex',
-                            flexDirection: 'column',
-                            alignItems:    'center',
-                            justifyContent:'center',
+                            display:        'flex',
+                            flexDirection:  'column',
+                            alignItems:     'center',
+                            justifyContent: 'center',
                             gap:            4,
-                            flexShrink:    0,
-                            alignSelf:     'center',
-                            padding:       '0 4px',
+                            flexShrink:     0,
+                            alignSelf:      'center',
+                            padding:        '0 4px',
                         }}>
-                            <span style={{
-                                fontSize:   18,
-                                lineHeight: 1,
-                            }}>
+                            <span style={{ fontSize: 18, lineHeight: 1 }}>
                                 {localRating === 'GOOD' ? '👍' : '👎'}
                             </span>
                             <span style={{ fontSize: 10, color: localRating === 'GOOD' ? '#059669' : '#dc2626', fontWeight: 700 }}>
@@ -470,6 +469,9 @@ function PendingFeedbackBlock({
 
 interface Props { lang: Lang }
 
+// Интервал фонового поллинга на главной — 30 секунд (синхронизация с ботом)
+const OVERVIEW_POLL_INTERVAL = 30_000
+
 export default function DashboardOverview({ lang }: Props) {
     const l = txt[lang]
     const { user, refreshUser } = useAuthContext()
@@ -487,36 +489,49 @@ export default function DashboardOverview({ lang }: Props) {
 
     const [lastLead, setLastLead] = useState<Lead | null>(null)
 
-    // Очередь неоценённых лидов
+    // Статус TG-очереди (для информации)
     const [feedbackStatus,  setFeedbackStatus]  = useState<FeedbackStatus | null>(null)
     // Первый неоценённый лид — показываем превью на главной
     const [pendingLead,     setPendingLead]     = useState<Lead | null>(null)
+    // Количество неоценённых лидов среди загруженных (не TG-очередь!)
+    const [unratedCount,    setUnratedCount]    = useState<number>(0)
+
+    const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
     // ── Referral ────────────────────────────────────────────────────────────
     const [referralStats, setReferralStats] = useState<ReferralStatsDto | null>(null)
     const [refCopied,     setRefCopied]     = useState(false)
 
-    useEffect(() => {
-        // Загружаем лиды и статус очереди одновременно
-        Promise.all([
-            leadsApi.list({ size: 20 }),
-            feedbackApi.getStatus(),
-        ])
-            .then(([p, fStatus]) => {
-                setTotalLeads(p.totalElements)
-                setNewLeads(p.newCount)
-                const activeLeads = p.content.filter(l => l.status !== 'IGNORED')
-                const firstActive = activeLeads[0] ?? null
-                setLastLead(firstActive)
-                setFeedbackStatus(fStatus)
+    // ─── Загрузка данных лидов и статуса очереди ────────────────────────────
+    const loadLeadData = useCallback(async () => {
+        try {
+            const [p, fStatus] = await Promise.all([
+                leadsApi.list({ size: 20 }),
+                feedbackApi.getStatus(),
+            ])
+            setTotalLeads(p.totalElements)
+            setNewLeads(p.newCount)
+            setFeedbackStatus(fStatus)
 
-                // Первый неоценённый активный лид (myRating === null).
-                // myRating — поле приходит с бэкенда и является source of truth:
-                // отражает оценки сделанные как с сайта, так и через Telegram-бота.
-                const firstUnrated = activeLeads.find(l => l.myRating === null) ?? null
-                setPendingLead(firstUnrated)
-            })
-            .catch(() => {})
+            const activeLeads = p.content.filter(l => l.status !== 'IGNORED')
+            setLastLead(activeLeads[0] ?? null)
+
+            // myRating — source of truth с бэкенда.
+            // Отражает оценки сделанные как с сайта, так и через Telegram-бота.
+            const firstUnrated = activeLeads.find(l => l.myRating === null) ?? null
+            setPendingLead(firstUnrated)
+
+            // Считаем реальное количество неоценённых (для заголовка блока)
+            const count = activeLeads.filter(l => l.myRating === null).length
+            setUnratedCount(count)
+        } catch {
+            // silent
+        }
+    }, [])
+
+    useEffect(() => {
+        // Первичная загрузка
+        void loadLeadData()
 
         chatsApi.list()
             .then(list => setChatsCount(list.filter(c => c.isActive).length))
@@ -529,7 +544,31 @@ export default function DashboardOverview({ lang }: Props) {
         referralApi.getStats()
             .then(setReferralStats)
             .catch(() => {})
-    }, [])
+    }, [loadLeadData])
+
+    // ─── Фоновый поллинг каждые 30 сек ──────────────────────────────────────
+    // Синхронизирует оценки сделанные через Telegram-бота без перезагрузки.
+    useEffect(() => {
+        pollTimerRef.current = setInterval(() => {
+            void loadLeadData()
+        }, OVERVIEW_POLL_INTERVAL)
+        return () => {
+            if (pollTimerRef.current) clearInterval(pollTimerRef.current)
+        }
+    }, [loadLeadData])
+
+    // ─── Обновление при возврате на вкладку ─────────────────────────────────
+    // Ключевое для кооперации бот ↔ фронт: оценил лид в боте — переключился
+    // обратно на сайт — данные обновятся сразу, не ждать 30 секунд.
+    useEffect(() => {
+        const onVisibilityChange = () => {
+            if (!document.hidden) {
+                void loadLeadData()
+            }
+        }
+        document.addEventListener('visibilitychange', onVisibilityChange)
+        return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+    }, [loadLeadData])
 
     if (!user) return null
 
@@ -581,36 +620,25 @@ export default function DashboardOverview({ lang }: Props) {
 
     /**
      * Оценка прямо с главной страницы.
-     * После успешной оценки:
-     * - Обновляем myRating у lastLead если это тот же лид
-     * - Показываем следующий неоценённый лид или скрываем блок
-     * - Обновляем счётчик очереди
+     *
+     * После успешной оценки перезагружаем данные лидов — это обновит pendingLead
+     * на следующий неоценённый лид (или скроет блок если все оценены).
+     * Так же корректно работает с оценками сделанными через бота.
      */
     const handleRateFromOverview = async (leadId: number, rating: 'GOOD' | 'BAD') => {
-        const res = await feedbackApi.submit(leadId, rating)
-
-        // Обновляем myRating у lastLead если оценили именно его
+        // Оптимистично обновляем lastLead если это тот же лид
         setLastLead(prev => {
             if (!prev || prev.id !== leadId) return prev
             return { ...prev, myRating: rating }
         })
 
-        // Убираем оценённый лид из блока ожидания
-        setPendingLead(prev => {
-            if (!prev || prev.id !== leadId) return prev
-            // Следующий неоценённый лид — нужна перезагрузка данных, но пока просто скрываем
-            return null
-        })
+        await feedbackApi.submit(leadId, rating)
 
-        if (res.queueEmpty) {
-            setFeedbackStatus({ queueSize: 0, hasQueue: false })
-        } else {
-            setFeedbackStatus(prev => {
-                if (!prev) return prev
-                const newSize = Math.max(0, prev.queueSize - 1)
-                return { queueSize: newSize, hasQueue: newSize > 0 }
-            })
-        }
+        // Перезагружаем список лидов чтобы:
+        // 1. Показать следующий неоценённый лид (или скрыть блок если все оценены)
+        // 2. Обновить счётчик unratedCount
+        // 3. Синхронизироваться с оценками из бота
+        await loadLeadData()
     }
 
     const fmt = (v: number | null) => v === null ? '—' : String(v)
@@ -620,12 +648,25 @@ export default function DashboardOverview({ lang }: Props) {
     const paidReferrals  = referralStats?.paidReferrals  ?? 0
 
     // Показываем блок «ожидает оценки» если:
-    // — сервер сообщает что есть TG-очередь (hasQueue)
-    // — ИЛИ нашли первый неоценённый лид в списке (pendingLead !== null)
-    const showPendingBlock = feedbackStatus?.hasQueue || pendingLead !== null
+    // — есть хотя бы один неоценённый лид среди загруженных
+    // — ИЛИ бэкенд сообщает что есть TG-очередь (лиды ждут отправки)
+    const showPendingBlock = unratedCount > 0 || (feedbackStatus?.hasQueue ?? false)
 
-    // Блок «последний лид»: если он не оценён — показываем как обычно (кнопки оценки в pending-блоке).
-    // Если последний лид оценён, но есть очередь — показываем заглушку «оцените чтобы увидеть».
+    // Количество для заголовка блока: реальные неоценённые (не TG-очередь)
+    // Если список ещё не загружен, используем queueSize из TG как fallback
+    const pendingBlockCount = unratedCount > 0
+        ? unratedCount
+        : (feedbackStatus?.queueSize ?? 1)
+
+    // Блок «последний лид» показывает замок если:
+    // Последний лид (firstActive) !== pendingLead И он ещё не оценён.
+    // Это значит пользователю нужно сначала оценить pendingLead, чтобы увидеть lastLead.
+    const lastLeadIsLocked = !!(
+        lastLead &&
+        pendingLead &&
+        pendingLead.id !== lastLead.id &&
+        lastLead.myRating === null
+    )
 
     return (
         <div className={s.page}>
@@ -657,7 +698,7 @@ export default function DashboardOverview({ lang }: Props) {
             {/* ─── Блок «Ожидает оценки» ─── */}
             {showPendingBlock && (
                 <PendingFeedbackBlock
-                    queueSize={feedbackStatus?.queueSize ?? 1}
+                    queueSize={pendingBlockCount}
                     pendingLead={pendingLead}
                     lang={lang}
                     onRate={handleRateFromOverview}
@@ -673,7 +714,7 @@ export default function DashboardOverview({ lang }: Props) {
                 </div>
 
                 {/* Кейс: последний лид заблокирован — нужно сначала оценить pendingLead */}
-                {lastLead && pendingLead && pendingLead.id !== lastLead.id && lastLead.myRating === null ? (
+                {lastLeadIsLocked ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: '20px 0', textAlign: 'center' }}>
                         <div style={{
                             width:          44,
@@ -691,10 +732,10 @@ export default function DashboardOverview({ lang }: Props) {
                             </svg>
                         </div>
                         <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--c-ink)' }}>
-                            Оцените предыдущий лид, чтобы его увидеть
+                            {l.pendingLockedTitle}
                         </span>
                         <span style={{ fontSize: 12, color: 'var(--c-ink-3)', maxWidth: 280, lineHeight: 1.5 }}>
-                            Система отправляет лиды последовательно — оцените текущий, чтобы разблокировать следующий
+                            {l.pendingLockedDesc}
                         </span>
                         <a href="/dashboard/leads"
                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '8px 16px', borderRadius: 9, background: 'rgba(245,158,11,.1)', border: '1.5px solid rgba(245,158,11,.4)', color: '#d97706', fontSize: 13, fontWeight: 700, textDecoration: 'none', marginTop: 4 }}>
@@ -713,7 +754,6 @@ export default function DashboardOverview({ lang }: Props) {
                                     {lastLead.authorUsername?.trim() && <span style={{ fontSize: 13, color: 'var(--c-accent)', fontWeight: 600 }}>@{lastLead.authorUsername}</span>}
                                     {!lastLead.authorName?.trim() && !lastLead.authorUsername?.trim() && <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--c-ink-3)' }}>Аноним</span>}
                                     {lastLead.status === 'NEW' && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 100, background: 'rgba(239,68,68,.12)', color: '#dc2626', letterSpacing: '.3px' }}>NEW</span>}
-                                    {/* Бейдж оценки — если лид оценён, показываем прямо здесь */}
                                     {lastLead.myRating === 'GOOD' && (
                                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 100, background: 'rgba(16,185,129,.12)', color: '#059669', border: '1px solid rgba(16,185,129,.3)' }}>
                                             <IconThumbUp /> Хороший
