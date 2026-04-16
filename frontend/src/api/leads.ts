@@ -28,12 +28,18 @@ export interface Lead {
     aiValid:         boolean | null
     aiReason:        string | null
     contextMessages: string[]
-    // --- НОВЫЕ ПОЛЯ ---
-    // "LIVE" — найден ботом в реальном времени, "MANUAL_EXPORT" — из ручного экспорта файла
+    // "LIVE" — найден ботом в реальном времени, "MANUAL_EXPORT" — из ручного экспорта
     source:          'LIVE' | 'MANUAL_EXPORT'
-    // Реальное время написания сообщения.
-    // Для LIVE = foundAt. Для MANUAL_EXPORT = реальная дата из файла экспорта.
+    // Реальное время написания сообщения
     messageDate:     string
+    // ── Feedback ──────────────────────────────────────────────────────────────
+    // Оценка пользователя (null — ещё не оценён)
+    // Требует, чтобы бэкенд возвращал это поле в DTO лида.
+    userRating:      'GOOD' | 'BAD' | null
+    // Время отправки уведомления в Telegram (null — ещё не отправлялось)
+    // Лиды с tgNotifiedAt != null и userRating == null считаются «блокирующими»:
+    // следующий лид в очереди не придёт, пока этот не оценён.
+    tgNotifiedAt:    string | null
 }
 
 export interface LeadPage {
@@ -78,6 +84,23 @@ export interface ImportResult {
     format:        string
 }
 
+// ── Feedback ──────────────────────────────────────────────────────────────────
+
+export interface FeedbackResponse {
+    leadId:     number
+    rating:     'GOOD' | 'BAD'
+    // true — очередь пуста (следующий лид уже доставлен или очередь изначально была пустой)
+    queueEmpty: boolean
+}
+
+export interface FeedbackStatus {
+    // Кол-во лидов в очереди ожидания (ждут пока пользователь оценит текущий)
+    queueSize: number
+    hasQueue:  boolean
+}
+
+// ── API ───────────────────────────────────────────────────────────────────────
+
 export const leadsApi = {
     list(params: { status?: string; page?: number; size?: number } = {}): Promise<LeadPage> {
         const q = new URLSearchParams()
@@ -97,6 +120,26 @@ export const leadsApi = {
     },
 }
 
+export const feedbackApi = {
+    /**
+     * Отправить оценку лида. Поддерживает upsert — повторный вызов меняет оценку.
+     * POST /api/v1/leads/{leadId}/feedback
+     */
+    submit(leadId: number, rating: 'GOOD' | 'BAD'): Promise<FeedbackResponse> {
+        return req(`/api/v1/leads/${leadId}/feedback`, {
+            method: 'POST',
+            body:   JSON.stringify({ rating }),
+        })
+    },
+    /**
+     * Статус очереди: сколько лидов ждут доставки в TG.
+     * GET /api/v1/leads/feedback-status
+     */
+    getStatus(): Promise<FeedbackStatus> {
+        return req('/api/v1/leads/feedback-status')
+    },
+}
+
 export const importApi = {
     uploadExport(file: File): Promise<ImportResult> {
         const formData = new FormData()
@@ -105,7 +148,6 @@ export const importApi = {
             method:      'POST',
             credentials: 'include',
             body:        formData,
-            // Content-Type не указываем — браузер сам выставит multipart/form-data с boundary
         }).then(async res => {
             if (!res.ok) {
                 const b = await res.json().catch(() => ({ error: `Ошибка ${res.status}` })) as { error?: string }
@@ -207,7 +249,6 @@ export interface AdminLeadDto {
     aiValid:        boolean | null
     aiReason:       string | null
     foundAt:        string
-    // --- НОВЫЕ ПОЛЯ ---
     source:         'LIVE' | 'MANUAL_EXPORT'
     messageDate:    string
 }
