@@ -11,12 +11,10 @@ data class LeadFeedbackRequest(
 )
 
 data class LeadFeedbackResponse(
-    val leadId:     Long,
-    val rating:     String,
+    val leadId:  Long,
+    val rating:  String,
     // true — следующий лид из очереди уже отправлен в TG (либо очередь пуста)
     val queueEmpty: Boolean,
-    // Актуальный статус лида после оценки (может измениться NEW → VIEWED автоматически)
-    val leadStatus: String,
 )
 
 /**
@@ -41,9 +39,6 @@ class LeadFeedbackController(
      *     method: 'POST',
      *     body: JSON.stringify({ rating: 'GOOD' }),
      *   })
-     *
-     * Response дополнительно содержит leadStatus — актуальный статус лида.
-     * Если лид был NEW, он автоматически становится VIEWED при оценке.
      */
     @PostMapping("/{leadId}/feedback")
     fun submitFeedback(
@@ -57,20 +52,18 @@ class LeadFeedbackController(
                 return ResponseEntity.badRequest().build()
             }
 
-        val result     = feedbackService.submitFeedback(user, leadId, rating)
+        val feedback   = feedbackService.submitFeedback(user, leadId, rating)
         val queueEmpty = pendingRepo.countByUserId(user.id) == 0L
 
         log.info(
-            "[FEEDBACK][WEB] userId=${user.id} leadId=#$leadId rating=$rating " +
-                    "leadStatus=${result.leadStatus} queueEmpty=$queueEmpty"
+            "[FEEDBACK][WEB] userId=${user.id} leadId=#$leadId rating=$rating queueEmpty=$queueEmpty"
         )
 
         return ResponseEntity.ok(
             LeadFeedbackResponse(
                 leadId     = leadId,
-                rating     = result.feedback.rating.name,
+                rating     = feedback.rating.name,
                 queueEmpty = queueEmpty,
-                leadStatus = result.leadStatus.name,
             )
         )
     }
@@ -78,8 +71,9 @@ class LeadFeedbackController(
     /**
      * GET /api/v1/leads/feedback-status
      *
-     * Возвращает размер очереди неоцененных лидов.
-     * Фронтенд использует это при загрузке страницы лидов и главной.
+     * Возвращает ID первого неоцененного лида (если есть).
+     * Фронтенд использует это при загрузке страницы лидов,
+     * чтобы определить — нужно ли показать "оцените предыдущий" блок.
      */
     @GetMapping("/feedback-status")
     fun getFeedbackStatus(

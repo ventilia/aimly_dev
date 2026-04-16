@@ -28,12 +28,12 @@ export interface Lead {
     aiValid:         boolean | null
     aiReason:        string | null
     contextMessages: string[]
+    // --- НОВЫЕ ПОЛЯ ---
+    // "LIVE" — найден ботом в реальном времени, "MANUAL_EXPORT" — из ручного экспорта файла
     source:          'LIVE' | 'MANUAL_EXPORT'
+    // Реальное время написания сообщения.
+    // Для LIVE = foundAt. Для MANUAL_EXPORT = реальная дата из файла экспорта.
     messageDate:     string
-    // Оценка текущего пользователя: null — не оценён, 'GOOD'/'BAD' — оценён.
-    // Заполняется сервером из БД — сохраняется между перезагрузками и
-    // синхронизируется с оценками, сделанными через Telegram-бота.
-    myRating:        'GOOD' | 'BAD' | null
 }
 
 export interface LeadPage {
@@ -78,19 +78,6 @@ export interface ImportResult {
     format:        string
 }
 
-export interface FeedbackStatus {
-    queueSize: number
-    hasQueue:  boolean
-}
-
-export interface FeedbackResponse {
-    leadId:     number
-    rating:     string
-    queueEmpty: boolean
-    // Актуальный статус лида — может измениться с NEW на VIEWED автоматически при оценке
-    leadStatus: string
-}
-
 export const leadsApi = {
     list(params: { status?: string; page?: number; size?: number } = {}): Promise<LeadPage> {
         const q = new URLSearchParams()
@@ -110,28 +97,6 @@ export const leadsApi = {
     },
 }
 
-export const feedbackApi = {
-    /**
-     * Получить статус очереди неоценённых лидов.
-     * Вызывается при загрузке страницы лидов и главной страницы.
-     */
-    getStatus(): Promise<FeedbackStatus> {
-        return req('/api/v1/leads/feedback-status')
-    },
-
-    /**
-     * Отправить или изменить оценку лида.
-     * rating: 'GOOD' | 'BAD'
-     * Возвращает leadStatus — актуальный статус лида (может измениться NEW→VIEWED).
-     */
-    submit(leadId: number, rating: 'GOOD' | 'BAD'): Promise<FeedbackResponse> {
-        return req(`/api/v1/leads/${leadId}/feedback`, {
-            method: 'POST',
-            body:   JSON.stringify({ rating }),
-        })
-    },
-}
-
 export const importApi = {
     uploadExport(file: File): Promise<ImportResult> {
         const formData = new FormData()
@@ -140,6 +105,7 @@ export const importApi = {
             method:      'POST',
             credentials: 'include',
             body:        formData,
+            // Content-Type не указываем — браузер сам выставит multipart/form-data с boundary
         }).then(async res => {
             if (!res.ok) {
                 const b = await res.json().catch(() => ({ error: `Ошибка ${res.status}` })) as { error?: string }
@@ -225,6 +191,7 @@ export const adminSubsApi = {
     },
 }
 
+
 export interface AdminLeadDto {
     id:             number
     userId:         number
@@ -240,6 +207,7 @@ export interface AdminLeadDto {
     aiValid:        boolean | null
     aiReason:       string | null
     foundAt:        string
+    // --- НОВЫЕ ПОЛЯ ---
     source:         'LIVE' | 'MANUAL_EXPORT'
     messageDate:    string
 }

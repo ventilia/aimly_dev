@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Lang } from '../i18n/translations'
 import { authApi, referralApi, type ReferralStatsDto } from '../api/auth'
-import { leadsApi, chatsApi, keywordsApi, feedbackApi, type Lead, type FeedbackStatus } from '../api/leads'
+import { leadsApi, chatsApi, keywordsApi } from '../api/leads'
 import { useAuthContext } from '../context/AuthContext'
 import s from './DashboardOverview.module.css'
 
@@ -46,12 +46,6 @@ const txt = {
         linkUnavailable:'Ссылка недоступна',
         linkNote:       'Если ссылка не открывается — проверьте настройки приватности чата',
         viewAll:        'Все лиды →',
-        // Feedback / очередь
-        pendingTitle:   'Есть неоценённый лид',
-        pendingTitleMulti: (n: number) => `${n} лида ожидают вашей оценки`,
-        pendingDesc:    'Оцените его, чтобы следующий лид из очереди пришёл в Telegram.',
-        pendingDescMulti: 'Оценивайте лиды по порядку — это разблокирует очередь и улучшает AI-фильтрацию.',
-        pendingBtn:     'Оценить лид →',
         // Referral
         refTitle:       'Реферальная программа',
         refSub:         'Приглашайте друзей — получайте бонусные дни',
@@ -103,12 +97,6 @@ const txt = {
         linkUnavailable:'Link unavailable',
         linkNote:       'If the link does not open — check the chat privacy settings',
         viewAll:        'All leads →',
-        // Feedback / queue
-        pendingTitle:   'A lead awaits your rating',
-        pendingTitleMulti: (n: number) => `${n} leads are waiting for your rating`,
-        pendingDesc:    'Rate it so the next lead in the queue gets delivered to Telegram.',
-        pendingDescMulti: 'Rate leads in order — this unblocks the queue and improves AI filtering.',
-        pendingBtn:     'Rate lead →',
         // Referral
         refTitle:       'Referral program',
         refSub:         'Invite friends — earn bonus days',
@@ -156,318 +144,6 @@ const IconExternal = () => (
     </svg>
 )
 
-// Иконка большого пальца вверх для карточки последнего лида на главной
-const IconThumbUp = () => (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/>
-        <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
-    </svg>
-)
-
-// Иконка большого пальца вниз
-const IconThumbDown = () => (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z"/>
-        <path d="M17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/>
-    </svg>
-)
-
-// Иконка колокольчика
-const IconBell = () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-        <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-    </svg>
-)
-
-// ─── Блок «Ожидает оценки» на главной ────────────────────────────────────────
-
-interface PendingFeedbackBlockProps {
-    queueSize:    number
-    pendingLead:  Lead | null
-    lang:         Lang
-    onRate:       (leadId: number, rating: 'GOOD' | 'BAD') => Promise<void>
-    onNavigate:   () => void
-}
-
-function PendingFeedbackBlock({
-                                  queueSize, pendingLead, lang, onRate, onNavigate,
-                              }: PendingFeedbackBlockProps) {
-    const l = txt[lang]
-    const [submitting, setSubmitting] = useState<'GOOD' | 'BAD' | null>(null)
-    const [localRating, setLocalRating] = useState<'GOOD' | 'BAD' | null>(null)
-
-    const handleVote = async (rating: 'GOOD' | 'BAD') => {
-        if (submitting || !pendingLead) return
-        setSubmitting(rating)
-        setLocalRating(rating)
-        try {
-            await onRate(pendingLead.id, rating)
-        } catch {
-            setLocalRating(null)
-        } finally {
-            setSubmitting(null)
-        }
-    }
-
-    const isMultiple = queueSize > 1
-    const title = isMultiple
-        ? (l.pendingTitleMulti as (n: number) => string)(queueSize)
-        : l.pendingTitle
-    const desc = isMultiple ? l.pendingDescMulti : l.pendingDesc
-
-    return (
-        <div style={{
-            background:    'var(--c-surface)',
-            border:        '1.5px solid rgba(245,158,11,.4)',
-            borderRadius:  16,
-            padding:       '20px 22px',
-            display:       'flex',
-            flexDirection: 'column',
-            gap:           14,
-        }}>
-            {/* Заголовок */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{
-                    width:          34,
-                    height:         34,
-                    borderRadius:   '50%',
-                    background:     'rgba(245,158,11,.12)',
-                    color:          '#d97706',
-                    display:        'flex',
-                    alignItems:     'center',
-                    justifyContent: 'center',
-                    flexShrink:     0,
-                }}>
-                    <IconBell />
-                </span>
-                <div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--c-ink)', lineHeight: 1.3 }}>
-                        {title}
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--c-ink-3)', marginTop: 2, lineHeight: 1.4 }}>
-                        {desc}
-                    </div>
-                </div>
-            </div>
-
-            {/* Превью лида (если загружен) */}
-            {pendingLead && (
-                <div style={{
-                    background:   'var(--c-bg)',
-                    border:       '1px solid var(--c-border)',
-                    borderRadius: 10,
-                    padding:      '12px 14px',
-                    display:      'flex',
-                    gap:          12,
-                    alignItems:   'flex-start',
-                }}>
-                    {/* Аватар */}
-                    <div style={{
-                        width:          36,
-                        height:         36,
-                        borderRadius:   '50%',
-                        background:     'var(--c-accent-soft)',
-                        color:          'var(--c-accent)',
-                        display:        'flex',
-                        alignItems:     'center',
-                        justifyContent: 'center',
-                        fontWeight:     700,
-                        fontSize:       15,
-                        flexShrink:     0,
-                        fontFamily:     'var(--font-head)',
-                    }}>
-                        {(pendingLead.authorName || pendingLead.chatTitle || '?').charAt(0).toUpperCase()}
-                    </div>
-
-                    {/* Контент */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--c-ink)' }}>
-                                {pendingLead.authorName || 'Аноним'}
-                            </span>
-                            {pendingLead.authorUsername && (
-                                <span style={{ fontSize: 12, color: 'var(--c-accent)', fontWeight: 600 }}>
-                                    @{pendingLead.authorUsername}
-                                </span>
-                            )}
-                            <span style={{ fontSize: 11, color: 'var(--c-ink-3)' }}>
-                                {pendingLead.chatTitle}
-                            </span>
-                            {pendingLead.matchedKeyword && (
-                                <span style={{
-                                    fontSize:     10,
-                                    fontWeight:   700,
-                                    background:   'var(--c-accent-soft)',
-                                    color:        'var(--c-accent)',
-                                    padding:      '1px 7px',
-                                    borderRadius: 100,
-                                }}>
-                                    {pendingLead.matchedKeyword}
-                                </span>
-                            )}
-                        </div>
-                        <div style={{
-                            fontSize:   13,
-                            color:      'var(--c-ink-2)',
-                            lineHeight: 1.5,
-                            display:    '-webkit-box',
-                            WebkitLineClamp: 3,
-                            WebkitBoxOrient: 'vertical' as const,
-                            overflow:   'hidden',
-                            wordBreak:  'break-word',
-                            whiteSpace: 'pre-wrap',
-                        } as React.CSSProperties}>
-                            {pendingLead.messageText}
-                        </div>
-                    </div>
-
-                    {/* Кнопки оценки прямо в блоке */}
-                    {localRating === null ? (
-                        <div style={{
-                            display:       'flex',
-                            flexDirection: 'column',
-                            gap:           6,
-                            flexShrink:    0,
-                            alignSelf:     'center',
-                        }}>
-                            <button
-                                onClick={() => void handleVote('GOOD')}
-                                disabled={!!submitting}
-                                title="Хороший лид"
-                                style={{
-                                    width:          36,
-                                    height:         36,
-                                    borderRadius:   9,
-                                    border:         '1.5px solid rgba(16,185,129,.4)',
-                                    background:     'rgba(16,185,129,.08)',
-                                    color:          '#059669',
-                                    cursor:         submitting ? 'not-allowed' : 'pointer',
-                                    display:        'flex',
-                                    alignItems:     'center',
-                                    justifyContent: 'center',
-                                    transition:     'all .15s',
-                                    opacity:        submitting === 'BAD' ? 0.4 : 1,
-                                }}
-                                onMouseEnter={e => {
-                                    if (!submitting) {
-                                        const b = e.currentTarget as HTMLButtonElement
-                                        b.style.background  = 'rgba(16,185,129,.18)'
-                                        b.style.borderColor = 'rgba(16,185,129,.7)'
-                                    }
-                                }}
-                                onMouseLeave={e => {
-                                    const b = e.currentTarget as HTMLButtonElement
-                                    b.style.background  = 'rgba(16,185,129,.08)'
-                                    b.style.borderColor = 'rgba(16,185,129,.4)'
-                                }}
-                            >
-                                <IconThumbUp />
-                            </button>
-                            <button
-                                onClick={() => void handleVote('BAD')}
-                                disabled={!!submitting}
-                                title="Нерелевантный лид"
-                                style={{
-                                    width:          36,
-                                    height:         36,
-                                    borderRadius:   9,
-                                    border:         '1.5px solid rgba(239,68,68,.35)',
-                                    background:     'rgba(239,68,68,.07)',
-                                    color:          '#dc2626',
-                                    cursor:         submitting ? 'not-allowed' : 'pointer',
-                                    display:        'flex',
-                                    alignItems:     'center',
-                                    justifyContent: 'center',
-                                    transition:     'all .15s',
-                                    opacity:        submitting === 'GOOD' ? 0.4 : 1,
-                                }}
-                                onMouseEnter={e => {
-                                    if (!submitting) {
-                                        const b = e.currentTarget as HTMLButtonElement
-                                        b.style.background  = 'rgba(239,68,68,.15)'
-                                        b.style.borderColor = 'rgba(239,68,68,.6)'
-                                    }
-                                }}
-                                onMouseLeave={e => {
-                                    const b = e.currentTarget as HTMLButtonElement
-                                    b.style.background  = 'rgba(239,68,68,.07)'
-                                    b.style.borderColor = 'rgba(239,68,68,.35)'
-                                }}
-                            >
-                                <IconThumbDown />
-                            </button>
-                        </div>
-                    ) : (
-                        /* Подтверждение оценки */
-                        <div style={{
-                            display:       'flex',
-                            flexDirection: 'column',
-                            alignItems:    'center',
-                            justifyContent:'center',
-                            gap:            4,
-                            flexShrink:    0,
-                            alignSelf:     'center',
-                            padding:       '0 4px',
-                        }}>
-                            <span style={{
-                                fontSize:   18,
-                                lineHeight: 1,
-                            }}>
-                                {localRating === 'GOOD' ? '👍' : '👎'}
-                            </span>
-                            <span style={{ fontSize: 10, color: localRating === 'GOOD' ? '#059669' : '#dc2626', fontWeight: 700 }}>
-                                {localRating === 'GOOD' ? 'Хороший' : 'Мусор'}
-                            </span>
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* Кнопка перейти к лидам */}
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                <button
-                    onClick={onNavigate}
-                    style={{
-                        display:     'inline-flex',
-                        alignItems:  'center',
-                        gap:         6,
-                        padding:     '9px 18px',
-                        borderRadius: 9,
-                        border:      '1.5px solid rgba(245,158,11,.5)',
-                        background:  'rgba(245,158,11,.1)',
-                        color:       '#d97706',
-                        fontSize:    13,
-                        fontWeight:  700,
-                        cursor:      'pointer',
-                        fontFamily:  'var(--font-body)',
-                        transition:  'all .15s',
-                    }}
-                    onMouseEnter={e => {
-                        const b = e.currentTarget as HTMLButtonElement
-                        b.style.background  = 'rgba(245,158,11,.2)'
-                        b.style.borderColor = 'rgba(245,158,11,.8)'
-                    }}
-                    onMouseLeave={e => {
-                        const b = e.currentTarget as HTMLButtonElement
-                        b.style.background  = 'rgba(245,158,11,.1)'
-                        b.style.borderColor = 'rgba(245,158,11,.5)'
-                    }}
-                >
-                    {l.pendingBtn}
-                </button>
-                {queueSize > 1 && (
-                    <span style={{ fontSize: 12, color: 'var(--c-ink-3)' }}>
-                        + ещё {queueSize - 1} в очереди
-                    </span>
-                )}
-            </div>
-        </div>
-    )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-
 interface Props { lang: Lang }
 
 export default function DashboardOverview({ lang }: Props) {
@@ -485,45 +161,21 @@ export default function DashboardOverview({ lang }: Props) {
     const [chatsCount,    setChatsCount]    = useState<number | null>(null)
     const [keywordsCount, setKeywordsCount] = useState<number | null>(null)
 
-    // Последний активный лид (не IGNORED) — показываем в блоке «Последний лид»
-    const [lastLead,    setLastLead]    = useState<Lead | null>(null)
-    // Список активных лидов — нужен для поиска первого неоценённого
-    const [activeLeads, setActiveLeads] = useState<Lead[]>([])
-
-    // Очередь неоценённых лидов
-    const [feedbackStatus, setFeedbackStatus] = useState<FeedbackStatus | null>(null)
-    // Первый неоценённый лид — показываем превью на главной
-    const [pendingLead,    setPendingLead]    = useState<Lead | null>(null)
+    const [lastLead, setLastLead] = useState<import('../api/leads').Lead | null>(null)
 
     // ── Referral ────────────────────────────────────────────────────────────
     const [referralStats, setReferralStats] = useState<ReferralStatsDto | null>(null)
     const [refCopied,     setRefCopied]     = useState(false)
 
-    // Ref для тихого фонового обновления
-    const silentRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const isSilentRefreshing = useRef(false)
-
-    // ─── Основная загрузка ───────────────────────────────────────────────────
-    const loadLeadsData = useCallback(async () => {
-        const [p, fStatus] = await Promise.all([
-            leadsApi.list({ size: 20 }),
-            feedbackApi.getStatus(),
-        ])
-        const active = p.content.filter(l => l.status !== 'IGNORED')
-        setTotalLeads(p.totalElements)
-        setNewLeads(p.newCount)
-        setActiveLeads(active)
-        setLastLead(active[0] ?? null)
-        setFeedbackStatus(fStatus)
-
-        // Первый неоценённый активный лид (myRating === null).
-        // myRating — source of truth с бэкенда: учитывает оценки как с сайта, так и из TG-бота.
-        const firstUnrated = active.find(l => l.myRating === null) ?? null
-        setPendingLead(firstUnrated)
-    }, [])
-
     useEffect(() => {
-        loadLeadsData().catch(() => {})
+        leadsApi.list({ size: 20 })
+            .then(p => {
+                setTotalLeads(p.totalElements)
+                setNewLeads(p.newCount)
+                const firstActive = p.content.find(l => l.status !== 'IGNORED') ?? null
+                setLastLead(firstActive)
+            })
+            .catch(() => {})
 
         chatsApi.list()
             .then(list => setChatsCount(list.filter(c => c.isActive).length))
@@ -536,59 +188,7 @@ export default function DashboardOverview({ lang }: Props) {
         referralApi.getStats()
             .then(setReferralStats)
             .catch(() => {})
-    }, [loadLeadsData])
-
-    // ─── Тихое обновление при возвращении на вкладку ────────────────────────
-    // Заменяет поллинг. Срабатывает только когда пользователь возвращается к
-    // открытой вкладке — синхронизирует оценки сделанные через Telegram-бота.
-    const silentRefresh = useCallback(async () => {
-        if (isSilentRefreshing.current) return
-        isSilentRefreshing.current = true
-        try {
-            const [p, fStatus] = await Promise.all([
-                leadsApi.list({ size: 20 }),
-                feedbackApi.getStatus(),
-            ])
-            const active = p.content.filter(l => l.status !== 'IGNORED')
-            setTotalLeads(p.totalElements)
-            setNewLeads(p.newCount)
-            setActiveLeads(active)
-            setLastLead(prev => {
-                if (!prev) return active[0] ?? null
-                // Обновляем myRating последнего лида если он остался тем же
-                const fresh = active.find(l => l.id === prev.id)
-                return fresh ?? active[0] ?? null
-            })
-            setFeedbackStatus(fStatus)
-            const firstUnrated = active.find(l => l.myRating === null) ?? null
-            setPendingLead(firstUnrated)
-        } catch {
-            // Тихий — ошибки не показываем
-        } finally {
-            isSilentRefreshing.current = false
-        }
     }, [])
-
-    useEffect(() => {
-        const handleVisibilityChange = () => {
-            if (!document.hidden) {
-                if (silentRefreshTimer.current) clearTimeout(silentRefreshTimer.current)
-                silentRefreshTimer.current = setTimeout(() => void silentRefresh(), 300)
-            }
-        }
-        const handleFocus = () => {
-            if (silentRefreshTimer.current) clearTimeout(silentRefreshTimer.current)
-            silentRefreshTimer.current = setTimeout(() => void silentRefresh(), 300)
-        }
-
-        document.addEventListener('visibilitychange', handleVisibilityChange)
-        window.addEventListener('focus', handleFocus)
-        return () => {
-            document.removeEventListener('visibilitychange', handleVisibilityChange)
-            window.removeEventListener('focus', handleFocus)
-            if (silentRefreshTimer.current) clearTimeout(silentRefreshTimer.current)
-        }
-    }, [silentRefresh])
 
     if (!user) return null
 
@@ -634,64 +234,7 @@ export default function DashboardOverview({ lang }: Props) {
             setRefCopied(true)
             setTimeout(() => setRefCopied(false), 2500)
         } catch {
-            // браузер заблокировал
-        }
-    }
-
-    /**
-     * Оценка прямо с главной страницы.
-     *
-     * После успешной оценки перезагружаем список лидов с сервера чтобы:
-     * 1. Получить свежий myRating у оценённого лида (синхронизация с ботом)
-     * 2. Найти следующий неоценённый лид для блока ожидания
-     * 3. Обновить lastLead если он изменился
-     *
-     * Это идентично тому, как бэкенд работает в связке с ботом:
-     * после оценки → deliverNextFromQueue → следующий лид доставляется в TG.
-     * Фронт должен показать актуальное состояние очереди.
-     */
-    const handleRateFromOverview = async (leadId: number, rating: 'GOOD' | 'BAD') => {
-        const res = await feedbackApi.submit(leadId, rating)
-
-        // Оптимистично обновляем myRating у оценённого лида
-        setLastLead(prev => {
-            if (!prev || prev.id !== leadId) return prev
-            return { ...prev, myRating: rating, status: res.leadStatus as Lead['status'] }
-        })
-        setActiveLeads(prev => prev.map(l =>
-            l.id === leadId ? { ...l, myRating: rating, status: res.leadStatus as Lead['status'] } : l
-        ))
-
-        // Обновляем счётчик очереди
-        if (res.queueEmpty) {
-            setFeedbackStatus({ queueSize: 0, hasQueue: false })
-        } else {
-            setFeedbackStatus(prev => {
-                if (!prev) return prev
-                const newSize = Math.max(0, prev.queueSize - 1)
-                return { queueSize: newSize, hasQueue: newSize > 0 }
-            })
-        }
-
-        // Перезагружаем список лидов чтобы найти следующий неоценённый.
-        // Делаем это асинхронно — UI уже обновлён оптимистично.
-        try {
-            const fresh = await leadsApi.list({ size: 20 })
-            const freshActive = fresh.content.filter(l => l.status !== 'IGNORED')
-            setActiveLeads(freshActive)
-            setLastLead(freshActive[0] ?? null)
-            setTotalLeads(fresh.totalElements)
-            setNewLeads(fresh.newCount)
-            const nextUnrated = freshActive.find(l => l.myRating === null) ?? null
-            setPendingLead(nextUnrated)
-        } catch {
-            // Если не удалось перезагрузить — убираем оценённый лид из pending вручную
-            setPendingLead(prev => {
-                if (!prev || prev.id !== leadId) return prev
-                // Ищем следующий неоценённый в локальном кэше
-                const nextUnrated = activeLeads.find(l => l.id !== leadId && l.myRating === null) ?? null
-                return nextUnrated
-            })
+            // браузер заблокировал — ничего не делаем, ссылку можно выделить вручную
         }
     }
 
@@ -700,23 +243,6 @@ export default function DashboardOverview({ lang }: Props) {
     const bonusDays      = referralStats?.bonusDaysLeft  ?? 0
     const totalReferrals = referralStats?.totalReferrals ?? 0
     const paidReferrals  = referralStats?.paidReferrals  ?? 0
-
-    // Блок «ожидает оценки» показываем если есть хоть один неоценённый лид.
-    // pendingLead — первый неоценённый с бэкенда (source of truth, учитывает TG-бота).
-    const showPendingBlock = pendingLead !== null
-
-    // Блок «последний лид»:
-    // — Показываем lastLead если он оценён (или нет неоценённых перед ним)
-    // — Если lastLead НЕ оценён И есть pendingLead который отличается от lastLead —
-    //   значит lastLead заблокирован (бэкенд его ещё не доставил в TG), показываем заглушку.
-    //
-    // Логика: pendingLead — это лид, который БЫЛ последним отправленным и ждёт оценки.
-    // lastLead — новый лид, который ещё не отправлен в TG (в очереди).
-    // Пользователь должен оценить pendingLead чтобы увидеть lastLead.
-    const lastLeadIsBlocked = lastLead !== null
-        && pendingLead !== null
-        && pendingLead.id !== lastLead.id
-        && lastLead.myRating === null
 
     return (
         <div className={s.page}>
@@ -745,17 +271,6 @@ export default function DashboardOverview({ lang }: Props) {
                 </div>
             </div>
 
-            {/* ─── Блок «Ожидает оценки» ─── */}
-            {showPendingBlock && (
-                <PendingFeedbackBlock
-                    queueSize={feedbackStatus?.queueSize ?? 1}
-                    pendingLead={pendingLead}
-                    lang={lang}
-                    onRate={handleRateFromOverview}
-                    onNavigate={() => navigate('/dashboard/leads')}
-                />
-            )}
-
             {/* ─── Последний лид ─── */}
             <div style={{ background: 'var(--c-surface)', border: '1.5px solid var(--c-border)', borderRadius: 16, padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
@@ -763,36 +278,7 @@ export default function DashboardOverview({ lang }: Props) {
                     <a href="/dashboard/leads" style={{ fontSize: 13, color: 'var(--c-accent)', fontWeight: 600, textDecoration: 'none' }}>{l.viewAll}</a>
                 </div>
 
-                {/* Кейс: новый лид заблокирован — нужно сначала оценить pendingLead */}
-                {lastLeadIsBlocked ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: '20px 0', textAlign: 'center' }}>
-                        <div style={{
-                            width:          44,
-                            height:         44,
-                            borderRadius:   '50%',
-                            background:     'rgba(245,158,11,.1)',
-                            color:          '#d97706',
-                            display:        'flex',
-                            alignItems:     'center',
-                            justifyContent: 'center',
-                        }}>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                            </svg>
-                        </div>
-                        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--c-ink)' }}>
-                            Оцените предыдущий лид, чтобы его увидеть
-                        </span>
-                        <span style={{ fontSize: 12, color: 'var(--c-ink-3)', maxWidth: 280, lineHeight: 1.5 }}>
-                            Система отправляет лиды последовательно — оцените текущий, чтобы разблокировать следующий
-                        </span>
-                        <a href="/dashboard/leads"
-                           style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '8px 16px', borderRadius: 9, background: 'rgba(245,158,11,.1)', border: '1.5px solid rgba(245,158,11,.4)', color: '#d97706', fontSize: 13, fontWeight: 700, textDecoration: 'none', marginTop: 4 }}>
-                            Перейти к оценке →
-                        </a>
-                    </div>
-                ) : lastLead ? (
+                {lastLead ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
                             <div style={{ width: 44, height: 44, borderRadius: '50%', flexShrink: 0, background: 'var(--c-accent-soft)', color: 'var(--c-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 18, fontFamily: 'var(--font-head)' }}>
@@ -804,17 +290,6 @@ export default function DashboardOverview({ lang }: Props) {
                                     {lastLead.authorUsername?.trim() && <span style={{ fontSize: 13, color: 'var(--c-accent)', fontWeight: 600 }}>@{lastLead.authorUsername}</span>}
                                     {!lastLead.authorName?.trim() && !lastLead.authorUsername?.trim() && <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--c-ink-3)' }}>Аноним</span>}
                                     {lastLead.status === 'NEW' && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 100, background: 'rgba(239,68,68,.12)', color: '#dc2626', letterSpacing: '.3px' }}>NEW</span>}
-                                    {/* Бейдж оценки — если лид оценён, показываем прямо здесь */}
-                                    {lastLead.myRating === 'GOOD' && (
-                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 100, background: 'rgba(16,185,129,.12)', color: '#059669', border: '1px solid rgba(16,185,129,.3)' }}>
-                                            <IconThumbUp /> Хороший
-                                        </span>
-                                    )}
-                                    {lastLead.myRating === 'BAD' && (
-                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 100, background: 'rgba(239,68,68,.1)', color: '#dc2626', border: '1px solid rgba(239,68,68,.3)' }}>
-                                            <IconThumbDown /> Нерелевантный
-                                        </span>
-                                    )}
                                 </div>
                                 <div style={{ fontSize: 12, color: 'var(--c-ink-3)' }}>
                                     {(lastLead.chatTitle || lastLead.chatLink) && <span style={{ marginRight: 10 }}>{lastLead.chatTitle || lastLead.chatLink}</span>}

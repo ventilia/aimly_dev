@@ -27,15 +27,6 @@ data class FeedbackExample(
     val matchedKeyword: String,
 )
 
-/**
- * Результат сохранения оценки — возвращается из submitFeedback.
- * Содержит саму оценку и актуальный статус лида (может измениться с NEW на VIEWED).
- */
-data class FeedbackResult(
-    val feedback:   LeadFeedback,
-    val leadStatus: LeadStatus,
-)
-
 @Service
 class LeadFeedbackService(
     private val feedbackRepo: LeadFeedbackRepository,
@@ -63,6 +54,9 @@ class LeadFeedbackService(
     /**
      * Вызывается после AI-решения (или сразу, если AI выключен).
      * Либо отправляет уведомление немедленно, либо ставит в очередь + шлёт nudge.
+     *
+     * Задача 2: при отправке nudge теперь передаём текст и ключевое слово
+     * неоцененного лида, чтобы пользователь видел о чём идёт речь.
      */
     @Transactional
     fun deliverOrEnqueue(user: User, payload: LeadNotificationPayload) {
@@ -79,7 +73,7 @@ class LeadFeedbackService(
 
             val queueSize = pendingRepo.countByUserId(user.id)
 
-            // Получаем данные неоцененного лида для превью в nudge
+            // Получаем данные неоцененного лида для превью в nudge (задача 2)
             val pendingLead      = leadRepo.findById(pendingLeadId).orElse(null)
             val messagePreview   = pendingLead?.messageText?.take(150) ?: ""
             val matchedKeyword   = pendingLead?.matchedKeyword ?: ""
@@ -109,11 +103,9 @@ class LeadFeedbackService(
      * Сохраняет оценку и доставляет следующий лид из очереди.
      * Вызывается из bot-callback и REST API.
      * Поддерживает upsert — повторная оценка меняет предыдущую.
-     *
-     * Автоматически помечает лид прочитанным (NEW → VIEWED) при первой оценке.
      */
     @Transactional
-    fun submitFeedback(user: User, leadId: Long, rating: LeadRating): FeedbackResult {
+    fun submitFeedback(user: User, leadId: Long, rating: LeadRating): LeadFeedback {
         val lead = leadRepo.findById(leadId).orElseThrow {
             NoSuchElementException("лид #$leadId не найден")
         }
@@ -135,14 +127,6 @@ class LeadFeedbackService(
             )
         )
 
-        // Автоматически помечаем лид прочитанным при оценке.
-        // Это логично: раз пользователь оценил лид — он его видел.
-        if (lead.status == LeadStatus.NEW) {
-            lead.status = LeadStatus.VIEWED
-            leadRepo.save(lead)
-            log.info("[FEEDBACK] Лид автоматически прочитан: userId=${user.id} leadId=#$leadId")
-        }
-
         log.info(
             "[FEEDBACK] Оценка${if (isChange) " изменена" else ""}: " +
                     "userId=${user.id} leadId=#$leadId rating=$rating keyword=\"${lead.matchedKeyword}\""
@@ -153,7 +137,7 @@ class LeadFeedbackService(
             deliverNextFromQueue(user)
         }
 
-        return FeedbackResult(feedback = feedback, leadStatus = lead.status)
+        return feedback
     }
 
     // ─── Примеры для AI-промпта ──────────────────────────────────────────────
@@ -165,11 +149,13 @@ class LeadFeedbackService(
      *   1. До MAX_BY_KEYWORD (4) оценок по тому же ключевому слову — самые релевантные.
      *   2. До MAX_GENERAL (6) последних общих оценок — для контекста.
      *
-     * Возвращает пустой список если накопленных оценок меньше MIN_FEEDBACKS_FOR_PROMPT (3).
+     * Возвращает пустой список если накопленных оценок меньше MIN_FEEDBACKS_FOR_PROMPT (3) —
+     * до этого порога данных недостаточно для значимой персонализации.
      */
     fun getFeedbackExamplesForPrompt(userId: Long, keyword: String): List<FeedbackExample> {
         if (feedbackRepo.countByUserId(userId) < MIN_FEEDBACKS_FOR_PROMPT) return emptyList()
 
+        // Сначала — оценки по тому же ключевому слову (наиболее релевантны для промпта)
         val byKeyword = feedbackRepo.findRecentByUserIdAndKeyword(
             userId   = userId,
             keyword  = keyword,
@@ -179,6 +165,7 @@ class LeadFeedbackService(
         val byKeywordIds = byKeyword.map { it.id }.toSet()
         val remaining    = MAX_GENERAL - (byKeyword.size - MAX_BY_KEYWORD).coerceAtLeast(0)
 
+        // Дополняем общими последними оценками, исключая уже добавленные
         val general = if (remaining > 0) {
             feedbackRepo
                 .findRecentByUserId(userId, PageRequest.of(0, remaining + byKeyword.size))
@@ -213,6 +200,8 @@ class LeadFeedbackService(
 
     /**
      * Отправляет лид в Telegram и помечает tgNotifiedAt только при успехе.
+     * Если Telegram-вызов упал — tgNotifiedAt не проставляется,
+     * чтобы лид не застрял в «неоцененных» вечно.
      */
     private fun sendAndMarkNotified(user: User, tgId: Long, payload: LeadNotificationPayload) {
         runCatching {
