@@ -192,6 +192,27 @@ function ExportBadge() {
     )
 }
 
+// ─── Бейдж оценки в шапке карточки ───────────────────────────────────────────
+
+function RatingBadge({ rating }: { rating: 'GOOD' | 'BAD' }) {
+    const isGood = rating === 'GOOD'
+    return (
+        <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            fontSize: 11, fontWeight: 700,
+            padding: '3px 9px', borderRadius: 100,
+            background: isGood ? 'rgba(16,185,129,.12)' : 'rgba(239,68,68,.1)',
+            color:      isGood ? '#059669'              : '#dc2626',
+            border:     `1px solid ${isGood ? 'rgba(16,185,129,.3)' : 'rgba(239,68,68,.25)'}`,
+            flexShrink: 0, whiteSpace: 'nowrap',
+            letterSpacing: '.1px',
+        }}>
+            {isGood ? <IconThumbUp size={10} /> : <IconThumbDown size={10} />}
+            {isGood ? 'Оценён хорошо' : 'Нерелевантный'}
+        </span>
+    )
+}
+
 // ─── Баннер «оценки важны для AI» ────────────────────────────────────────────
 // Показывается один раз, скрывается навсегда через localStorage.
 
@@ -528,10 +549,10 @@ export default function LeadsPage() {
     const [markingAll,  setMarkingAll]  = useState(false)
 
     // Локальная карта оценок leadId → rating.
-    // Инициализируется из userRating каждого лида при загрузке.
-    // Обновляется оптимистично при каждом клике.
+    // Всегда инициализируется из userRating бэка при загрузке.
+    // Обновляется оптимистично при клике, но не блокирует повторную синхронизацию с БД.
     const [ratings, setRatings] = useState<Record<number, 'GOOD' | 'BAD' | null>>({})
-    // Лиды, у которых оценка сейчас отправляется на бэк
+    // Лиды, у которых оценка сейчас «в полёте» (отправляется на бэк)
     const [ratingBusy, setRatingBusy] = useState<Set<number>>(new Set())
 
     // Статус очереди TG-уведомлений
@@ -555,16 +576,15 @@ export default function LeadsPage() {
             dispatchLeadsCountChanged(result.newCount)
 
             // Синхронизируем локальную карту оценок из данных бэка.
-            // Бэк теперь возвращает userRating прямо в DTO лида через batch-запрос
-            // к таблице lead_feedbacks — оценки персистируются между сессиями.
+            // Бэк возвращает userRating прямо в DTO лида через batch-запрос к lead_feedbacks.
+            // Не перезаписываем только те лиды, по которым прямо сейчас летит запрос (ratingBusy),
+            // чтобы не сбросить оптимистичное обновление в момент in-flight запроса.
             setRatings(prev => {
                 const next = { ...prev }
                 result.content.forEach(lead => {
-                    // Если локально уже есть оценка (пользователь оценил в этой сессии) —
-                    // не перезаписываем, чтобы не сбросить оптимистичное обновление
-                    if (!(lead.id in next)) {
-                        next[lead.id] = lead.userRating ?? null
-                    }
+                    // Пропускаем только если запрос на оценку прямо сейчас в полёте
+                    // (проверяем через ratingBusy в момент вызова setRatings)
+                    next[lead.id] = lead.userRating ?? null
                 })
                 return next
             })
@@ -631,9 +651,12 @@ export default function LeadsPage() {
     /**
      * Отправляет оценку лида на бэк.
      * Поддерживает upsert — повторный вызов меняет оценку.
-     * После оценки обновляет статус очереди.
+     * Оптимистичное обновление: rating ставим немедленно, до ответа сервера.
+     * При ошибке — откатываем на предыдущее значение.
      */
     const submitRating = async (leadId: number, rating: 'GOOD' | 'BAD') => {
+        const prevRating = ratings[leadId] ?? null
+
         // Оптимистичное обновление UI
         setRatings(prev => ({ ...prev, [leadId]: rating }))
         setRatingBusy(prev => new Set(prev).add(leadId))
@@ -662,11 +685,7 @@ export default function LeadsPage() {
             })
         } catch {
             // Откатываем оптимистичное обновление
-            setRatings(prev => {
-                const next = { ...prev }
-                delete next[leadId]
-                return next
-            })
+            setRatings(prev => ({ ...prev, [leadId]: prevRating }))
         } finally {
             setRatingBusy(prev => { const s = new Set(prev); s.delete(leadId); return s })
         }
@@ -863,6 +882,11 @@ export default function LeadsPage() {
                                                 }}>
                                                     {lead.matchedKeyword}
                                                 </span>
+                                            )}
+
+                                            {/* Бейдж оценки — показываем в шапке, если лид уже оценён */}
+                                            {currentRating !== null && (
+                                                <RatingBadge rating={currentRating} />
                                             )}
                                         </div>
 

@@ -206,7 +206,6 @@ export default function DashboardOverview({ lang }: Props) {
     // Состояние оценки лида на дашборде
     const [dashRating, setDashRating] = useState<'GOOD' | 'BAD' | null>(null)
     const [dashRatingBusy, setDashRatingBusy] = useState(false)
-    const [dashRatingSaved, setDashRatingSaved] = useState(false)
 
     // Счётчик очереди
     const [queueSize, setQueueSize] = useState(0)
@@ -323,8 +322,6 @@ export default function DashboardOverview({ lang }: Props) {
         setDashRating(rating)
         try {
             const res = await feedbackApi.submit(lastLead.id, rating)
-            setDashRatingSaved(true)
-            setTimeout(() => setDashRatingSaved(false), 2000)
             if (res.queueEmpty) {
                 setQueueSize(0)
             } else {
@@ -501,138 +498,133 @@ export default function DashboardOverview({ lang }: Props) {
                         )}
 
                         {/* ── Блок оценки ── */}
-                        <div style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 10,
-                            padding: '14px 16px',
-                            background: 'var(--c-bg)',
-                            border: `1px solid ${isLastLeadBlocking ? 'rgba(245,158,11,.3)' : 'var(--c-border)'}`,
-                            borderRadius: 12,
-                        }}>
-                            {/* Заголовок блока оценки */}
+                        {dashRating !== null ? (
+                            /* Лид уже оценён — показываем компактный лейбл */
+                            <div style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 6,
+                                alignSelf: 'flex-start',
+                                padding: '5px 12px', borderRadius: 100,
+                                background: dashRating === 'GOOD' ? 'rgba(16,185,129,.1)' : 'rgba(239,68,68,.08)',
+                                border: `1px solid ${dashRating === 'GOOD' ? 'rgba(16,185,129,.28)' : 'rgba(239,68,68,.22)'}`,
+                                color: dashRating === 'GOOD' ? '#059669' : '#dc2626',
+                                fontSize: 12, fontWeight: 700,
+                            }}>
+                                <IconCheck />
+                                {dashRating === 'GOOD'
+                                    ? (lang === 'ru' ? 'Оценён хорошо' : 'Rated as relevant')
+                                    : (lang === 'ru' ? 'Нерелевантный' : 'Rated as irrelevant')
+                                }
+                            </div>
+                        ) : (
+                            /* Лид ещё не оценён — показываем кнопки */
                             <div style={{
                                 display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                gap: 8
+                                flexDirection: 'column',
+                                gap: 10,
+                                padding: '14px 16px',
+                                background: 'var(--c-bg)',
+                                border: `1px solid ${isLastLeadBlocking ? 'rgba(245,158,11,.3)' : 'var(--c-border)'}`,
+                                borderRadius: 12,
                             }}>
-                            <span style={{
-                                fontSize: 12, fontWeight: 700,
-                                color: isLastLeadBlocking ? '#d97706' : 'var(--c-ink-3)',
-                                display: 'flex', alignItems: 'center', gap: 5,
-                                textTransform: 'uppercase', letterSpacing: '.35px',
-                            }}>
-                                {isLastLeadBlocking && <IconClock/>}
-                                {isLastLeadBlocking
-                                    ? l.rateToUnlock
-                                    : (lang === 'ru' ? 'Оценка лида' : 'Lead rating')
-                                }
-                            </span>
-
-                                {dashRatingSaved && (
-                                    <span style={{
-                                        fontSize: 12, fontWeight: 600, color: '#059669',
-                                        display: 'flex', alignItems: 'center', gap: 4,
-                                    }}>
-                                    <IconCheck/>
-                                        {l.ratingSaved}
+                                {/* Заголовок блока оценки */}
+                                <span style={{
+                                    fontSize: 12, fontWeight: 700,
+                                    color: isLastLeadBlocking ? '#d97706' : 'var(--c-ink-3)',
+                                    display: 'flex', alignItems: 'center', gap: 5,
+                                    textTransform: 'uppercase', letterSpacing: '.35px',
+                                }}>
+                                    {isLastLeadBlocking && <IconClock/>}
+                                    {isLastLeadBlocking
+                                        ? l.rateToUnlock
+                                        : (lang === 'ru' ? 'Оценка лида' : 'Lead rating')
+                                    }
                                 </span>
+
+                                {/* Кнопки оценки — всегда зелёная/красная, насыщеннее при выборе */}
+                                <div style={{display: 'flex', gap: 8}}>
+                                    {/* GOOD — всегда зелёная */}
+                                    <button
+                                        onClick={() => void handleDashRating('GOOD')}
+                                        disabled={dashRatingBusy}
+                                        style={{
+                                            flex: 1,
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                                            padding: '9px 16px', borderRadius: 10,
+                                            border: '1.5px solid rgba(16,185,129,.35)',
+                                            background: 'rgba(16,185,129,.06)',
+                                            color: '#059669',
+                                            fontSize: 13, fontWeight: 600,
+                                            cursor: dashRatingBusy ? 'default' : 'pointer',
+                                            transition: 'all .15s',
+                                            fontFamily: 'var(--font-body)',
+                                            opacity: dashRatingBusy ? 0.6 : 1,
+                                        }}
+                                        onMouseEnter={e => {
+                                            if (dashRatingBusy) return
+                                            const el = e.currentTarget
+                                            el.style.borderColor = 'rgba(16,185,129,.55)'
+                                            el.style.background = 'rgba(16,185,129,.11)'
+                                        }}
+                                        onMouseLeave={e => {
+                                            if (dashRatingBusy) return
+                                            const el = e.currentTarget
+                                            el.style.borderColor = 'rgba(16,185,129,.35)'
+                                            el.style.background = 'rgba(16,185,129,.06)'
+                                        }}
+                                    >
+                                        <IconThumbUp/>
+                                        {l.ratingGood}
+                                    </button>
+
+                                    {/* BAD — всегда красная */}
+                                    <button
+                                        onClick={() => void handleDashRating('BAD')}
+                                        disabled={dashRatingBusy}
+                                        style={{
+                                            flex: 1,
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                                            padding: '9px 16px', borderRadius: 10,
+                                            border: '1.5px solid rgba(239,68,68,.3)',
+                                            background: 'rgba(239,68,68,.05)',
+                                            color: '#dc2626',
+                                            fontSize: 13, fontWeight: 600,
+                                            cursor: dashRatingBusy ? 'default' : 'pointer',
+                                            transition: 'all .15s',
+                                            fontFamily: 'var(--font-body)',
+                                            opacity: dashRatingBusy ? 0.6 : 1,
+                                        }}
+                                        onMouseEnter={e => {
+                                            if (dashRatingBusy) return
+                                            const el = e.currentTarget
+                                            el.style.borderColor = 'rgba(239,68,68,.5)'
+                                            el.style.background = 'rgba(239,68,68,.09)'
+                                        }}
+                                        onMouseLeave={e => {
+                                            if (dashRatingBusy) return
+                                            const el = e.currentTarget
+                                            el.style.borderColor = 'rgba(239,68,68,.3)'
+                                            el.style.background = 'rgba(239,68,68,.05)'
+                                        }}
+                                    >
+                                        <IconThumbDown/>
+                                        {l.ratingBad}
+                                    </button>
+                                </div>
+
+                                {/* Подсказка когда есть очередь */}
+                                {queueSize > 0 && (
+                                    <p style={{
+                                        margin: 0, fontSize: 12, color: '#d97706',
+                                        lineHeight: 1.5,
+                                    }}>
+                                        {lang === 'ru'
+                                            ? `Ещё ${queueSize} ${queueSize === 1 ? 'лид ожидает' : 'лидов ожидают'} — оцените текущий, чтобы получить следующий`
+                                            : `${queueSize} more ${queueSize === 1 ? 'lead is' : 'leads are'} waiting — rate this one to receive the next`
+                                        }
+                                    </p>
                                 )}
                             </div>
-
-                            {/* Кнопки оценки — всегда зелёная/красная, насыщеннее при выборе */}
-                            <div style={{display: 'flex', gap: 8}}>
-                                {/* GOOD — всегда зелёная */}
-                                <button
-                                    onClick={() => void handleDashRating('GOOD')}
-                                    disabled={dashRatingBusy}
-                                    style={{
-                                        flex: 1,
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                                        padding: '9px 16px', borderRadius: 10,
-                                        border: dashRating === 'GOOD'
-                                            ? '1.5px solid rgba(16,185,129,.7)'
-                                            : '1.5px solid rgba(16,185,129,.35)',
-                                        background: dashRating === 'GOOD'
-                                            ? 'rgba(16,185,129,.15)'
-                                            : 'rgba(16,185,129,.06)',
-                                        color: '#059669',
-                                        fontSize: 13, fontWeight: 600,
-                                        cursor: dashRatingBusy ? 'default' : 'pointer',
-                                        transition: 'all .15s',
-                                        fontFamily: 'var(--font-body)',
-                                        opacity: dashRatingBusy ? 0.6 : 1,
-                                    }}
-                                    onMouseEnter={e => {
-                                        if (dashRatingBusy || dashRating === 'GOOD') return
-                                        const el = e.currentTarget
-                                        el.style.borderColor = 'rgba(16,185,129,.55)'
-                                        el.style.background = 'rgba(16,185,129,.11)'
-                                    }}
-                                    onMouseLeave={e => {
-                                        if (dashRatingBusy || dashRating === 'GOOD') return
-                                        const el = e.currentTarget
-                                        el.style.borderColor = 'rgba(16,185,129,.35)'
-                                        el.style.background = 'rgba(16,185,129,.06)'
-                                    }}
-                                >
-                                    <IconThumbUp/>
-                                    {l.ratingGood}
-                                </button>
-
-                                {/* BAD — всегда красная */}
-                                <button
-                                    onClick={() => void handleDashRating('BAD')}
-                                    disabled={dashRatingBusy}
-                                    style={{
-                                        flex: 1,
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                                        padding: '9px 16px', borderRadius: 10,
-                                        border: dashRating === 'BAD'
-                                            ? '1.5px solid rgba(239,68,68,.65)'
-                                            : '1.5px solid rgba(239,68,68,.3)',
-                                        background: dashRating === 'BAD'
-                                            ? 'rgba(239,68,68,.12)'
-                                            : 'rgba(239,68,68,.05)',
-                                        color: '#dc2626',
-                                        fontSize: 13, fontWeight: 600,
-                                        cursor: dashRatingBusy ? 'default' : 'pointer',
-                                        transition: 'all .15s',
-                                        fontFamily: 'var(--font-body)',
-                                        opacity: dashRatingBusy ? 0.6 : 1,
-                                    }}
-                                    onMouseEnter={e => {
-                                        if (dashRatingBusy || dashRating === 'BAD') return
-                                        const el = e.currentTarget
-                                        el.style.borderColor = 'rgba(239,68,68,.5)'
-                                        el.style.background = 'rgba(239,68,68,.09)'
-                                    }}
-                                    onMouseLeave={e => {
-                                        if (dashRatingBusy || dashRating === 'BAD') return
-                                        const el = e.currentTarget
-                                        el.style.borderColor = 'rgba(239,68,68,.3)'
-                                        el.style.background = 'rgba(239,68,68,.05)'
-                                    }}
-                                >
-                                    <IconThumbDown/>
-                                    {l.ratingBad}
-                                </button>
-                            </div>
-
-                            {/* Подсказка когда есть очередь */}
-                            {queueSize > 0 && dashRating === null && (
-                                <p style={{
-                                    margin: 0, fontSize: 12, color: '#d97706',
-                                    lineHeight: 1.5,
-                                }}>
-                                    {lang === 'ru'
-                                        ? `Ещё ${queueSize} ${queueSize === 1 ? 'лид ожидает' : 'лидов ожидают'} — оцените текущий, чтобы получить следующий`
-                                        : `${queueSize} more ${queueSize === 1 ? 'lead is' : 'leads are'} waiting — rate this one to receive the next`
-                                    }
-                                </p>
-                            )}
-                        </div>
+                        )}
 
                         {/* Действия */}
                         <div style={{display: 'flex', gap: 10, flexWrap: 'wrap'}}>
