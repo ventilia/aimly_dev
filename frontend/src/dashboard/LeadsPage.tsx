@@ -856,15 +856,20 @@ export default function LeadsPage() {
                                 onClick={() => void handleMarkAllRead()}
                                 disabled={markingAll}
                                 style={{
-                                    display: 'inline-flex', alignItems: 'center', gap: 5,
-                                    fontSize: 13, fontWeight: 600,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 5,
+                                    padding: '4px 12px',
+                                    borderRadius: 100,
+                                    border: '1.5px solid var(--c-border)',
+                                    background: 'none',
                                     color: 'var(--c-ink-2)',
-                                    background: 'none', border: 'none',
+                                    fontSize: 12,
+                                    fontWeight: 600,
                                     cursor: markingAll ? 'default' : 'pointer',
-                                    fontFamily: 'var(--font-body)', padding: 0,
+                                    fontFamily: 'var(--font-body)',
+                                    transition: 'all .15s',
                                     opacity: markingAll ? 0.5 : 1,
-                                    transition: 'color .15s',
-                                    flexShrink: 0,
                                 }}
                                 onMouseEnter={e => {
                                     if (!markingAll) (e.currentTarget as HTMLButtonElement).style.color = 'var(--c-accent)'
