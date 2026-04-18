@@ -11,41 +11,9 @@ import java.time.LocalDateTime
 
 enum class LeadRating { GOOD, BAD }
 
-/**
- * Сущность оценки сохраняется только для обратной совместимости БД.
- * Основная логика работает через поля [Lead.userRating] и [Lead.ratingAt].
- * Новых записей сюда не пишем.
- */
-@Entity
-@Table(
-    name = "lead_feedbacks",
-    uniqueConstraints = [UniqueConstraint(columnNames = ["user_id", "lead_id"])]
-)
-class LeadFeedback(
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
-    val id: Long = 0,
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
-    val user: User,
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "lead_id", nullable = false)
-    val lead: Lead,
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 10)
-    val rating: LeadRating,
-
-    @Column(name = "message_snippet", nullable = false, columnDefinition = "TEXT")
-    val messageSnippet: String = "",
-
-    @Column(name = "matched_keyword", nullable = false, length = 200)
-    val matchedKeyword: String = "",
-
-    @Column(name = "created_at", nullable = false, updatable = false)
-    val createdAt: LocalDateTime = LocalDateTime.now(),
-)
+// Сущность LeadFeedback и LeadFeedbackRepository удалены — оценки теперь хранятся
+// прямо в полях Lead.userRating и Lead.ratingAt (см. V30__lead_rating_inline.sql).
+// Таблица lead_feedbacks удалена миграцией V31__drop_lead_feedbacks.sql.
 
 @Entity
 @Table(
@@ -82,28 +50,15 @@ class PendingLeadNotification(
     @Column(name = "author_name", nullable = false, length = 200)
     val authorName: String = "",
 
-    /**
-     * ID Telegram-сообщения с nudge (напоминанием оценить лид).
-     * Сохраняется при отправке [AimlyBot.notifyLeadPending].
-     * При оценке лида (из бота или с фронта) это сообщение удаляется через deleteMessage.
-     * NULL — nudge не был отправлен или уже удалён.
-     */
+    // nudge_tg_message_id хранится здесь для удобства поиска,
+    // но дублируется и в leads.nudge_tg_message_id — чтобы удалить сообщение
+    // даже если pending-запись уже была удалена.
     @Column(name = "nudge_tg_message_id")
     var nudgeTgMessageId: Int? = null,
 
     @Column(name = "created_at", nullable = false, updatable = false)
     val createdAt: LocalDateTime = LocalDateTime.now(),
 )
-
-@Repository
-interface LeadFeedbackRepository : JpaRepository<LeadFeedback, Long> {
-
-    fun existsByUserIdAndLeadId(userId: Long, leadId: Long): Boolean
-
-    fun findByUserIdAndLeadId(userId: Long, leadId: Long): LeadFeedback?
-
-    fun countByUserId(userId: Long): Long
-}
 
 @Repository
 interface PendingLeadNotificationRepository : JpaRepository<PendingLeadNotification, Long> {
@@ -124,9 +79,5 @@ interface PendingLeadNotificationRepository : JpaRepository<PendingLeadNotificat
 
     fun deleteByUserIdAndLeadId(userId: Long, leadId: Long)
 
-    /**
-     * Находит запись очереди для конкретного лида пользователя.
-     * Используется при оценке — чтобы достать nudgeTgMessageId и удалить Telegram-сообщение.
-     */
     fun findByUserIdAndLeadId(userId: Long, leadId: Long): PendingLeadNotification?
 }

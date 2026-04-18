@@ -7,13 +7,13 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.*
 
 data class LeadFeedbackRequest(
-    val rating: String,  // "GOOD" or "BAD"
+    val rating: String,  // "GOOD" или "BAD"
 )
 
 data class LeadFeedbackResponse(
     val leadId:     Long,
     val rating:     String,
-    // true — следующий лид из очереди уже отправлен в TG (либо очередь пуста)
+    // true — очередь пуста (следующий лид уже доставлен или очередь изначально пустая)
     val queueEmpty: Boolean,
 )
 
@@ -72,7 +72,7 @@ class LeadFeedbackController(
      *
      * Возвращает размер очереди ожидающих уведомлений.
      * Фронтенд использует это при загрузке страницы лидов,
-     * чтобы определить — нужно ли показать "оцените предыдущий" блок.
+     * чтобы определить — нужно ли показать «оцените предыдущий» блок.
      */
     @GetMapping("/feedback-status")
     fun getFeedbackStatus(

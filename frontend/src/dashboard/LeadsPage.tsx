@@ -63,6 +63,17 @@ function formatLeadDate(iso: string): string {
     }
 }
 
+function parseLeadDate(iso: string): number {
+    try {
+        const normalized = iso.includes('T') && !iso.endsWith('Z') && !iso.includes('+') && !iso.includes('-', 10)
+            ? iso + 'Z'
+            : iso
+        return new Date(normalized).getTime()
+    } catch {
+        return 0
+    }
+}
+
 // ─── SVG-иконки ───────────────────────────────────────────────────────────────
 
 const IconUser = () => (
@@ -169,9 +180,8 @@ const IconTelegram = () => (
     </svg>
 )
 
-// Иконка замка для заблокированных лидов
 const IconLock = () => (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
         <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
     </svg>
@@ -497,6 +507,11 @@ function BlockingBanner({ lead, queueSize, onRate, onScrollTo }: BlockingBannerP
 }
 
 // ─── Оверлей заблокированного лида ───────────────────────────────────────────
+//
+// Дизайн: полупрозрачная подложка поверх карточки.
+// Намеренно НЕ используем backdropFilter/blur — он создаёт артефакты
+// на тёмных темах и конфликтует с CSS-переменными цветов.
+// Вместо этого — тонированный фон с border-top для визуального разделения.
 
 interface LockedOverlayProps {
     onScrollToBlocking: () => void
@@ -505,35 +520,50 @@ interface LockedOverlayProps {
 function LockedOverlay({ onScrollToBlocking }: LockedOverlayProps) {
     return (
         <div
-            style={{
-                position:       'absolute',
-                inset:          0,
-                borderRadius:   'inherit',
-                background:     'rgba(var(--c-bg-rgb, 15,15,20), 0.72)',
-                backdropFilter: 'blur(4px)',
-                WebkitBackdropFilter: 'blur(4px)',
-                display:        'flex',
-                flexDirection:  'column',
-                alignItems:     'center',
-                justifyContent: 'center',
-                gap:            10,
-                zIndex:         2,
-                cursor:         'pointer',
-                borderTop:      '1px solid rgba(107,114,128,.15)',
-            }}
             onClick={onScrollToBlocking}
             title="Оцените предыдущий лид, чтобы разблокировать"
+            style={{
+                position:        'absolute',
+                inset:           0,
+                borderRadius:    'inherit',
+                // Используем полупрозрачный фон без blur — корректно работает
+                // во всех темах без артефактов CSS-переменных в rgba()
+                background:      'color-mix(in srgb, var(--c-surface) 88%, transparent)',
+                display:         'flex',
+                flexDirection:   'column',
+                alignItems:      'center',
+                justifyContent:  'center',
+                gap:             8,
+                zIndex:          2,
+                cursor:          'pointer',
+                // Тонкая полоска сверху для визуального отделения от карточки выше
+                borderTop:       '1px solid var(--c-border)',
+                transition:      'background .15s',
+            }}
+            onMouseEnter={e => {
+                (e.currentTarget as HTMLDivElement).style.background =
+                    'color-mix(in srgb, var(--c-surface) 80%, transparent)'
+            }}
+            onMouseLeave={e => {
+                (e.currentTarget as HTMLDivElement).style.background =
+                    'color-mix(in srgb, var(--c-surface) 88%, transparent)'
+            }}
         >
-            <span style={{ color: 'var(--c-ink-3)', opacity: 0.55 }}>
+            <span style={{
+                width: 32, height: 32, borderRadius: '50%',
+                background: 'var(--c-bg)',
+                border: '1px solid var(--c-border)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: 'var(--c-ink-3)',
+            }}>
                 <IconLock />
             </span>
             <span style={{
                 fontSize:   12,
                 fontWeight: 600,
-                color:      'var(--c-ink-3)',
-                opacity:    0.75,
+                color:      'var(--c-ink-2)',
                 textAlign:  'center',
-                maxWidth:   220,
+                maxWidth:   200,
                 lineHeight: 1.45,
             }}>
                 Оцените предыдущий лид
@@ -558,6 +588,12 @@ export default function LeadsPage() {
     const [ratingBusy, setRatingBusy] = useState<Set<number>>(new Set())
     const [queueSize,  setQueueSize]  = useState(0)
 
+    // blockingLeadId — ID лида, которому нужна оценка прямо сейчас.
+    // Хранится отдельно, чтобы не пересчитывать из списка после оценки
+    // (иначе при смене userRating лид перестаёт быть «блокирующим» и
+    //  все заблокированные лиды одновременно теряют оверлей).
+    const [blockingLeadId, setBlockingLeadId] = useState<number | null>(null)
+
     const cardRefs = useRef<Record<number, HTMLDivElement | null>>({})
 
     // ── Загрузка ──────────────────────────────────────────────────────────────
@@ -573,6 +609,16 @@ export default function LeadsPage() {
             setData(result)
             setQueueSize(status.queueSize)
             dispatchLeadsCountChanged(result.newCount)
+
+            // Определяем блокирующий лид из свежих данных сервера.
+            // Блокирующий — последний по tgNotifiedAt среди тех, что были отправлены
+            // в TG, но ещё не оценены. «Последний» — потому что он самый свежий
+            // и именно его бот просит оценить в nudge-сообщении.
+            const blocking = result.content
+                .filter(l => l.tgNotifiedAt !== null && l.userRating === null)
+                .sort((a, b) => parseLeadDate(b.tgNotifiedAt!) - parseLeadDate(a.tgNotifiedAt!))
+                .at(0) ?? null
+            setBlockingLeadId(blocking?.id ?? null)
 
             setRatings(prev => {
                 const next = { ...prev }
@@ -632,16 +678,16 @@ export default function LeadsPage() {
 
     const submitRating = async (leadId: number, rating: 'GOOD' | 'BAD') => {
         const prevRating = ratings[leadId] ?? null
+        const isFirstRating = prevRating === null
+
+        // Оптимистично обновляем локальное состояние рейтинга
         setRatings(prev => ({ ...prev, [leadId]: rating }))
         setRatingBusy(prev => new Set(prev).add(leadId))
+
         try {
             const res = await feedbackApi.submit(leadId, rating)
-            if (res.queueEmpty) {
-                setQueueSize(0)
-            } else {
-                const status = await feedbackApi.getStatus()
-                setQueueSize(status.queueSize)
-            }
+
+            // Обновляем данные лида в списке
             setData(prev => {
                 if (!prev) return prev
                 return {
@@ -653,7 +699,49 @@ export default function LeadsPage() {
                     }),
                 }
             })
+
+            // Обновляем очередь только при первичной оценке блокирующего лида.
+            // При повторной оценке (смена GOOD→BAD) очередь не двигается —
+            // бэкенд это тоже проверяет (isChange).
+            if (isFirstRating && leadId === blockingLeadId) {
+                if (res.queueEmpty) {
+                    setQueueSize(0)
+                    // Очередь опустела — блокирующего лида больше нет
+                    setBlockingLeadId(null)
+                } else {
+                    // В очереди ещё есть лиды — один из них стал новым блокирующим.
+                    // Перезагружаем список чтобы узнать какой именно (бэкенд уже
+                    // доставил его в TG и проставил tgNotifiedAt).
+                    const [freshPage, freshStatus] = await Promise.all([
+                        leadsApi.list({ status: filter || undefined, page, size: 20 }),
+                        feedbackApi.getStatus(),
+                    ])
+                    setQueueSize(freshStatus.queueSize)
+                    setData(freshPage)
+                    dispatchLeadsCountChanged(freshPage.newCount)
+
+                    // Находим нового блокирующего
+                    const newBlocking = freshPage.content
+                        .filter(l => l.tgNotifiedAt !== null && l.userRating === null)
+                        .sort((a, b) => parseLeadDate(b.tgNotifiedAt!) - parseLeadDate(a.tgNotifiedAt!))
+                        .at(0) ?? null
+                    setBlockingLeadId(newBlocking?.id ?? null)
+
+                    // Синхронизируем рейтинги из свежих данных
+                    setRatings(prev => {
+                        const next = { ...prev }
+                        freshPage.content.forEach(l => {
+                            // Не затираем только что выставленный рейтинг
+                            if (l.id !== leadId) {
+                                next[l.id] = l.userRating ?? null
+                            }
+                        })
+                        return next
+                    })
+                }
+            }
         } catch {
+            // Откатываем рейтинг при ошибке
             setRatings(prev => ({ ...prev, [leadId]: prevRating }))
         } finally {
             setRatingBusy(prev => { const s = new Set(prev); s.delete(leadId); return s })
@@ -702,27 +790,14 @@ export default function LeadsPage() {
         filter === '' ? lead.status !== 'IGNORED' : true
     )
 
-    /**
-     * «Блокирующий» лид — последний отправленный в TG (tgNotifiedAt != null),
-     * но ещё не оценённый. Из-за него очередь не двигается.
-     */
-    const blockingLead = visibleContent.find(lead =>
-        lead.tgNotifiedAt !== null && (ratings[lead.id] ?? lead.userRating) === null
-    ) ?? null
+    // Лид из списка для отображения в баннере (нужны данные автора и текст)
+    const blockingLead = blockingLeadId !== null
+        ? (visibleContent.find(l => l.id === blockingLeadId) ?? null)
+        : null
 
-    /**
-     * Временная метка блокирующего лида.
-     * Все лиды с foundAt > blockingLead.foundAt, у которых tgNotifiedAt === null,
-     * считаются «заблокированными очередью» и получают визуальный оверлей.
-     */
+    // Временная метка блокирующего лида для определения «заблокированных очередью»
     const blockingLeadFoundAtMs = blockingLead
-        ? (() => {
-            try {
-                const iso = blockingLead.foundAt
-                const normalized = iso.includes('T') && !iso.endsWith('Z') && !iso.includes('+') && !iso.includes('-', 10) ? iso + 'Z' : iso
-                return new Date(normalized).getTime()
-            } catch { return null }
-        })()
+        ? parseLeadDate(blockingLead.foundAt)
         : null
 
     // ── Рендер: загрузка ──────────────────────────────────────────────────────
@@ -811,7 +886,7 @@ export default function LeadsPage() {
             {/* Баннер «оценки улучшают AI» */}
             <RatingHintBanner />
 
-            {/* Баннер блокирующего лида */}
+            {/* Баннер блокирующего лида — показываем только если есть очередь */}
             {blockingLead && queueSize > 0 && (
                 <BlockingBanner
                     lead={blockingLead}
@@ -846,22 +921,20 @@ export default function LeadsPage() {
                                 : (lead.userRating ?? null)
                             const ratingLoading = ratingBusy.has(lead.id)
 
-                            // «Блокирующий» лид — отправлен в TG, но не оценён.
-                            // Именно его нужно оценить чтобы получить следующие.
-                            const isBlocking = lead.tgNotifiedAt !== null && currentRating === null
+                            // «Блокирующий» лид — тот, который сейчас ждёт оценки.
+                            const isBlocking = lead.id === blockingLeadId && currentRating === null
 
-                            // «Заблокированный очередью» лид — ещё не был доставлен (tgNotifiedAt == null),
-                            // но появился позже блокирующего — значит стоит в очереди.
-                            // Показываем оверлей замка пока не оценён блокирующий лид.
+                            // «Заблокированный очередью» лид — ещё не доставлен (tgNotifiedAt == null),
+                            // появился позже блокирующего (foundAt > blockingLead.foundAt),
+                            // и ещё не оценён.
+                            // Показываем оверлей замка пока blockingLead не оценён.
                             const isLockedByQueue = (() => {
                                 if (blockingLeadFoundAtMs === null) return false
-                                if (lead.tgNotifiedAt !== null) return false   // уже доставлен — не блокируем
-                                if (currentRating !== null) return false        // оценён — не блокируем
-                                try {
-                                    const iso = lead.foundAt
-                                    const normalized = iso.includes('T') && !iso.endsWith('Z') && !iso.includes('+') && !iso.includes('-', 10) ? iso + 'Z' : iso
-                                    return new Date(normalized).getTime() > blockingLeadFoundAtMs
-                                } catch { return false }
+                                if (blockingLeadId === null) return false
+                                if (lead.tgNotifiedAt !== null) return false  // уже доставлен — не блокируем
+                                if (currentRating !== null) return false       // оценён — не блокируем
+                                if (lead.id === blockingLeadId) return false   // сам блокирующий — не блокируем
+                                return parseLeadDate(lead.foundAt) > blockingLeadFoundAtMs
                             })()
 
                             return (
@@ -870,15 +943,12 @@ export default function LeadsPage() {
                                     ref={el => { cardRefs.current[lead.id] = el }}
                                     className={s.leadCard}
                                     style={{
-                                        // Блокирующий лид — жёлтый акцент рамки, чтобы притягивал взгляд
                                         outline: isBlocking
                                             ? '2px solid rgba(245,158,11,.45)'
                                             : undefined,
-                                        // Заблокированные лиды в очереди — серая рамка
                                         border: isLockedByQueue
                                             ? '1px solid rgba(107,114,128,.2)'
                                             : undefined,
-                                        // position: relative нужен для абсолютного позиционирования оверлея
                                         position: 'relative',
                                         overflow:  isLockedByQueue ? 'hidden' : undefined,
                                     }}

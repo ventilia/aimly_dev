@@ -48,8 +48,10 @@ class LeadFeedbackService(
      * Вызывается после AI-решения (или сразу, если AI выключен).
      * Либо отправляет уведомление немедленно, либо ставит в очередь + шлёт nudge.
      *
-     * При отправке nudge — сохраняем ID сообщения в pending_lead_notifications,
-     * чтобы после оценки можно было удалить его из Telegram.
+     * Nudge — это сообщение в TG вида «оцените предыдущий, ещё N лидов в очереди».
+     * ID этого сообщения сохраняется ОДНОВРЕМЕННО:
+     *   - в pending_lead_notifications.nudge_tg_message_id — для быстрого поиска
+     *   - в leads.nudge_tg_message_id — резервно, чтобы удалить даже если pending уже удалён
      */
     @Transactional
     fun deliverOrEnqueue(user: User, payload: LeadNotificationPayload) {
@@ -58,16 +60,16 @@ class LeadFeedbackService(
         val pendingLeadId = findUnratedNotifiedLeadId(user.id)
 
         if (pendingLeadId == null) {
-            // Нет неоцененного — отправляем сразу
+            // Нет неоценённого — отправляем сразу
             sendAndMarkNotified(user, tgId, payload)
         } else {
-            // Есть неоцененный — кладём в очередь
+            // Есть неоценённый — кладём в очередь
             enqueue(user, payload)
 
-            val queueSize    = pendingRepo.countByUserId(user.id)
-            val pendingLead  = leadRepo.findById(pendingLeadId).orElse(null)
-            val msgPreview   = pendingLead?.messageText?.take(150) ?: ""
-            val matchedKw    = pendingLead?.matchedKeyword ?: ""
+            val queueSize   = pendingRepo.countByUserId(user.id)
+            val pendingLead = leadRepo.findById(pendingLeadId).orElse(null)
+            val msgPreview  = pendingLead?.messageText?.take(150) ?: ""
+            val matchedKw   = pendingLead?.matchedKeyword ?: ""
 
             runCatching {
                 val nudgeMsgId = bot.notifyLeadPending(
@@ -77,11 +79,21 @@ class LeadFeedbackService(
                     messagePreview = msgPreview,
                     matchedKeyword = matchedKw,
                 )
-                // Сохраняем ID nudge-сообщения, чтобы удалить его после оценки
+
+                // Сохраняем ID nudge-сообщения в двух местах для надёжности
                 if (nudgeMsgId != null) {
+                    // 1. В pending-записи (для быстрого поиска при удалении)
                     pendingRepo.findByUserIdAndLeadId(user.id, pendingLeadId)?.let { pending ->
                         pending.nudgeTgMessageId = nudgeMsgId
                         pendingRepo.save(pending)
+                    }
+
+                    // 2. Непосредственно на самом лиде — резервная копия.
+                    // Это позволяет удалить nudge даже если pending уже удалён
+                    // (например при параллельном запросе оценки из бота и с фронта).
+                    leadRepo.findById(pendingLeadId).ifPresent { lead ->
+                        lead.nudgeTgMessageId = nudgeMsgId
+                        leadRepo.save(lead)
                         log.debug(
                             "[FEEDBACK] nudgeTgMessageId=$nudgeMsgId сохранён: " +
                                     "userId=${user.id} pendingLeadId=#$pendingLeadId"
@@ -94,7 +106,7 @@ class LeadFeedbackService(
 
             log.info(
                 "[FEEDBACK] Лид #${payload.leadId} в очереди: userId=${user.id} " +
-                        "неоцененный=#$pendingLeadId queueSize=$queueSize"
+                        "неоценённый=#$pendingLeadId queueSize=$queueSize"
             )
         }
     }
@@ -107,7 +119,8 @@ class LeadFeedbackService(
      *
      * При первичной оценке автоматически переводит NEW → VIEWED.
      * После сохранения:
-     *   1. Удаляет nudge-сообщение из Telegram (если оно было отправлено).
+     *   1. Удаляет nudge-сообщение из Telegram.
+     *      Ищет ID сначала в pending-записи, затем резервно — в поле leads.nudge_tg_message_id.
      *   2. Доставляет следующий лид из очереди (только при первичной оценке).
      */
     @Transactional
@@ -128,6 +141,10 @@ class LeadFeedbackService(
             log.info("[FEEDBACK] Лид авто-помечен VIEWED: userId=${user.id} leadId=#$leadId")
         }
 
+        // Очищаем nudge_tg_message_id на лиде после того как запомнили его для удаления
+        val nudgeMsgIdFromLead = lead.nudgeTgMessageId
+        lead.nudgeTgMessageId  = null
+
         leadRepo.save(lead)
 
         log.info(
@@ -135,8 +152,9 @@ class LeadFeedbackService(
                     "userId=${user.id} leadId=#$leadId rating=$rating keyword=\"${lead.matchedKeyword}\""
         )
 
-        // Удаляем nudge-сообщение в Telegram (если было отправлено)
-        deleteNudgeForLead(user, leadId)
+        // Удаляем nudge-сообщение из Telegram.
+        // Приоритет: pending-запись → резервное поле на лиде.
+        deleteNudgeForLead(user, leadId, nudgeMsgIdFromLead)
 
         // Доставить следующий из очереди только при первичной оценке
         if (!isChange) {
@@ -205,14 +223,28 @@ class LeadFeedbackService(
         ).firstOrNull()
 
     /**
-     * Находит pending-запись для данного лида и удаляет nudge-сообщение из Telegram.
-     * Вызывается при любой оценке — и из бота, и из REST API фронта.
+     * Удаляет nudge-сообщение из Telegram.
+     *
+     * Порядок поиска ID сообщения:
+     *   1. pending_lead_notifications.nudge_tg_message_id — основное место хранения.
+     *   2. nudgeMsgIdFromLead — резервное значение из поля leads.nudge_tg_message_id,
+     *      которое передаётся явно из submitFeedback до удаления pending-записи.
+     *
+     * Такой двойной поиск защищает от race condition: если оценка пришла одновременно
+     * из бота и с фронта — pending-запись к этому моменту может уже не существовать,
+     * но значение из поля лида мы уже прочитали до сохранения.
      */
-    private fun deleteNudgeForLead(user: User, leadId: Long) {
+    private fun deleteNudgeForLead(user: User, leadId: Long, nudgeMsgIdFromLead: Int?) {
         val tgId = user.telegramId ?: return
 
-        val pending = pendingRepo.findByUserIdAndLeadId(user.id, leadId) ?: return
-        val msgId   = pending.nudgeTgMessageId ?: return
+        // Пробуем найти ID сначала в pending-записи
+        val msgId = pendingRepo.findByUserIdAndLeadId(user.id, leadId)?.nudgeTgMessageId
+            ?: nudgeMsgIdFromLead  // резерв — прочитали из лида до очистки
+
+        if (msgId == null) {
+            log.debug("[FEEDBACK] Nudge не найден (не отправлялся?): userId=${user.id} leadId=#$leadId")
+            return
+        }
 
         runCatching {
             bot.deleteMessage(tgId, msgId)
@@ -229,7 +261,7 @@ class LeadFeedbackService(
     /**
      * Отправляет лид в Telegram и помечает tgNotifiedAt только при успехе.
      * Если Telegram-вызов упал — tgNotifiedAt не проставляется,
-     * чтобы лид не застрял в «неоцененных» вечно.
+     * чтобы лид не застрял в «неоценённых» вечно.
      */
     private fun sendAndMarkNotified(user: User, tgId: Long, payload: LeadNotificationPayload) {
         runCatching {
