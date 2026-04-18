@@ -48,7 +48,7 @@ const txt = {
         linkNote:       'Если ссылка не открывается — проверьте настройки приватности чата',
         viewAll:        'Все лиды →',
         queueHint:      'лидов ожидают доставки в Telegram',
-        rateToUnlock:   'Оцените лид, чтобы получить следующий',
+        rateToUnlock:   'Оцените лид',
         ratingGood:     'Полезный',
         ratingBad:      'Нерелевантный',
         ratingSaved:    'Оценка сохранена',

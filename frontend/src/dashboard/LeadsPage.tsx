@@ -312,20 +312,23 @@ function FeedbackButtons({ leadId, current, disabled, onRate, isBlocking }: Feed
     const isBad  = current === 'BAD'
     const busy   = submitting || disabled
 
+    // Противоположная кнопка "гаснет" когда выбрана другая
+    const goodDimmed = isBad   // выбран BAD → GOOD тускнеет
+    const badDimmed  = isGood  // выбран GOOD → BAD тускнеет
+
     const baseBtn: React.CSSProperties = {
-        display:        'inline-flex',
-        alignItems:     'center',
-        gap:            5,
-        padding:        '5px 11px',
-        borderRadius:   100,
-        fontSize:       12,
-        fontWeight:     600,
-        cursor:         busy ? 'default' : 'pointer',
-        transition:     'all .15s',
-        fontFamily:     'var(--font-body)',
-        opacity:        busy ? 0.6 : 1,
-        whiteSpace:     'nowrap',
-        flexShrink:     0,
+        display:    'inline-flex',
+        alignItems: 'center',
+        gap:        5,
+        padding:    '5px 11px',
+        borderRadius: 100,
+        fontSize:   12,
+        fontWeight: 600,
+        cursor:     busy ? 'default' : 'pointer',
+        transition: 'all .2s',
+        fontFamily: 'var(--font-body)',
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
     }
 
     return (
@@ -341,68 +344,116 @@ function FeedbackButtons({ leadId, current, disabled, onRate, isBlocking }: Feed
                 </span>
             )}
 
-            {/* GOOD — всегда зелёная, насыщеннее при выборе */}
+            {/* GOOD */}
             <button
                 onClick={() => void handle('GOOD')}
                 disabled={busy}
                 title={isGood ? 'Полезный лид (изменить)' : 'Отметить как полезный'}
                 style={{
                     ...baseBtn,
-                    border:     isGood
+                    // Активная — насыщенная зелёная
+                    // Приглушённая (когда выбран BAD) — серая, полупрозрачная
+                    // Нейтральная — бледно-зелёная как раньше
+                    border: isGood
                         ? '1.5px solid rgba(16,185,129,.7)'
-                        : '1.5px solid rgba(16,185,129,.35)',
+                        : goodDimmed
+                            ? '1.5px solid var(--c-border)'
+                            : '1.5px solid rgba(16,185,129,.35)',
                     background: isGood
                         ? 'rgba(16,185,129,.15)'
-                        : 'rgba(16,185,129,.06)',
-                    color:      '#059669',
+                        : goodDimmed
+                            ? 'transparent'
+                            : 'rgba(16,185,129,.06)',
+                    color: isGood
+                        ? '#059669'
+                        : goodDimmed
+                            ? 'var(--c-ink-3)'
+                            : '#059669',
+                    opacity: busy ? 0.5 : goodDimmed ? 0.45 : 1,
                 }}
                 onMouseEnter={e => {
-                    if (busy || isGood) return
+                    if (busy) return
                     const el = e.currentTarget
-                    el.style.borderColor = 'rgba(16,185,129,.55)'
-                    el.style.background  = 'rgba(16,185,129,.11)'
+                    if (isGood) return
+                    if (goodDimmed) {
+                        // При ховере на приглушённую — немного подсвечиваем, намекаем что кликабельна
+                        el.style.opacity = '0.75'
+                        el.style.borderColor = 'rgba(16,185,129,.3)'
+                        el.style.color = '#059669'
+                    } else {
+                        el.style.borderColor = 'rgba(16,185,129,.55)'
+                        el.style.background  = 'rgba(16,185,129,.11)'
+                    }
                 }}
                 onMouseLeave={e => {
                     if (busy || isGood) return
                     const el = e.currentTarget
-                    el.style.borderColor = 'rgba(16,185,129,.35)'
-                    el.style.background  = 'rgba(16,185,129,.06)'
+                    if (goodDimmed) {
+                        el.style.opacity = '0.45'
+                        el.style.borderColor = 'var(--c-border)'
+                        el.style.color = 'var(--c-ink-3)'
+                    } else {
+                        el.style.borderColor = 'rgba(16,185,129,.35)'
+                        el.style.background  = 'rgba(16,185,129,.06)'
+                    }
                 }}
             >
                 <IconThumbUp />
-                {isGood ? 'Полезный' : 'Полезный'}
+                Полезный
             </button>
 
-            {/* BAD — всегда красная, насыщеннее при выборе */}
+            {/* BAD */}
             <button
                 onClick={() => void handle('BAD')}
                 disabled={busy}
                 title={isBad ? 'Нерелевантный лид (изменить)' : 'Отметить как нерелевантный'}
                 style={{
                     ...baseBtn,
-                    border:     isBad
+                    border: isBad
                         ? '1.5px solid rgba(239,68,68,.65)'
-                        : '1.5px solid rgba(239,68,68,.3)',
+                        : badDimmed
+                            ? '1.5px solid var(--c-border)'
+                            : '1.5px solid rgba(239,68,68,.3)',
                     background: isBad
                         ? 'rgba(239,68,68,.12)'
-                        : 'rgba(239,68,68,.05)',
-                    color:      '#dc2626',
+                        : badDimmed
+                            ? 'transparent'
+                            : 'rgba(239,68,68,.05)',
+                    color: isBad
+                        ? '#dc2626'
+                        : badDimmed
+                            ? 'var(--c-ink-3)'
+                            : '#dc2626',
+                    opacity: busy ? 0.5 : badDimmed ? 0.45 : 1,
                 }}
                 onMouseEnter={e => {
-                    if (busy || isBad) return
+                    if (busy) return
                     const el = e.currentTarget
-                    el.style.borderColor = 'rgba(239,68,68,.5)'
-                    el.style.background  = 'rgba(239,68,68,.09)'
+                    if (isBad) return
+                    if (badDimmed) {
+                        el.style.opacity = '0.75'
+                        el.style.borderColor = 'rgba(239,68,68,.28)'
+                        el.style.color = '#dc2626'
+                    } else {
+                        el.style.borderColor = 'rgba(239,68,68,.5)'
+                        el.style.background  = 'rgba(239,68,68,.09)'
+                    }
                 }}
                 onMouseLeave={e => {
                     if (busy || isBad) return
                     const el = e.currentTarget
-                    el.style.borderColor = 'rgba(239,68,68,.3)'
-                    el.style.background  = 'rgba(239,68,68,.05)'
+                    if (badDimmed) {
+                        el.style.opacity = '0.45'
+                        el.style.borderColor = 'var(--c-border)'
+                        el.style.color = 'var(--c-ink-3)'
+                    } else {
+                        el.style.borderColor = 'rgba(239,68,68,.3)'
+                        el.style.background  = 'rgba(239,68,68,.05)'
+                    }
                 }}
             >
                 <IconThumbDown />
-                {isBad ? 'Нерелевантный' : 'Нерелевантный'}
+                Нерелевантный
             </button>
         </div>
     )
