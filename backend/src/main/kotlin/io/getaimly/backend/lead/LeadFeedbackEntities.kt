@@ -111,6 +111,21 @@ interface LeadFeedbackRepository : JpaRepository<LeadFeedback, Long> {
     ): List<LeadFeedback>
 
     fun countByUserId(userId: Long): Long
+
+    /**
+     * Batch-загрузка оценок для страницы лидов.
+     * Используется в LeadService.getLeads() чтобы одним запросом получить
+     * все оценки пользователя для текущей страницы лидов и вернуть их в DTO.
+     */
+    @Query("""
+        SELECT f FROM LeadFeedback f
+        WHERE f.user.id = :userId
+          AND f.lead.id IN :leadIds
+    """)
+    fun findByUserIdAndLeadIdIn(
+        @Param("userId")  userId:  Long,
+        @Param("leadIds") leadIds: List<Long>,
+    ): List<LeadFeedback>
 }
 
 @Repository

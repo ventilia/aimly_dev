@@ -27,6 +27,9 @@ const FILTERS = [
     { value: 'IGNORED', label: 'Архив'    },
 ]
 
+// Ключ для localStorage — скрытие плашки об оценках
+const RATING_BANNER_KEY = 'aimly_rating_hint_v1'
+
 // ─── Вспомогательные функции ──────────────────────────────────────────────────
 
 function dispatchLeadsCountChanged(newCount: number) {
@@ -189,6 +192,75 @@ function ExportBadge() {
     )
 }
 
+// ─── Баннер «оценки важны для AI» ────────────────────────────────────────────
+// Показывается один раз, скрывается навсегда через localStorage.
+
+function RatingHintBanner() {
+    const [visible, setVisible] = useState(() =>
+        localStorage.getItem(RATING_BANNER_KEY) !== '1'
+    )
+
+    if (!visible) return null
+
+    const dismiss = () => {
+        localStorage.setItem(RATING_BANNER_KEY, '1')
+        setVisible(false)
+    }
+
+    return (
+        <div style={{
+            display: 'flex', alignItems: 'flex-start', gap: 12,
+            background: 'rgba(99,102,241,.07)',
+            border: '1.5px solid rgba(99,102,241,.22)',
+            borderRadius: 14,
+            padding: '14px 18px',
+        }}>
+            {/* Иконка */}
+            <span style={{
+                width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+                background: 'rgba(99,102,241,.13)', color: '#4f46e5',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+                <IconThumbUp size={15} />
+            </span>
+
+            {/* Текст */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                    fontSize: 13, fontWeight: 700,
+                    color: 'var(--c-ink)', marginBottom: 4,
+                }}>
+                    Оценки лидов улучшают AI‑фильтрацию
+                </div>
+                <div style={{
+                    fontSize: 12, color: 'var(--c-ink-2)', lineHeight: 1.55,
+                }}>
+                    Нажимайте <strong style={{ color: '#059669' }}>👍 Полезный</strong> или{' '}
+                    <strong style={{ color: '#dc2626' }}>👎 Нерелевантный</strong> на каждый лид —
+                    AI учится на ваших оценках и постепенно присылает только действительно нужные контакты.
+                    Чем больше оценок — тем точнее фильтрация.
+                </div>
+            </div>
+
+            {/* Кнопка закрыть */}
+            <button
+                onClick={dismiss}
+                title="Больше не показывать"
+                style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: 'var(--c-ink-3)', fontSize: 20, lineHeight: 1,
+                    padding: '0 2px', flexShrink: 0, fontFamily: 'inherit',
+                    opacity: 0.55, transition: 'opacity .15s', marginTop: -2,
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '1' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '0.55' }}
+            >
+                ×
+            </button>
+        </div>
+    )
+}
+
 // ─── Компонент кнопок оценки ──────────────────────────────────────────────────
 
 interface FeedbackButtonsProps {
@@ -248,7 +320,7 @@ function FeedbackButtons({ leadId, current, disabled, onRate, isBlocking }: Feed
                 </span>
             )}
 
-            {/* GOOD */}
+            {/* GOOD — всегда зелёная, насыщеннее при выборе */}
             <button
                 onClick={() => void handle('GOOD')}
                 disabled={busy}
@@ -256,31 +328,31 @@ function FeedbackButtons({ leadId, current, disabled, onRate, isBlocking }: Feed
                 style={{
                     ...baseBtn,
                     border:     isGood
-                        ? '1.5px solid rgba(16,185,129,.55)'
-                        : '1.5px solid var(--c-border)',
-                    background: isGood ? 'rgba(16,185,129,.12)' : 'none',
-                    color:      isGood ? '#059669'              : 'var(--c-ink-3)',
+                        ? '1.5px solid rgba(16,185,129,.7)'
+                        : '1.5px solid rgba(16,185,129,.35)',
+                    background: isGood
+                        ? 'rgba(16,185,129,.15)'
+                        : 'rgba(16,185,129,.06)',
+                    color:      '#059669',
                 }}
                 onMouseEnter={e => {
                     if (busy || isGood) return
                     const el = e.currentTarget
-                    el.style.borderColor = 'rgba(16,185,129,.45)'
-                    el.style.color       = '#059669'
-                    el.style.background  = 'rgba(16,185,129,.07)'
+                    el.style.borderColor = 'rgba(16,185,129,.55)'
+                    el.style.background  = 'rgba(16,185,129,.11)'
                 }}
                 onMouseLeave={e => {
                     if (busy || isGood) return
                     const el = e.currentTarget
-                    el.style.borderColor = 'var(--c-border)'
-                    el.style.color       = 'var(--c-ink-3)'
-                    el.style.background  = 'none'
+                    el.style.borderColor = 'rgba(16,185,129,.35)'
+                    el.style.background  = 'rgba(16,185,129,.06)'
                 }}
             >
                 <IconThumbUp />
                 {isGood ? 'Полезный' : 'Полезный'}
             </button>
 
-            {/* BAD */}
+            {/* BAD — всегда красная, насыщеннее при выборе */}
             <button
                 onClick={() => void handle('BAD')}
                 disabled={busy}
@@ -288,24 +360,24 @@ function FeedbackButtons({ leadId, current, disabled, onRate, isBlocking }: Feed
                 style={{
                     ...baseBtn,
                     border:     isBad
-                        ? '1.5px solid rgba(239,68,68,.5)'
-                        : '1.5px solid var(--c-border)',
-                    background: isBad ? 'rgba(239,68,68,.1)'  : 'none',
-                    color:      isBad ? '#dc2626'             : 'var(--c-ink-3)',
+                        ? '1.5px solid rgba(239,68,68,.65)'
+                        : '1.5px solid rgba(239,68,68,.3)',
+                    background: isBad
+                        ? 'rgba(239,68,68,.12)'
+                        : 'rgba(239,68,68,.05)',
+                    color:      '#dc2626',
                 }}
                 onMouseEnter={e => {
                     if (busy || isBad) return
                     const el = e.currentTarget
-                    el.style.borderColor = 'rgba(239,68,68,.4)'
-                    el.style.color       = '#dc2626'
-                    el.style.background  = 'rgba(239,68,68,.06)'
+                    el.style.borderColor = 'rgba(239,68,68,.5)'
+                    el.style.background  = 'rgba(239,68,68,.09)'
                 }}
                 onMouseLeave={e => {
                     if (busy || isBad) return
                     const el = e.currentTarget
-                    el.style.borderColor = 'var(--c-border)'
-                    el.style.color       = 'var(--c-ink-3)'
-                    el.style.background  = 'none'
+                    el.style.borderColor = 'rgba(239,68,68,.3)'
+                    el.style.background  = 'rgba(239,68,68,.05)'
                 }}
             >
                 <IconThumbDown />
@@ -482,12 +554,14 @@ export default function LeadsPage() {
             setQueueSize(status.queueSize)
             dispatchLeadsCountChanged(result.newCount)
 
-            // Синхронизируем локальную карту оценок из данных бэка
+            // Синхронизируем локальную карту оценок из данных бэка.
+            // Бэк теперь возвращает userRating прямо в DTO лида через batch-запрос
+            // к таблице lead_feedbacks — оценки персистируются между сессиями.
             setRatings(prev => {
                 const next = { ...prev }
                 result.content.forEach(lead => {
                     // Если локально уже есть оценка (пользователь оценил в этой сессии) —
-                    // не перезаписываем (бэк мог ещё не успеть обновить, хотя это маловероятно)
+                    // не перезаписываем, чтобы не сбросить оптимистичное обновление
                     if (!(lead.id in next)) {
                         next[lead.id] = lead.userRating ?? null
                     }
@@ -716,6 +790,9 @@ export default function LeadsPage() {
                     </button>
                 )}
             </div>
+
+            {/* ── Плашка «оценки улучшают AI» — показывается один раз ── */}
+            <RatingHintBanner />
 
             {/* ── Баннер блокирующего лида ── */}
             {blockingLead && queueSize > 0 && (
