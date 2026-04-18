@@ -836,7 +836,49 @@ export default function LeadsPage() {
     return (
         <div className={s.page}>
             <div className={s.header}>
-                <h1 className={s.title}>Лиды</h1>
+                {/* Левая часть: заголовок + счётчик + кнопка «прочитать всё» */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                    <h1 className={s.title}>Лиды</h1>
+
+                    {(data?.newCount ?? 0) > 0 && (
+                        <>
+                            <span style={{
+                                fontSize: 12, fontWeight: 700,
+                                padding: '2px 9px', borderRadius: 100,
+                                background: 'rgba(239,68,68,.12)', color: '#dc2626',
+                                border: '1px solid rgba(239,68,68,.2)',
+                                flexShrink: 0,
+                            }}>
+                                {data!.newCount} новых
+                            </span>
+
+                            <button
+                                onClick={() => void handleMarkAllRead()}
+                                disabled={markingAll}
+                                style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                                    fontSize: 13, fontWeight: 600,
+                                    color: 'var(--c-ink-2)',
+                                    background: 'none', border: 'none',
+                                    cursor: markingAll ? 'default' : 'pointer',
+                                    fontFamily: 'var(--font-body)', padding: 0,
+                                    opacity: markingAll ? 0.5 : 1,
+                                    transition: 'color .15s',
+                                    flexShrink: 0,
+                                }}
+                                onMouseEnter={e => {
+                                    if (!markingAll) (e.currentTarget as HTMLButtonElement).style.color = 'var(--c-accent)'
+                                }}
+                                onMouseLeave={e => {
+                                    (e.currentTarget as HTMLButtonElement).style.color = 'var(--c-ink-2)'
+                                }}
+                            >
+                                <IconCheck />
+                                {markingAll ? 'Читаем...' : 'Прочитать всё'}
+                            </button>
+                        </>
+                    )}
+                </div>
 
                 <div className={s.tabs}>
                     {FILTERS.map(f => (
@@ -849,16 +891,6 @@ export default function LeadsPage() {
                         </button>
                     ))}
                 </div>
-
-                {(data?.newCount ?? 0) > 0 && (
-                    <button
-                        className={s.markAllBtn}
-                        onClick={() => void handleMarkAllRead()}
-                        disabled={markingAll}
-                    >
-                        {markingAll ? 'Отмечаем...' : 'Отметить все прочитанными'}
-                    </button>
-                )}
             </div>
 
             {/* ── Плашка «оценки улучшают AI» — показывается один раз ── */}
