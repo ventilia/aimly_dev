@@ -29,25 +29,18 @@ data class FeedbackExample(
 
 @Service
 class LeadFeedbackService(
-    private val feedbackRepo: LeadFeedbackRepository,
-    private val pendingRepo:  PendingLeadNotificationRepository,
-    private val leadRepo:     LeadRepository,
-    private val userRepo:     UserRepository,
-    @Lazy private val bot:    AimlyBot,
+    private val pendingRepo: PendingLeadNotificationRepository,
+    private val leadRepo:    LeadRepository,
+    private val userRepo:    UserRepository,
+    @Lazy private val bot:   AimlyBot,
 ) {
     private val log = LoggerFactory.getLogger(LeadFeedbackService::class.java)
 
     private val QUEUE_LIMIT              = 50
     private val MIN_FEEDBACKS_FOR_PROMPT = 3
-
-    /**
-     * Максимальное число примеров для AI-промпта.
-     * Увеличено до 20 для более точной персонализации.
-     * Приоритет: оценки по тому же ключевому слову (до 8) → общие последние (до 12).
-     */
-    private val MAX_PROMPT_EXAMPLES = 20
-    private val MAX_BY_KEYWORD      = 8
-    private val MAX_GENERAL         = MAX_PROMPT_EXAMPLES - MAX_BY_KEYWORD  // 12
+    private val MAX_PROMPT_EXAMPLES      = 20
+    private val MAX_BY_KEYWORD           = 8
+    private val MAX_GENERAL              = MAX_PROMPT_EXAMPLES - MAX_BY_KEYWORD  // 12
 
     // ─── Основная точка входа ─────────────────────────────────────────────────
 
@@ -55,8 +48,8 @@ class LeadFeedbackService(
      * Вызывается после AI-решения (или сразу, если AI выключен).
      * Либо отправляет уведомление немедленно, либо ставит в очередь + шлёт nudge.
      *
-     * При отправке nudge передаём текст и ключевое слово неоцененного лида,
-     * чтобы пользователь видел о чём идёт речь.
+     * При отправке nudge — сохраняем ID сообщения в pending_lead_notifications,
+     * чтобы после оценки можно было удалить его из Telegram.
      */
     @Transactional
     fun deliverOrEnqueue(user: User, payload: LeadNotificationPayload) {
@@ -71,21 +64,30 @@ class LeadFeedbackService(
             // Есть неоцененный — кладём в очередь
             enqueue(user, payload)
 
-            val queueSize = pendingRepo.countByUserId(user.id)
-
-            // Получаем данные неоцененного лида для превью в nudge
-            val pendingLead      = leadRepo.findById(pendingLeadId).orElse(null)
-            val messagePreview   = pendingLead?.messageText?.take(150) ?: ""
-            val matchedKeyword   = pendingLead?.matchedKeyword ?: ""
+            val queueSize    = pendingRepo.countByUserId(user.id)
+            val pendingLead  = leadRepo.findById(pendingLeadId).orElse(null)
+            val msgPreview   = pendingLead?.messageText?.take(150) ?: ""
+            val matchedKw    = pendingLead?.matchedKeyword ?: ""
 
             runCatching {
-                bot.notifyLeadPending(
+                val nudgeMsgId = bot.notifyLeadPending(
                     telegramChatId = tgId,
                     pendingLeadId  = pendingLeadId,
                     queueSize      = queueSize,
-                    messagePreview = messagePreview,
-                    matchedKeyword = matchedKeyword,
+                    messagePreview = msgPreview,
+                    matchedKeyword = matchedKw,
                 )
+                // Сохраняем ID nudge-сообщения, чтобы удалить его после оценки
+                if (nudgeMsgId != null) {
+                    pendingRepo.findByUserIdAndLeadId(user.id, pendingLeadId)?.let { pending ->
+                        pending.nudgeTgMessageId = nudgeMsgId
+                        pendingRepo.save(pending)
+                        log.debug(
+                            "[FEEDBACK] nudgeTgMessageId=$nudgeMsgId сохранён: " +
+                                    "userId=${user.id} pendingLeadId=#$pendingLeadId"
+                        )
+                    }
+                }
             }.onFailure {
                 log.warn("[FEEDBACK] Ошибка nudge: userId=${user.id} ${it.message}")
             }
@@ -100,77 +102,68 @@ class LeadFeedbackService(
     // ─── Сохранение оценки ───────────────────────────────────────────────────
 
     /**
-     * Сохраняет оценку и доставляет следующий лид из очереди.
-     * Вызывается из bot-callback и REST API.
-     * Поддерживает upsert — повторная оценка меняет предыдущую.
+     * Сохраняет оценку прямо в полях Lead (userRating + ratingAt).
+     * Поддерживает upsert — повторная оценка перезаписывает предыдущую.
      *
-     * При первичной оценке (не upsert) автоматически помечает лид как VIEWED,
-     * если он ещё имеет статус NEW. Это гарантирует, что оценённый лид
-     * не остаётся «непрочитанным» в счётчике новых лидов.
+     * При первичной оценке автоматически переводит NEW → VIEWED.
+     * После сохранения:
+     *   1. Удаляет nudge-сообщение из Telegram (если оно было отправлено).
+     *   2. Доставляет следующий лид из очереди (только при первичной оценке).
      */
     @Transactional
-    fun submitFeedback(user: User, leadId: Long, rating: LeadRating): LeadFeedback {
+    fun submitFeedback(user: User, leadId: Long, rating: LeadRating): Lead {
         val lead = leadRepo.findById(leadId).orElseThrow {
             NoSuchElementException("лид #$leadId не найден")
         }
         if (lead.user.id != user.id) throw SecurityException("нет доступа")
 
-        // Upsert: удаляем старую оценку если есть (rating — val, не изменяется)
-        val isChange = feedbackRepo.findByUserIdAndLeadId(user.id, leadId)?.also {
-            feedbackRepo.delete(it)
-            feedbackRepo.flush()
-        } != null
+        val isChange = lead.userRating != null
 
-        val feedback = feedbackRepo.save(
-            LeadFeedback(
-                user           = user,
-                lead           = lead,
-                rating         = rating,
-                messageSnippet = lead.messageText.take(200),
-                matchedKeyword = lead.matchedKeyword,
-            )
-        )
+        lead.userRating = rating
+        lead.ratingAt   = LocalDateTime.now()
 
-        // Автоматически помечаем лид прочитанным при первичной оценке.
-        // При изменении оценки статус не трогаем — он уже был обновлён ранее.
+        // При первичной оценке NEW → VIEWED
         if (!isChange && lead.status == LeadStatus.NEW) {
             lead.status = LeadStatus.VIEWED
-            leadRepo.save(lead)
-            log.info(
-                "[FEEDBACK] Лид авто-помечен VIEWED: userId=${user.id} leadId=#$leadId"
-            )
+            log.info("[FEEDBACK] Лид авто-помечен VIEWED: userId=${user.id} leadId=#$leadId")
         }
+
+        leadRepo.save(lead)
 
         log.info(
             "[FEEDBACK] Оценка${if (isChange) " изменена" else ""}: " +
                     "userId=${user.id} leadId=#$leadId rating=$rating keyword=\"${lead.matchedKeyword}\""
         )
 
-        // Доставить следующий из очереди (только если это первичная оценка)
+        // Удаляем nudge-сообщение в Telegram (если было отправлено)
+        deleteNudgeForLead(user, leadId)
+
+        // Доставить следующий из очереди только при первичной оценке
         if (!isChange) {
             deliverNextFromQueue(user)
         }
 
-        return feedback
+        return lead
     }
 
     // ─── Примеры для AI-промпта ──────────────────────────────────────────────
 
     /**
      * Формирует список примеров оценок для вставки в AI-промпт.
+     * Читает оценённые лиды прямо из таблицы leads (поля userRating + ratingAt).
      *
      * Логика выборки (не более MAX_PROMPT_EXAMPLES = 20 итого):
-     *   1. До MAX_BY_KEYWORD (8) оценок по тому же ключевому слову — самые релевантные.
+     *   1. До MAX_BY_KEYWORD (8) по тому же ключевому слову — самые релевантные.
      *   2. До MAX_GENERAL (12) последних общих оценок — для контекста.
      *
-     * Возвращает пустой список если накопленных оценок меньше MIN_FEEDBACKS_FOR_PROMPT (3) —
-     * до этого порога данных недостаточно для значимой персонализации.
+     * Возвращает пустой список если оценок меньше MIN_FEEDBACKS_FOR_PROMPT (3).
      */
     fun getFeedbackExamplesForPrompt(userId: Long, keyword: String): List<FeedbackExample> {
-        if (feedbackRepo.countByUserId(userId) < MIN_FEEDBACKS_FOR_PROMPT) return emptyList()
+        if (leadRepo.countByUserIdAndUserRatingNotNull(userId) < MIN_FEEDBACKS_FOR_PROMPT) {
+            return emptyList()
+        }
 
-        // Сначала — оценки по тому же ключевому слову (наиболее релевантны для промпта)
-        val byKeyword = feedbackRepo.findRecentByUserIdAndKeyword(
+        val byKeyword = leadRepo.findRatedByUserIdAndKeyword(
             userId   = userId,
             keyword  = keyword,
             pageable = PageRequest.of(0, MAX_BY_KEYWORD),
@@ -179,10 +172,9 @@ class LeadFeedbackService(
         val byKeywordIds = byKeyword.map { it.id }.toSet()
         val remaining    = MAX_GENERAL - (byKeyword.size - MAX_BY_KEYWORD).coerceAtLeast(0)
 
-        // Дополняем общими последними оценками, исключая уже добавленные
         val general = if (remaining > 0) {
-            feedbackRepo
-                .findRecentByUserId(userId, PageRequest.of(0, remaining + byKeyword.size))
+            leadRepo
+                .findRecentRatedByUserId(userId, PageRequest.of(0, remaining + byKeyword.size))
                 .filter { it.id !in byKeywordIds }
                 .take(remaining)
         } else {
@@ -193,8 +185,8 @@ class LeadFeedbackService(
             .take(MAX_PROMPT_EXAMPLES)
             .map {
                 FeedbackExample(
-                    rating         = it.rating,
-                    messageSnippet = it.messageSnippet.take(150),
+                    rating         = it.userRating!!,
+                    messageSnippet = it.messageText.take(150),
                     matchedKeyword = it.matchedKeyword,
                 )
             }
@@ -204,13 +196,35 @@ class LeadFeedbackService(
 
     /**
      * Ищет последний лид, который уже был отправлен пользователю (tgNotifiedAt != null),
-     * но ещё не получил оценку. Запрос выполняется целиком в БД через NOT EXISTS.
+     * но ещё не получил оценку (userRating IS NULL).
      */
     private fun findUnratedNotifiedLeadId(userId: Long): Long? =
-        leadRepo.findLatestNotifiedWithoutFeedback(
+        leadRepo.findLatestNotifiedWithoutRating(
             userId   = userId,
             pageable = PageRequest.of(0, 1),
         ).firstOrNull()
+
+    /**
+     * Находит pending-запись для данного лида и удаляет nudge-сообщение из Telegram.
+     * Вызывается при любой оценке — и из бота, и из REST API фронта.
+     */
+    private fun deleteNudgeForLead(user: User, leadId: Long) {
+        val tgId = user.telegramId ?: return
+
+        val pending = pendingRepo.findByUserIdAndLeadId(user.id, leadId) ?: return
+        val msgId   = pending.nudgeTgMessageId ?: return
+
+        runCatching {
+            bot.deleteMessage(tgId, msgId)
+            log.info("[FEEDBACK] Nudge удалён: userId=${user.id} leadId=#$leadId msgId=$msgId")
+        }.onFailure {
+            // Сообщение могло быть уже удалено пользователем — не критично
+            log.debug(
+                "[FEEDBACK] Не удалось удалить nudge (возможно уже удалено): " +
+                        "userId=${user.id} leadId=#$leadId msgId=$msgId — ${it.message}"
+            )
+        }
+    }
 
     /**
      * Отправляет лид в Telegram и помечает tgNotifiedAt только при успехе.

@@ -139,6 +139,16 @@ class Lead(
     @Column(name = "found_at", nullable = false)
     val foundAt: LocalDateTime = LocalDateTime.now(),
 
+
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "user_rating", length = 10)
+    var userRating: LeadRating? = null,
+
+    @Column(name = "rating_at")
+    var ratingAt: LocalDateTime? = null,
+
+
     // --- НОВЫЕ ПОЛЯ ---
 
     // Источник лида: LIVE (бот поймал в реальном времени) или MANUAL_EXPORT (ручной импорт файла)

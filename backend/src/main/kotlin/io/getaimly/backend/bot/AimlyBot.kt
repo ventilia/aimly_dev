@@ -4,8 +4,8 @@ import io.getaimly.backend.ai.AiService
 import io.getaimly.backend.auth.AuthService
 import io.getaimly.backend.lead.ChatSearchService
 import io.getaimly.backend.lead.ChatSubscriptionRepository
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage
 import io.getaimly.backend.lead.KeywordRepository
-import io.getaimly.backend.lead.LeadFeedbackRepository
 import io.getaimly.backend.lead.LeadFeedbackService
 import io.getaimly.backend.lead.LeadRating
 import io.getaimly.backend.lead.LeadRepository
@@ -50,7 +50,7 @@ class AimlyBot(
     private val chatSearchService:      ChatSearchService,
     private val referralService:        ReferralService,
     private val feedbackService:        LeadFeedbackService,
-    private val feedbackRepo:           LeadFeedbackRepository,
+    // feedbackRepo удалён — больше не используется в AimlyBot
     private val pendingRepo:            PendingLeadNotificationRepository,
 ) : SpringLongPollingBot, LongPollingSingleThreadUpdateConsumer {
 
@@ -83,7 +83,7 @@ class AimlyBot(
         leadRepository         = leadRepository,
         subscriptionRepository = subscriptionRepository,
         leadService            = leadService,
-        feedbackRepo           = feedbackRepo,
+        // feedbackRepo удалён из конструктора
     )
 
     private val chatsHandler = BotChatsHandler(
@@ -446,7 +446,8 @@ class AimlyBot(
         }
 
         runCatching {
-            val leadWasNew = leadRepository.findById(leadId).orElse(null)?.status == LeadStatus.NEW
+            val leadBefore = leadRepository.findById(leadId).orElse(null)
+            val leadWasNew = leadBefore?.status == LeadStatus.NEW
 
             feedbackService.submitFeedback(user, leadId, rating)
 
@@ -574,12 +575,8 @@ class AimlyBot(
      * Лёгкое уведомление — напоминает оценить уже показанный [pendingLeadId],
      * пока новые лиды стоят в очереди.
      *
-     * [queueSize]      — сколько лидов стоит в очереди (включая только что добавленный).
-     * [messagePreview] — фрагмент текста неоцененного лида (до 150 символов).
-     * [matchedKeyword] — ключевое слово по которому найден неоцененный лид.
-     *
-     * Задача 2: теперь показываем текст лида в nudge, чтобы пользователь
-     * не нажимал «вслепую», не помня о чём был лид.
+     * Возвращает ID отправленного сообщения (для последующего удаления),
+     * либо null если отправка не удалась.
      */
     fun notifyLeadPending(
         telegramChatId: Long,
@@ -587,15 +584,13 @@ class AimlyBot(
         queueSize:      Long,
         messagePreview: String = "",
         matchedKeyword: String = "",
-    ) {
-        // queueSize включает только что добавленный лид, поэтому "новых" = queueSize
+    ): Int? {
         val queueLine = when {
             queueSize == 1L -> "Пришёл новый лид — оцените предыдущий, чтобы получить его."
             queueSize == 2L -> "Пришло ещё 2 новых лида. Оцените предыдущий — они придут по очереди."
             else            -> "Пришло ещё $queueSize новых лидов. Оцените предыдущий — они придут по очереди."
         }
 
-        // Блок с содержимым неоцененного лида (задача 2)
         val leadPreviewBlock = buildString {
             if (matchedKeyword.isNotBlank()) {
                 append("🔑 Ключевое слово: «$matchedKeyword»\n")
@@ -609,7 +604,6 @@ class AimlyBot(
 
         val text = buildString {
             append("📬 $queueLine\n\n")
-            // Задача 3: явно объясняем важность оценки
             append("⭐ Оценки лидов очень важны — именно на их основе ИИ учится понимать ваш бизнес ")
             append("и отсеивать нерелевантные сообщения. Чем больше оценок — тем точнее фильтрация.\n\n")
             append("👇 Лид #$pendingLeadId ждёт вашей оценки:")
@@ -619,8 +613,8 @@ class AimlyBot(
             }
         }
 
-        runCatching {
-            telegramClient.execute(
+        return runCatching {
+            val sent = telegramClient.execute(
                 SendMessage.builder()
                     .chatId(telegramChatId.toString())
                     .text(text)
@@ -633,9 +627,30 @@ class AimlyBot(
                     )))
                     .build()
             )
-            log.info("[BOT][NOTIFY] Nudge отправлен: tgChatId=$telegramChatId pendingLeadId=$pendingLeadId queueSize=$queueSize")
-        }.onFailure {
+            log.info("[BOT][NOTIFY] Nudge отправлен: tgChatId=$telegramChatId pendingLeadId=$pendingLeadId queueSize=$queueSize msgId=${sent.messageId}")
+            sent.messageId
+        }.getOrElse {
             log.warn("[BOT][NOTIFY] Ошибка отправки nudge: tgChatId=$telegramChatId причина=${it.message}")
+            null
+        }
+    }
+
+    /**
+     * Удаляет сообщение из Telegram-чата.
+     * Используется для удаления nudge-сообщений после оценки лида.
+     * Ошибки (сообщение уже удалено, нет прав) логируются в DEBUG и игнорируются.
+     */
+    fun deleteMessage(telegramChatId: Long, messageId: Int) {
+        runCatching {
+            telegramClient.execute(
+                DeleteMessage.builder()
+                    .chatId(telegramChatId.toString())
+                    .messageId(messageId)
+                    .build()
+            )
+            log.debug("[BOT] deleteMessage: chatId=$telegramChatId msgId=$messageId")
+        }.onFailure {
+            log.debug("[BOT] deleteMessage failed (вероятно уже удалено): chatId=$telegramChatId msgId=$messageId — ${it.message}")
         }
     }
 
@@ -751,4 +766,12 @@ class AimlyBot(
         }
         return link
     }
+
+    // ─── Вспомогательные функции для кнопок ─────────────────────────────────
+
+    private fun row(vararg buttons: InlineKeyboardButton) =
+        InlineKeyboardRow(buttons.toList())
+
+    private fun btn(text: String, callbackData: String) =
+        InlineKeyboardButton.builder().text(text).callbackData(callbackData).build()
 }

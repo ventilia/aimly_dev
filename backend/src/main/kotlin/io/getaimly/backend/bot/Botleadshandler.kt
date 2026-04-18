@@ -1,6 +1,5 @@
 package io.getaimly.backend.bot
 
-import io.getaimly.backend.lead.LeadFeedbackRepository
 import io.getaimly.backend.lead.LeadRating
 import io.getaimly.backend.lead.LeadRepository
 import io.getaimly.backend.lead.LeadService
@@ -22,7 +21,7 @@ class BotLeadsHandler(
     private val leadRepository:         LeadRepository,
     private val subscriptionRepository: ChatSubscriptionRepository,
     private val leadService:            LeadService,
-    private val feedbackRepo:           LeadFeedbackRepository,
+    // feedbackRepo удалён — читаем оценки напрямую из Lead.userRating
 ) {
 
     private val log = LoggerFactory.getLogger(BotLeadsHandler::class.java)
@@ -258,7 +257,8 @@ class BotLeadsHandler(
             return
         }
 
-        val existingFeedback = feedbackRepo.findByUserIdAndLeadId(user.id, leadId)
+        // Читаем оценку напрямую из объекта Lead (патч: вместо feedbackRepo)
+        val existingRating = lead.userRating
         val unratedLeadId    = findUnratedLeadId(user.id)
         val isBlockingLead   = (unratedLeadId == leadId)
         val anotherBlocks    = unratedLeadId != null && !isBlockingLead
@@ -266,11 +266,11 @@ class BotLeadsHandler(
         log.info(
             "[BOT][LEADS] Просмотр лида: userId=${user.id} email=${user.email} leadId=$leadId " +
                     "статус=${lead.status} keyword=\"${lead.matchedKeyword}\" " +
-                    "оценка=${existingFeedback?.rating ?: "—"} блокирует=$isBlockingLead другой_блокирует=$anotherBlocks"
+                    "оценка=${existingRating ?: "—"} блокирует=$isBlockingLead другой_блокирует=$anotherBlocks"
         )
 
         // ── Блокировка: другой лид ждёт оценки, а этот — ещё не доставлен ───
-        val isQueued = lead.tgNotifiedAt == null && existingFeedback == null
+        val isQueued = lead.tgNotifiedAt == null && existingRating == null
         if (anotherBlocks && isQueued) {
             val unratedLead  = leadRepository.findById(unratedLeadId!!).orElse(null)
             val pendingCount = leadRepository.countPendingNotificationsByUserId(user.id)
@@ -319,7 +319,8 @@ class BotLeadsHandler(
             false -> "\n🤖 AI: ❌ отклонил${lead.aiReason?.let { " — $it" } ?: ""}"
             null  -> ""
         }
-        val feedbackLine = when (existingFeedback?.rating) {
+        // Патч: feedbackLine читает из lead.userRating
+        val feedbackLine = when (existingRating) {
             LeadRating.GOOD -> "\n⭐ Ваша оценка: 👍 Хороший лид"
             LeadRating.BAD  -> "\n⭐ Ваша оценка: 👎 Не лид"
             null            -> ""
@@ -346,8 +347,6 @@ class BotLeadsHandler(
             append("👤 Автор: $author\n")
             if (chatLabel.isNotBlank()) append("💬 Чат: $chatLabel\n")
             append("🔑 Ключевое слово: «${lead.matchedKeyword}»\n")
-            // Задача 5: добавлен явный суффикс "(UTC)" чтобы пользователь не путал
-            // серверное время со своим локальным.
             append("📅 Дата: $date в $time (UTC)\n\n")
             append("Сообщение:\n${lead.messageText.take(800)}")
             if (lead.messageText.length > 800) append("…")
@@ -357,16 +356,16 @@ class BotLeadsHandler(
 
         // ── 1. Оценка: первичная или смена ────────────────────────────────────
         when {
-            // Лид ещё не оценён и уже был доставлен (или сам является блокирующим)
-            existingFeedback == null && (lead.tgNotifiedAt != null || isBlockingLead) -> {
+            // Патч: используем existingRating == null вместо existingFeedback == null
+            existingRating == null && (lead.tgNotifiedAt != null || isBlockingLead) -> {
                 rows.add(row(
                     btn("👍 Хороший лид", "feedback:good:$leadId"),
                     btn("👎 Не лид",      "feedback:bad:$leadId"),
                 ))
             }
-            // Лид уже оценён — кнопка смены оценки
-            existingFeedback != null -> {
-                val (changeLabel, changeCb) = when (existingFeedback.rating) {
+            // Патч: кнопка смены оценки на основе existingRating
+            existingRating != null -> {
+                val (changeLabel, changeCb) = when (existingRating) {
                     LeadRating.GOOD -> "Изменить → 👎 Не лид"      to "feedback:bad:$leadId"
                     LeadRating.BAD  -> "Изменить → 👍 Хороший лид" to "feedback:good:$leadId"
                 }
@@ -444,11 +443,11 @@ class BotLeadsHandler(
 
     /**
      * Иконка оценки для списка лидов.
-     * Показывается для всех оцененных лидов независимо от источника и tgNotifiedAt.
+     * Патч: читаем оценку напрямую из Lead.userRating вместо feedbackRepo.
      */
     private fun feedbackIcon(userId: Long, leadId: Long): String =
         runCatching {
-            when (feedbackRepo.findByUserIdAndLeadId(userId, leadId)?.rating) {
+            when (leadRepository.findById(leadId).orElse(null)?.userRating) {
                 LeadRating.GOOD -> " 👍"
                 LeadRating.BAD  -> " 👎"
                 null            -> ""

@@ -37,7 +37,7 @@ data class LeadDto(
     val source:          String,
     val messageDate:     String,
     // ── Оценка пользователя ──────────────────────────────────────────────────
-    // null — лид ещё не оценён. Загружается batch-запросом в getLeads().
+    // null — лид ещё не оценён. Читается прямо из поля leads.user_rating.
     val userRating:      String?,
     // Момент отправки уведомления в Telegram (null — ещё не отправлялось).
     // Лид с tgNotifiedAt != null и userRating == null считается «блокирующим»:
@@ -81,7 +81,6 @@ class LeadService(
     private val subscriptionRepo: ChatSubscriptionRepository,
     private val keywordRepo:      KeywordRepository,
     private val userRepo:         UserRepository,
-    private val feedbackRepo:     LeadFeedbackRepository,   // ← для batch-загрузки оценок в DTO
 
     @Lazy private val bot:            AimlyBot,
     private val aiService:            AiService,
@@ -110,7 +109,10 @@ class LeadService(
     private val userbotExecutor: ExecutorService = Executors.newFixedThreadPool(4)
 
 
-
+    /**
+     * Возвращает страницу лидов пользователя с их оценками.
+     * Оценка (userRating) читается прямо из поля Lead — без JOIN к lead_feedbacks.
+     */
     fun getLeads(user: User, status: String?, page: Int, size: Int): LeadPageDto {
         val pageable = PageRequest.of(page, size.coerceIn(1, 100))
         val result = if (status != null) {
@@ -127,20 +129,8 @@ class LeadService(
             log.info("[LEAD] Список запрошен: userId=${user.id} email=${user.email} filter=${status ?: "ALL"} page=$page size=$size")
         }
 
-        // Batch-загрузка оценок для всей страницы одним запросом.
-        // Это позволяет вернуть userRating в каждом DTO без N+1 запросов.
-        val leadIds    = result.content.map { it.id }
-        val ratingMap  = if (leadIds.isNotEmpty()) {
-            feedbackRepo.findByUserIdAndLeadIdIn(user.id, leadIds)
-                .associate { it.lead.id to it.rating.name }
-        } else {
-            emptyMap()
-        }
-
         return LeadPageDto(
-            content       = result.content.map { lead ->
-                lead.toDto(userRating = ratingMap[lead.id])
-            },
+            content       = result.content.map { lead -> lead.toDto() },
             totalElements = result.totalElements,
             totalPages    = result.totalPages,
             page          = result.number,
@@ -163,9 +153,7 @@ class LeadService(
 
         log.info("[LEAD] Статус изменён: userId=${user.id} email=${user.email} leadId=$leadId $oldStatus → ${newStatus.name}")
 
-        // Подтягиваем актуальную оценку чтобы фронт не потерял её при обновлении статуса
-        val currentRating = feedbackRepo.findByUserIdAndLeadId(user.id, leadId)?.rating?.name
-        return saved.toDto(userRating = currentRating)
+        return saved.toDto()
     }
 
     @Transactional
@@ -225,7 +213,6 @@ class LeadService(
 
         log.info("[LEAD] Создан: leadId=#${saved.id} userId=${user.id} email=${user.email} keyword=\"${req.matchedKeyword}\" chat=\"${req.chatTitle}\" source=${req.source} aiEnabled=$hasAiPlan historical=${req.isHistorical}")
 
-        // Payload для уведомления — формируем один раз, передаём в feedbackService
         val notifPayload = LeadNotificationPayload(
             leadId         = saved.id,
             chatTitle      = req.chatTitle,
@@ -250,7 +237,6 @@ class LeadService(
                 )
             }
 
-            // Персональные примеры оценок пользователя для AI-промпта
             val feedbackExamples = feedbackService.getFeedbackExamplesForPrompt(
                 userId  = user.id,
                 keyword = req.matchedKeyword,
@@ -289,8 +275,6 @@ class LeadService(
                 val isRelevant = result?.valid != false
                 if (isRelevant) {
                     if (req.isHistorical) {
-                        // Исторические лиды не проходят через очередь оценок —
-                        // они приходят пачкой при подключении чата и не должны блокировать
                         user.telegramId?.let { tgId ->
                             runCatching {
                                 bot.notifyNewLead(
@@ -307,7 +291,6 @@ class LeadService(
                             }.onFailure { log.warn("ошибка telegram уведомления leadId=#${notifPayload.leadId}: ${it.message}") }
                         }
                     } else {
-                        // LIVE-лиды — через очередь с оценками
                         feedbackService.deliverOrEnqueue(user, notifPayload)
                     }
                 }
@@ -330,7 +313,6 @@ class LeadService(
                     }.onFailure { log.warn("ошибка telegram уведомления leadId=#${notifPayload.leadId}: ${it.message}") }
                 }
             } else {
-                // Без AI-плана, но LIVE — тоже через очередь
                 feedbackService.deliverOrEnqueue(user, notifPayload)
             }
         }
@@ -581,11 +563,9 @@ class LeadService(
 
     /**
      * Маппит Lead в DTO.
-     *
-     * @param userRating — оценка из таблицы lead_feedbacks (загружается batch-запросом в getLeads,
-     *                     либо точечным запросом в updateLeadStatus). null = не оценён.
+     * userRating читается прямо из поля лида — без обращения к lead_feedbacks.
      */
-    private fun Lead.toDto(userRating: String? = null): LeadDto {
+    private fun Lead.toDto(): LeadDto {
         val sub = subscriptionId?.let { subscriptionRepo.findById(it).orElse(null) }
         val rawCtx = contextMessages
         val ctx = if (rawCtx.isNullOrBlank()) emptyList()
@@ -609,7 +589,7 @@ class LeadService(
             contextMessages = ctx,
             source          = source.name,
             messageDate     = displayDate.toString(),
-            userRating      = userRating,
+            userRating      = userRating?.name,
             tgNotifiedAt    = tgNotifiedAt?.toString(),
         )
     }

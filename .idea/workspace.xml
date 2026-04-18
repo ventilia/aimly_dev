@@ -4,15 +4,17 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="a461964d-f6a3-4e0b-a3fa-4fab913d5a3e" name="Changes" comment="экспорт чата в бота сброс">
-      <change beforePath="$PROJECT_DIR$/.idea/shelf/Uncommitted_changes_before_Update_at_02_04_2026_18_32_[Changes]/shelved.patch" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/shelf/Uncommitted_changes_before_Update_at_02_04_2026_18_32__Changes_.xml" beforeDir="false" />
+    <list default="true" id="a461964d-f6a3-4e0b-a3fa-4fab913d5a3e" name="Changes" comment="оценки лидов3 (фронт)">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/Chatexportservice.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/Chatexportservice.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/AimlyBot.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/AimlyBot.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/Botleadshandler.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/Botleadshandler.kt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/Entities.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/Entities.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/IncomingMessageRequest.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/IncomingMessageRequest.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/LeadFeedbackController.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/LeadFeedbackController.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/LeadFeedbackEntities.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/LeadFeedbackEntities.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/LeadFeedbackService.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/LeadFeedbackService.kt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/Leadservice.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/Leadservice.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/api/leads.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/api/leads.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/Repositories.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/Repositories.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/src/dashboard/LeadsPage.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/dashboard/LeadsPage.tsx" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -29,6 +31,7 @@
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+    <option name="RESET_MODE" value="HARD" />
   </component>
   <component name="GitHubPullRequestSearchHistory">{
   &quot;lastFilter&quot;: {
@@ -156,38 +159,6 @@
       <workItem from="1775740679431" duration="955000" />
       <workItem from="1775755095290" duration="3000" />
       <workItem from="1775771408551" duration="613000" />
-    </task>
-    <task id="LOCAL-00004" summary="GO init">
-      <option name="closed" value="true" />
-      <created>1772236890659</created>
-      <option name="number" value="00004" />
-      <option name="presentableId" value="LOCAL-00004" />
-      <option name="project" value="LOCAL" />
-      <updated>1772236890659</updated>
-    </task>
-    <task id="LOCAL-00005" summary="Добавление полей в бд, добавление админ роли, админ панели (сырой), баланс, уведомление только для бота. перех на другой апи для почты">
-      <option name="closed" value="true" />
-      <created>1772291241128</created>
-      <option name="number" value="00005" />
-      <option name="presentableId" value="LOCAL-00005" />
-      <option name="project" value="LOCAL" />
-      <updated>1772291241128</updated>
-    </task>
-    <task id="LOCAL-00006" summary="push. beta">
-      <option name="closed" value="true" />
-      <created>1773089633887</created>
-      <option name="number" value="00006" />
-      <option name="presentableId" value="LOCAL-00006" />
-      <option name="project" value="LOCAL" />
-      <updated>1773089633888</updated>
-    </task>
-    <task id="LOCAL-00007" summary="push. beta">
-      <option name="closed" value="true" />
-      <created>1773333566111</created>
-      <option name="number" value="00007" />
-      <option name="presentableId" value="LOCAL-00007" />
-      <option name="project" value="LOCAL" />
-      <updated>1773333566111</updated>
     </task>
     <task id="LOCAL-00008" summary="push. beta">
       <option name="closed" value="true" />
@@ -549,7 +520,39 @@
       <option name="project" value="LOCAL" />
       <updated>1774897362697</updated>
     </task>
-    <option name="localTasksCounter" value="53" />
+    <task id="LOCAL-00053" summary="оценки лидов2 (фронт)">
+      <option name="closed" value="true" />
+      <created>1776504001706</created>
+      <option name="number" value="00053" />
+      <option name="presentableId" value="LOCAL-00053" />
+      <option name="project" value="LOCAL" />
+      <updated>1776504001706</updated>
+    </task>
+    <task id="LOCAL-00054" summary="оценки лидов3 (фронт)">
+      <option name="closed" value="true" />
+      <created>1776504691911</created>
+      <option name="number" value="00054" />
+      <option name="presentableId" value="LOCAL-00054" />
+      <option name="project" value="LOCAL" />
+      <updated>1776504691911</updated>
+    </task>
+    <task id="LOCAL-00055" summary="оценки лидов3 (фронт)">
+      <option name="closed" value="true" />
+      <created>1776505024041</created>
+      <option name="number" value="00055" />
+      <option name="presentableId" value="LOCAL-00055" />
+      <option name="project" value="LOCAL" />
+      <updated>1776505024041</updated>
+    </task>
+    <task id="LOCAL-00056" summary="оценки лидов3 (фронт)">
+      <option name="closed" value="true" />
+      <created>1776505267298</created>
+      <option name="number" value="00056" />
+      <option name="presentableId" value="LOCAL-00056" />
+      <option name="project" value="LOCAL" />
+      <updated>1776505267298</updated>
+    </task>
+    <option name="localTasksCounter" value="57" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -589,8 +592,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="push. beta" />
-    <MESSAGE value="push. нпм дев" />
     <MESSAGE value="push. бета" />
     <MESSAGE value="push. бета1" />
     <MESSAGE value="push." />
@@ -614,6 +615,8 @@
     <MESSAGE value="регистрация исправлена(dev)" />
     <MESSAGE value="поиск чатов, фильтрация лидов" />
     <MESSAGE value="исправление лидов, поиск чатов, ручной экспорт" />
-    <option name="LAST_COMMIT_MESSAGE" value="исправление лидов, поиск чатов, ручной экспорт" />
+    <MESSAGE value="оценки лидов2 (фронт)" />
+    <MESSAGE value="оценки лидов3 (фронт)" />
+    <option name="LAST_COMMIT_MESSAGE" value="оценки лидов3 (фронт)" />
   </component>
 </project>

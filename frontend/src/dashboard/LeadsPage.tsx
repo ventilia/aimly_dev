@@ -27,7 +27,6 @@ const FILTERS = [
     { value: 'IGNORED', label: 'Архив'    },
 ]
 
-// Ключ для localStorage — скрытие плашки об оценках
 const RATING_BANNER_KEY = 'aimly_rating_hint_v1'
 
 // ─── Вспомогательные функции ──────────────────────────────────────────────────
@@ -142,7 +141,6 @@ const IconFileImport = () => (
     </svg>
 )
 
-// Иконка «большой палец вверх»
 const IconThumbUp = ({ size = 14 }: { size?: number }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/>
@@ -150,7 +148,6 @@ const IconThumbUp = ({ size = 14 }: { size?: number }) => (
     </svg>
 )
 
-// Иконка «большой палец вниз»
 const IconThumbDown = ({ size = 14 }: { size?: number }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z"/>
@@ -158,7 +155,6 @@ const IconThumbDown = ({ size = 14 }: { size?: number }) => (
     </svg>
 )
 
-// Иконка часов — «ожидает оценки»
 const IconClock = () => (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="10"/>
@@ -166,11 +162,18 @@ const IconClock = () => (
     </svg>
 )
 
-// Иконка уведомления Telegram
 const IconTelegram = () => (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <line x1="22" y1="2" x2="11" y2="13"/>
         <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+    </svg>
+)
+
+// Иконка замка для заблокированных лидов
+const IconLock = () => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
     </svg>
 )
 
@@ -192,8 +195,6 @@ function ExportBadge() {
     )
 }
 
-// ─── Бейдж оценки в шапке карточки ───────────────────────────────────────────
-
 function RatingBadge({ rating }: { rating: 'GOOD' | 'BAD' }) {
     const isGood = rating === 'GOOD'
     return (
@@ -214,7 +215,6 @@ function RatingBadge({ rating }: { rating: 'GOOD' | 'BAD' }) {
 }
 
 // ─── Баннер «оценки важны для AI» ────────────────────────────────────────────
-// Показывается один раз, скрывается навсегда через localStorage.
 
 function RatingHintBanner() {
     const [visible, setVisible] = useState(() =>
@@ -236,7 +236,6 @@ function RatingHintBanner() {
             borderRadius: 14,
             padding: '14px 18px',
         }}>
-            {/* Иконка */}
             <span style={{
                 width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
                 background: 'rgba(99,102,241,.13)', color: '#4f46e5',
@@ -244,26 +243,17 @@ function RatingHintBanner() {
             }}>
                 <IconThumbUp size={15} />
             </span>
-
-            {/* Текст */}
             <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                    fontSize: 13, fontWeight: 700,
-                    color: 'var(--c-ink)', marginBottom: 4,
-                }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--c-ink)', marginBottom: 4 }}>
                     Оценки лидов улучшают AI‑фильтрацию
                 </div>
-                <div style={{
-                    fontSize: 12, color: 'var(--c-ink-2)', lineHeight: 1.55,
-                }}>
+                <div style={{ fontSize: 12, color: 'var(--c-ink-2)', lineHeight: 1.55 }}>
                     Нажимайте <strong style={{ color: '#059669' }}>👍 Полезный</strong> или{' '}
                     <strong style={{ color: '#dc2626' }}>👎 Нерелевантный</strong> на каждый лид —
                     AI учится на ваших оценках и постепенно присылает только действительно нужные контакты.
                     Чем больше оценок — тем точнее фильтрация.
                 </div>
             </div>
-
-            {/* Кнопка закрыть */}
             <button
                 onClick={dismiss}
                 title="Больше не показывать"
@@ -285,11 +275,10 @@ function RatingHintBanner() {
 // ─── Компонент кнопок оценки ──────────────────────────────────────────────────
 
 interface FeedbackButtonsProps {
-    leadId:    number
-    current:   'GOOD' | 'BAD' | null
-    disabled:  boolean
-    onRate:    (leadId: number, rating: 'GOOD' | 'BAD') => Promise<void>
-    // true — лид отправлялся в TG, поэтому оценка важна для разблокировки очереди
+    leadId:     number
+    current:    'GOOD' | 'BAD' | null
+    disabled:   boolean
+    onRate:     (leadId: number, rating: 'GOOD' | 'BAD') => Promise<void>
     isBlocking: boolean
 }
 
@@ -298,7 +287,6 @@ function FeedbackButtons({ leadId, current, disabled, onRate, isBlocking }: Feed
 
     const handle = async (rating: 'GOOD' | 'BAD') => {
         if (submitting || disabled) return
-        // Клик на уже выбранную оценку — не делаем ничего (upsert делать нет смысла)
         if (current === rating) return
         setSubmitting(true)
         try {
@@ -311,29 +299,21 @@ function FeedbackButtons({ leadId, current, disabled, onRate, isBlocking }: Feed
     const isGood = current === 'GOOD'
     const isBad  = current === 'BAD'
     const busy   = submitting || disabled
-
-    // Противоположная кнопка "гаснет" когда выбрана другая
-    const goodDimmed = isBad   // выбран BAD → GOOD тускнеет
-    const badDimmed  = isGood  // выбран GOOD → BAD тускнеет
+    const goodDimmed = isBad
+    const badDimmed  = isGood
 
     const baseBtn: React.CSSProperties = {
-        display:    'inline-flex',
-        alignItems: 'center',
-        gap:        5,
-        padding:    '5px 11px',
-        borderRadius: 100,
-        fontSize:   12,
-        fontWeight: 600,
-        cursor:     busy ? 'default' : 'pointer',
+        display: 'inline-flex', alignItems: 'center', gap: 5,
+        padding: '5px 11px', borderRadius: 100,
+        fontSize: 12, fontWeight: 600,
+        cursor: busy ? 'default' : 'pointer',
         transition: 'all .2s',
         fontFamily: 'var(--font-body)',
-        whiteSpace: 'nowrap',
-        flexShrink: 0,
+        whiteSpace: 'nowrap', flexShrink: 0,
     }
 
     return (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            {/* Подсказка для блокирующего лида */}
             {isBlocking && current === null && (
                 <span style={{
                     fontSize: 11, color: 'var(--c-ink-3)', fontWeight: 500,
@@ -343,113 +323,55 @@ function FeedbackButtons({ leadId, current, disabled, onRate, isBlocking }: Feed
                     оцените:
                 </span>
             )}
-
-            {/* GOOD */}
             <button
                 onClick={() => void handle('GOOD')}
                 disabled={busy}
                 title={isGood ? 'Полезный лид (изменить)' : 'Отметить как полезный'}
                 style={{
                     ...baseBtn,
-                    // Активная — насыщенная зелёная
-                    // Приглушённая (когда выбран BAD) — серая, полупрозрачная
-                    // Нейтральная — бледно-зелёная как раньше
-                    border: isGood
-                        ? '1.5px solid rgba(16,185,129,.7)'
-                        : goodDimmed
-                            ? '1.5px solid var(--c-border)'
-                            : '1.5px solid rgba(16,185,129,.35)',
-                    background: isGood
-                        ? 'rgba(16,185,129,.15)'
-                        : goodDimmed
-                            ? 'transparent'
-                            : 'rgba(16,185,129,.06)',
-                    color: isGood
-                        ? '#059669'
-                        : goodDimmed
-                            ? 'var(--c-ink-3)'
-                            : '#059669',
+                    border: isGood ? '1.5px solid rgba(16,185,129,.7)' : goodDimmed ? '1.5px solid var(--c-border)' : '1.5px solid rgba(16,185,129,.35)',
+                    background: isGood ? 'rgba(16,185,129,.15)' : goodDimmed ? 'transparent' : 'rgba(16,185,129,.06)',
+                    color: isGood ? '#059669' : goodDimmed ? 'var(--c-ink-3)' : '#059669',
                     opacity: busy ? 0.5 : goodDimmed ? 0.45 : 1,
                 }}
                 onMouseEnter={e => {
-                    if (busy) return
+                    if (busy || isGood) return
                     const el = e.currentTarget
-                    if (isGood) return
-                    if (goodDimmed) {
-                        // При ховере на приглушённую — немного подсвечиваем, намекаем что кликабельна
-                        el.style.opacity = '0.75'
-                        el.style.borderColor = 'rgba(16,185,129,.3)'
-                        el.style.color = '#059669'
-                    } else {
-                        el.style.borderColor = 'rgba(16,185,129,.55)'
-                        el.style.background  = 'rgba(16,185,129,.11)'
-                    }
+                    if (goodDimmed) { el.style.opacity = '0.75'; el.style.borderColor = 'rgba(16,185,129,.3)'; el.style.color = '#059669' }
+                    else { el.style.borderColor = 'rgba(16,185,129,.55)'; el.style.background = 'rgba(16,185,129,.11)' }
                 }}
                 onMouseLeave={e => {
                     if (busy || isGood) return
                     const el = e.currentTarget
-                    if (goodDimmed) {
-                        el.style.opacity = '0.45'
-                        el.style.borderColor = 'var(--c-border)'
-                        el.style.color = 'var(--c-ink-3)'
-                    } else {
-                        el.style.borderColor = 'rgba(16,185,129,.35)'
-                        el.style.background  = 'rgba(16,185,129,.06)'
-                    }
+                    if (goodDimmed) { el.style.opacity = '0.45'; el.style.borderColor = 'var(--c-border)'; el.style.color = 'var(--c-ink-3)' }
+                    else { el.style.borderColor = 'rgba(16,185,129,.35)'; el.style.background = 'rgba(16,185,129,.06)' }
                 }}
             >
                 <IconThumbUp />
                 Полезный
             </button>
-
-            {/* BAD */}
             <button
                 onClick={() => void handle('BAD')}
                 disabled={busy}
                 title={isBad ? 'Нерелевантный лид (изменить)' : 'Отметить как нерелевантный'}
                 style={{
                     ...baseBtn,
-                    border: isBad
-                        ? '1.5px solid rgba(239,68,68,.65)'
-                        : badDimmed
-                            ? '1.5px solid var(--c-border)'
-                            : '1.5px solid rgba(239,68,68,.3)',
-                    background: isBad
-                        ? 'rgba(239,68,68,.12)'
-                        : badDimmed
-                            ? 'transparent'
-                            : 'rgba(239,68,68,.05)',
-                    color: isBad
-                        ? '#dc2626'
-                        : badDimmed
-                            ? 'var(--c-ink-3)'
-                            : '#dc2626',
+                    border: isBad ? '1.5px solid rgba(239,68,68,.65)' : badDimmed ? '1.5px solid var(--c-border)' : '1.5px solid rgba(239,68,68,.3)',
+                    background: isBad ? 'rgba(239,68,68,.12)' : badDimmed ? 'transparent' : 'rgba(239,68,68,.05)',
+                    color: isBad ? '#dc2626' : badDimmed ? 'var(--c-ink-3)' : '#dc2626',
                     opacity: busy ? 0.5 : badDimmed ? 0.45 : 1,
                 }}
                 onMouseEnter={e => {
-                    if (busy) return
+                    if (busy || isBad) return
                     const el = e.currentTarget
-                    if (isBad) return
-                    if (badDimmed) {
-                        el.style.opacity = '0.75'
-                        el.style.borderColor = 'rgba(239,68,68,.28)'
-                        el.style.color = '#dc2626'
-                    } else {
-                        el.style.borderColor = 'rgba(239,68,68,.5)'
-                        el.style.background  = 'rgba(239,68,68,.09)'
-                    }
+                    if (badDimmed) { el.style.opacity = '0.75'; el.style.borderColor = 'rgba(239,68,68,.28)'; el.style.color = '#dc2626' }
+                    else { el.style.borderColor = 'rgba(239,68,68,.5)'; el.style.background = 'rgba(239,68,68,.09)' }
                 }}
                 onMouseLeave={e => {
                     if (busy || isBad) return
                     const el = e.currentTarget
-                    if (badDimmed) {
-                        el.style.opacity = '0.45'
-                        el.style.borderColor = 'var(--c-border)'
-                        el.style.color = 'var(--c-ink-3)'
-                    } else {
-                        el.style.borderColor = 'rgba(239,68,68,.3)'
-                        el.style.background  = 'rgba(239,68,68,.05)'
-                    }
+                    if (badDimmed) { el.style.opacity = '0.45'; el.style.borderColor = 'var(--c-border)'; el.style.color = 'var(--c-ink-3)' }
+                    else { el.style.borderColor = 'rgba(239,68,68,.3)'; el.style.background = 'rgba(239,68,68,.05)' }
                 }}
             >
                 <IconThumbDown />
@@ -487,15 +409,14 @@ function BlockingBanner({ lead, queueSize, onRate, onScrollTo }: BlockingBannerP
 
     return (
         <div style={{
-            background:   'var(--c-surface)',
-            border:       `1.5px solid ${rated ? 'rgba(16,185,129,.3)' : 'rgba(245,158,11,.35)'}`,
-            borderRadius: 14,
-            padding:      '16px 20px',
-            display:      'flex',
-            flexDirection:'column',
-            gap:          12,
+            background:    'var(--c-surface)',
+            border:        `1.5px solid ${rated ? 'rgba(16,185,129,.3)' : 'rgba(245,158,11,.35)'}`,
+            borderRadius:  14,
+            padding:       '16px 20px',
+            display:       'flex',
+            flexDirection: 'column',
+            gap:           12,
         }}>
-            {/* Заголовок */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{
@@ -523,30 +444,21 @@ function BlockingBanner({ lead, queueSize, onRate, onScrollTo }: BlockingBannerP
                         )}
                     </div>
                 </div>
-
-                {/* Ссылка «Перейти к лиду» */}
                 <button
                     onClick={() => onScrollTo(lead.id)}
                     style={{
                         fontSize: 12, fontWeight: 600, color: 'var(--c-accent)',
                         background: 'none', border: 'none', cursor: 'pointer',
-                        fontFamily: 'var(--font-body)', padding: 0,
-                        flexShrink: 0,
+                        fontFamily: 'var(--font-body)', padding: 0, flexShrink: 0,
                     }}
                 >
                     Перейти к лиду →
                 </button>
             </div>
-
-            {/* Превью лида */}
             <div style={{
-                background:   'var(--c-bg)',
-                border:       '1px solid var(--c-border)',
-                borderRadius: 10,
-                padding:      '10px 14px',
-                display:      'flex',
-                flexDirection:'column',
-                gap:          8,
+                background: 'var(--c-bg)', border: '1px solid var(--c-border)',
+                borderRadius: 10, padding: '10px 14px',
+                display: 'flex', flexDirection: 'column', gap: 8,
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--c-ink)' }}>
@@ -566,14 +478,11 @@ function BlockingBanner({ lead, queueSize, onRate, onScrollTo }: BlockingBannerP
                 <p style={{
                     fontSize: 13, color: 'var(--c-ink-2)', lineHeight: 1.55,
                     margin: 0, display: '-webkit-box',
-                    WebkitLineClamp: 3, WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden',
+                    WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden',
                 }}>
                     {lead.messageText}
                 </p>
             </div>
-
-            {/* Кнопки оценки в баннере */}
             {!rated && (
                 <FeedbackButtons
                     leadId={lead.id}
@@ -587,29 +496,68 @@ function BlockingBanner({ lead, queueSize, onRate, onScrollTo }: BlockingBannerP
     )
 }
 
+// ─── Оверлей заблокированного лида ───────────────────────────────────────────
+
+interface LockedOverlayProps {
+    onScrollToBlocking: () => void
+}
+
+function LockedOverlay({ onScrollToBlocking }: LockedOverlayProps) {
+    return (
+        <div
+            style={{
+                position:       'absolute',
+                inset:          0,
+                borderRadius:   'inherit',
+                background:     'rgba(var(--c-bg-rgb, 15,15,20), 0.72)',
+                backdropFilter: 'blur(4px)',
+                WebkitBackdropFilter: 'blur(4px)',
+                display:        'flex',
+                flexDirection:  'column',
+                alignItems:     'center',
+                justifyContent: 'center',
+                gap:            10,
+                zIndex:         2,
+                cursor:         'pointer',
+                borderTop:      '1px solid rgba(107,114,128,.15)',
+            }}
+            onClick={onScrollToBlocking}
+            title="Оцените предыдущий лид, чтобы разблокировать"
+        >
+            <span style={{ color: 'var(--c-ink-3)', opacity: 0.55 }}>
+                <IconLock />
+            </span>
+            <span style={{
+                fontSize:   12,
+                fontWeight: 600,
+                color:      'var(--c-ink-3)',
+                opacity:    0.75,
+                textAlign:  'center',
+                maxWidth:   220,
+                lineHeight: 1.45,
+            }}>
+                Оцените предыдущий лид
+            </span>
+        </div>
+    )
+}
+
 // ─── Основной компонент ───────────────────────────────────────────────────────
 
 export default function LeadsPage() {
-    const [data,        setData]        = useState<LeadPage | null>(null)
-    const [loading,     setLoading]     = useState(true)
-    const [filter,      setFilter]      = useState('')
-    const [page,        setPage]        = useState(0)
-    const [error,       setError]       = useState('')
-    const [updating,    setUpdating]    = useState<Set<number>>(new Set())
-    const [expanded,    setExpanded]    = useState<Set<number>>(new Set())
-    const [markingAll,  setMarkingAll]  = useState(false)
+    const [data,       setData]       = useState<LeadPage | null>(null)
+    const [loading,    setLoading]    = useState(true)
+    const [filter,     setFilter]     = useState('')
+    const [page,       setPage]       = useState(0)
+    const [error,      setError]      = useState('')
+    const [updating,   setUpdating]   = useState<Set<number>>(new Set())
+    const [expanded,   setExpanded]   = useState<Set<number>>(new Set())
+    const [markingAll, setMarkingAll] = useState(false)
 
-    // Локальная карта оценок leadId → rating.
-    // Всегда инициализируется из userRating бэка при загрузке.
-    // Обновляется оптимистично при клике, но не блокирует повторную синхронизацию с БД.
-    const [ratings, setRatings] = useState<Record<number, 'GOOD' | 'BAD' | null>>({})
-    // Лиды, у которых оценка сейчас «в полёте» (отправляется на бэк)
+    const [ratings,    setRatings]    = useState<Record<number, 'GOOD' | 'BAD' | null>>({})
     const [ratingBusy, setRatingBusy] = useState<Set<number>>(new Set())
+    const [queueSize,  setQueueSize]  = useState(0)
 
-    // Статус очереди TG-уведомлений
-    const [queueSize, setQueueSize] = useState(0)
-
-    // Рефы для прокрутки к карточке лида
     const cardRefs = useRef<Record<number, HTMLDivElement | null>>({})
 
     // ── Загрузка ──────────────────────────────────────────────────────────────
@@ -626,15 +574,9 @@ export default function LeadsPage() {
             setQueueSize(status.queueSize)
             dispatchLeadsCountChanged(result.newCount)
 
-            // Синхронизируем локальную карту оценок из данных бэка.
-            // Бэк возвращает userRating прямо в DTO лида через batch-запрос к lead_feedbacks.
-            // Не перезаписываем только те лиды, по которым прямо сейчас летит запрос (ratingBusy),
-            // чтобы не сбросить оптимистичное обновление в момент in-flight запроса.
             setRatings(prev => {
                 const next = { ...prev }
                 result.content.forEach(lead => {
-                    // Пропускаем только если запрос на оценку прямо сейчас в полёте
-                    // (проверяем через ratingBusy в момент вызова setRatings)
                     next[lead.id] = lead.userRating ?? null
                 })
                 return next
@@ -648,23 +590,12 @@ export default function LeadsPage() {
 
     useEffect(() => { void load() }, [load])
 
-    // ── Смена фильтра ─────────────────────────────────────────────────────────
-
-    const changeFilter = (value: string) => {
-        setFilter(value)
-        setPage(0)
-    }
-
-    // ── Развернуть/свернуть карточку ─────────────────────────────────────────
+    const changeFilter = (value: string) => { setFilter(value); setPage(0) }
 
     const toggleExpand = (id: number) => {
         setExpanded(prev => {
             const next = new Set(prev)
-            if (next.has(id)) {
-                next.delete(id)
-            } else {
-                next.add(id)
-            }
+            if (next.has(id)) next.delete(id); else next.add(id)
             return next
         })
     }
@@ -699,30 +630,18 @@ export default function LeadsPage() {
 
     // ── Оценка лида ───────────────────────────────────────────────────────────
 
-    /**
-     * Отправляет оценку лида на бэк.
-     * Поддерживает upsert — повторный вызов меняет оценку.
-     * Оптимистичное обновление: rating ставим немедленно, до ответа сервера.
-     * При ошибке — откатываем на предыдущее значение.
-     */
     const submitRating = async (leadId: number, rating: 'GOOD' | 'BAD') => {
         const prevRating = ratings[leadId] ?? null
-
-        // Оптимистичное обновление UI
         setRatings(prev => ({ ...prev, [leadId]: rating }))
         setRatingBusy(prev => new Set(prev).add(leadId))
         try {
             const res = await feedbackApi.submit(leadId, rating)
-            // Обновляем счётчик очереди из ответа бэка
             if (res.queueEmpty) {
                 setQueueSize(0)
             } else {
-                // Точный размер очереди узнаём отдельным запросом
                 const status = await feedbackApi.getStatus()
                 setQueueSize(status.queueSize)
             }
-            // Если лид был NEW — при первой оценке бэк автоматически ставит VIEWED.
-            // Обновляем локально.
             setData(prev => {
                 if (!prev) return prev
                 return {
@@ -735,7 +654,6 @@ export default function LeadsPage() {
                 }
             })
         } catch {
-            // Откатываем оптимистичное обновление
             setRatings(prev => ({ ...prev, [leadId]: prevRating }))
         } finally {
             setRatingBusy(prev => { const s = new Set(prev); s.delete(leadId); return s })
@@ -764,19 +682,14 @@ export default function LeadsPage() {
         }
     }
 
-    // ── Открытие лида по ссылке ───────────────────────────────────────────────
-
     const handleOpen = (lead: Lead) => {
         if (lead.status === 'NEW') void setStatus(lead, 'VIEWED')
     }
-
-    // ── Прокрутка к карточке ──────────────────────────────────────────────────
 
     const scrollToLead = (leadId: number) => {
         const el = cardRefs.current[leadId]
         if (el) {
             el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-            // Краткая подсветка
             el.style.transition = 'box-shadow .2s'
             el.style.boxShadow  = '0 0 0 2.5px var(--c-accent)'
             setTimeout(() => { el.style.boxShadow = '' }, 1200)
@@ -790,13 +703,27 @@ export default function LeadsPage() {
     )
 
     /**
-     * «Блокирующий» лид — последний, который был доставлен в TG (tgNotifiedAt != null),
-     * но ещё не оценён. Именно из-за него следующие лиды сидят в очереди.
-     * Показываем в баннере.
+     * «Блокирующий» лид — последний отправленный в TG (tgNotifiedAt != null),
+     * но ещё не оценённый. Из-за него очередь не двигается.
      */
     const blockingLead = visibleContent.find(lead =>
         lead.tgNotifiedAt !== null && (ratings[lead.id] ?? lead.userRating) === null
     ) ?? null
+
+    /**
+     * Временная метка блокирующего лида.
+     * Все лиды с foundAt > blockingLead.foundAt, у которых tgNotifiedAt === null,
+     * считаются «заблокированными очередью» и получают визуальный оверлей.
+     */
+    const blockingLeadFoundAtMs = blockingLead
+        ? (() => {
+            try {
+                const iso = blockingLead.foundAt
+                const normalized = iso.includes('T') && !iso.endsWith('Z') && !iso.includes('+') && !iso.includes('-', 10) ? iso + 'Z' : iso
+                return new Date(normalized).getTime()
+            } catch { return null }
+        })()
+        : null
 
     // ── Рендер: загрузка ──────────────────────────────────────────────────────
 
@@ -818,14 +745,10 @@ export default function LeadsPage() {
         )
     }
 
-    // ── Рендер: ошибка ────────────────────────────────────────────────────────
-
     if (error) {
         return (
             <div className={s.page}>
-                <div className={s.header}>
-                    <h1 className={s.title}>Лиды</h1>
-                </div>
+                <div className={s.header}><h1 className={s.title}>Лиды</h1></div>
                 <div className={s.empty} style={{ color: '#dc2626', fontSize: 14 }}>{error}</div>
             </div>
         )
@@ -836,7 +759,6 @@ export default function LeadsPage() {
     return (
         <div className={s.page}>
             <div className={s.header}>
-                {/* Левая часть: заголовок + счётчик + кнопка «прочитать всё» */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
                     <h1 className={s.title}>Лиды</h1>
 
@@ -846,37 +768,25 @@ export default function LeadsPage() {
                                 fontSize: 12, fontWeight: 700,
                                 padding: '2px 9px', borderRadius: 100,
                                 background: 'rgba(239,68,68,.12)', color: '#dc2626',
-                                border: '1px solid rgba(239,68,68,.2)',
-                                flexShrink: 0,
+                                border: '1px solid rgba(239,68,68,.2)', flexShrink: 0,
                             }}>
                                 {data!.newCount} новых
                             </span>
-
                             <button
                                 onClick={() => void handleMarkAllRead()}
                                 disabled={markingAll}
                                 style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: 5,
-                                    padding: '4px 12px',
-                                    borderRadius: 100,
+                                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                                    padding: '4px 12px', borderRadius: 100,
                                     border: '1.5px solid var(--c-border)',
-                                    background: 'none',
-                                    color: 'var(--c-ink-2)',
-                                    fontSize: 12,
-                                    fontWeight: 600,
+                                    background: 'none', color: 'var(--c-ink-2)',
+                                    fontSize: 12, fontWeight: 600,
                                     cursor: markingAll ? 'default' : 'pointer',
-                                    fontFamily: 'var(--font-body)',
-                                    transition: 'all .15s',
+                                    fontFamily: 'var(--font-body)', transition: 'all .15s',
                                     opacity: markingAll ? 0.5 : 1,
                                 }}
-                                onMouseEnter={e => {
-                                    if (!markingAll) (e.currentTarget as HTMLButtonElement).style.color = 'var(--c-accent)'
-                                }}
-                                onMouseLeave={e => {
-                                    (e.currentTarget as HTMLButtonElement).style.color = 'var(--c-ink-2)'
-                                }}
+                                onMouseEnter={e => { if (!markingAll) (e.currentTarget as HTMLButtonElement).style.color = 'var(--c-accent)' }}
+                                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--c-ink-2)' }}
                             >
                                 <IconCheck />
                                 {markingAll ? 'Читаем...' : 'Прочитать всё'}
@@ -898,10 +808,10 @@ export default function LeadsPage() {
                 </div>
             </div>
 
-            {/* ── Плашка «оценки улучшают AI» — показывается один раз ── */}
+            {/* Баннер «оценки улучшают AI» */}
             <RatingHintBanner />
 
-            {/* ── Баннер блокирующего лида ── */}
+            {/* Баннер блокирующего лида */}
             {blockingLead && queueSize > 0 && (
                 <BlockingBanner
                     lead={blockingLead}
@@ -936,8 +846,23 @@ export default function LeadsPage() {
                                 : (lead.userRating ?? null)
                             const ratingLoading = ratingBusy.has(lead.id)
 
-                            // Лид является «блокирующим»: отправлен в TG, но не оценён
+                            // «Блокирующий» лид — отправлен в TG, но не оценён.
+                            // Именно его нужно оценить чтобы получить следующие.
                             const isBlocking = lead.tgNotifiedAt !== null && currentRating === null
+
+                            // «Заблокированный очередью» лид — ещё не был доставлен (tgNotifiedAt == null),
+                            // но появился позже блокирующего — значит стоит в очереди.
+                            // Показываем оверлей замка пока не оценён блокирующий лид.
+                            const isLockedByQueue = (() => {
+                                if (blockingLeadFoundAtMs === null) return false
+                                if (lead.tgNotifiedAt !== null) return false   // уже доставлен — не блокируем
+                                if (currentRating !== null) return false        // оценён — не блокируем
+                                try {
+                                    const iso = lead.foundAt
+                                    const normalized = iso.includes('T') && !iso.endsWith('Z') && !iso.includes('+') && !iso.includes('-', 10) ? iso + 'Z' : iso
+                                    return new Date(normalized).getTime() > blockingLeadFoundAtMs
+                                } catch { return false }
+                            })()
 
                             return (
                                 <div
@@ -945,12 +870,26 @@ export default function LeadsPage() {
                                     ref={el => { cardRefs.current[lead.id] = el }}
                                     className={s.leadCard}
                                     style={{
-                                        // Блокирующий лид — лёгкий жёлтый акцент рамки
+                                        // Блокирующий лид — жёлтый акцент рамки, чтобы притягивал взгляд
                                         outline: isBlocking
-                                            ? '2px solid rgba(245,158,11,.35)'
+                                            ? '2px solid rgba(245,158,11,.45)'
                                             : undefined,
+                                        // Заблокированные лиды в очереди — серая рамка
+                                        border: isLockedByQueue
+                                            ? '1px solid rgba(107,114,128,.2)'
+                                            : undefined,
+                                        // position: relative нужен для абсолютного позиционирования оверлея
+                                        position: 'relative',
+                                        overflow:  isLockedByQueue ? 'hidden' : undefined,
                                     }}
                                 >
+                                    {/* Оверлей замка для лидов в очереди */}
+                                    {isLockedByQueue && (
+                                        <LockedOverlay
+                                            onScrollToBlocking={() => blockingLead && scrollToLead(blockingLead.id)}
+                                        />
+                                    )}
+
                                     {/* Заголовок карточки */}
                                     <div className={s.leadHeader}>
                                         <div className={s.leadMeta}>
@@ -972,7 +911,6 @@ export default function LeadsPage() {
                                                 </span>
                                             )}
 
-                                            {/* Бейдж оценки — показываем в шапке, если лид уже оценён */}
                                             {currentRating !== null && (
                                                 <RatingBadge rating={currentRating} />
                                             )}

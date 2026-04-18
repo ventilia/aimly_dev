@@ -55,22 +55,32 @@ interface LeadRepository : JpaRepository<Lead, Long> {
 
     /**
      * Возвращает ID лида, который уже был отправлен пользователю в Telegram
-     * (tgNotifiedAt IS NOT NULL), но ещё не получил оценку в lead_feedbacks.
+     * (tgNotifiedAt IS NOT NULL), но ещё не получил оценку (userRating IS NULL).
      *
-     * Использует NOT EXISTS вместо NOT IN:
-     *  - корректно работает с пустым множеством оценённых лидов
-     *  - не тянет список ID в память приложения
-     *  - эффективнее на больших объёмах
+     * Использует прямую проверку поля userRating на лиде — без JOIN к lead_feedbacks.
      */
     @Query("""
         SELECT l.id FROM Lead l
         WHERE l.user.id = :userId
           AND l.tgNotifiedAt IS NOT NULL
-          AND NOT EXISTS (
-              SELECT 1 FROM LeadFeedback f
-              WHERE f.lead.id = l.id
-                AND f.user.id = :userId
-          )
+          AND l.userRating IS NULL
+        ORDER BY l.tgNotifiedAt DESC
+    """)
+    fun findLatestNotifiedWithoutRating(
+        @Param("userId") userId: Long,
+        pageable: Pageable,
+    ): List<Long>
+
+    /**
+     * Устаревший вариант — оставлен для совместимости с BotLeadsHandler,
+     * который ещё использует старое имя метода.
+     * Делегирует к findLatestNotifiedWithoutRating.
+     */
+    @Query("""
+        SELECT l.id FROM Lead l
+        WHERE l.user.id = :userId
+          AND l.tgNotifiedAt IS NOT NULL
+          AND l.userRating IS NULL
         ORDER BY l.tgNotifiedAt DESC
     """)
     fun findLatestNotifiedWithoutFeedback(
@@ -81,16 +91,52 @@ interface LeadRepository : JpaRepository<Lead, Long> {
     /**
      * Количество лидов в очереди pending_lead_notifications для данного пользователя.
      * Используется в UI бота для отображения размера очереди рядом с кнопками оценки.
-     *
-     * Это удобная обёртка над PendingLeadNotificationRepository.countByUserId,
-     * доступная через LeadRepository для инъекции в BotLeadsHandler без добавления
-     * лишних зависимостей в конструктор.
      */
     @Query("""
         SELECT COUNT(p) FROM PendingLeadNotification p
         WHERE p.user.id = :userId
     """)
     fun countPendingNotificationsByUserId(@Param("userId") userId: Long): Long
+
+    // ─── AI-промпт: оценённые лиды пользователя ──────────────────────────────
+
+    /**
+     * Общее количество оценённых лидов пользователя.
+     * Используется для порога MIN_FEEDBACKS_FOR_PROMPT.
+     */
+    @Query("SELECT COUNT(l) FROM Lead l WHERE l.user.id = :userId AND l.userRating IS NOT NULL")
+    fun countByUserIdAndUserRatingNotNull(@Param("userId") userId: Long): Long
+
+    /**
+     * Последние оценённые лиды по конкретному ключевому слову.
+     * Наиболее релевантные примеры для AI-промпта.
+     */
+    @Query("""
+        SELECT l FROM Lead l
+        WHERE l.user.id = :userId
+          AND l.matchedKeyword = :keyword
+          AND l.userRating IS NOT NULL
+        ORDER BY l.ratingAt DESC
+    """)
+    fun findRatedByUserIdAndKeyword(
+        @Param("userId")  userId:  Long,
+        @Param("keyword") keyword: String,
+        pageable: Pageable,
+    ): List<Lead>
+
+    /**
+     * Последние оценённые лиды пользователя — общая выборка для контекста AI-промпта.
+     */
+    @Query("""
+        SELECT l FROM Lead l
+        WHERE l.user.id = :userId
+          AND l.userRating IS NOT NULL
+        ORDER BY l.ratingAt DESC
+    """)
+    fun findRecentRatedByUserId(
+        @Param("userId") userId: Long,
+        pageable: Pageable,
+    ): List<Lead>
 }
 
 @Repository

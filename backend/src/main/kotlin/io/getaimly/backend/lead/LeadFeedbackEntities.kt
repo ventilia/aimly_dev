@@ -11,6 +11,11 @@ import java.time.LocalDateTime
 
 enum class LeadRating { GOOD, BAD }
 
+/**
+ * Сущность оценки сохраняется только для обратной совместимости БД.
+ * Основная логика работает через поля [Lead.userRating] и [Lead.ratingAt].
+ * Новых записей сюда не пишем.
+ */
 @Entity
 @Table(
     name = "lead_feedbacks",
@@ -77,6 +82,15 @@ class PendingLeadNotification(
     @Column(name = "author_name", nullable = false, length = 200)
     val authorName: String = "",
 
+    /**
+     * ID Telegram-сообщения с nudge (напоминанием оценить лид).
+     * Сохраняется при отправке [AimlyBot.notifyLeadPending].
+     * При оценке лида (из бота или с фронта) это сообщение удаляется через deleteMessage.
+     * NULL — nudge не был отправлен или уже удалён.
+     */
+    @Column(name = "nudge_tg_message_id")
+    var nudgeTgMessageId: Int? = null,
+
     @Column(name = "created_at", nullable = false, updatable = false)
     val createdAt: LocalDateTime = LocalDateTime.now(),
 )
@@ -88,44 +102,7 @@ interface LeadFeedbackRepository : JpaRepository<LeadFeedback, Long> {
 
     fun findByUserIdAndLeadId(userId: Long, leadId: Long): LeadFeedback?
 
-    @Query("""
-        SELECT f FROM LeadFeedback f
-        WHERE f.user.id = :userId
-        ORDER BY f.createdAt DESC
-    """)
-    fun findRecentByUserId(
-        @Param("userId") userId: Long,
-        pageable: Pageable,
-    ): List<LeadFeedback>
-
-    @Query("""
-        SELECT f FROM LeadFeedback f
-        WHERE f.user.id = :userId
-          AND f.matchedKeyword = :keyword
-        ORDER BY f.createdAt DESC
-    """)
-    fun findRecentByUserIdAndKeyword(
-        @Param("userId")  userId:  Long,
-        @Param("keyword") keyword: String,
-        pageable: Pageable,
-    ): List<LeadFeedback>
-
     fun countByUserId(userId: Long): Long
-
-    /**
-     * Batch-загрузка оценок для страницы лидов.
-     * Используется в LeadService.getLeads() чтобы одним запросом получить
-     * все оценки пользователя для текущей страницы лидов и вернуть их в DTO.
-     */
-    @Query("""
-        SELECT f FROM LeadFeedback f
-        WHERE f.user.id = :userId
-          AND f.lead.id IN :leadIds
-    """)
-    fun findByUserIdAndLeadIdIn(
-        @Param("userId")  userId:  Long,
-        @Param("leadIds") leadIds: List<Long>,
-    ): List<LeadFeedback>
 }
 
 @Repository
@@ -146,4 +123,10 @@ interface PendingLeadNotificationRepository : JpaRepository<PendingLeadNotificat
     fun existsByUserIdAndLeadId(userId: Long, leadId: Long): Boolean
 
     fun deleteByUserIdAndLeadId(userId: Long, leadId: Long)
+
+    /**
+     * Находит запись очереди для конкретного лида пользователя.
+     * Используется при оценке — чтобы достать nudgeTgMessageId и удалить Telegram-сообщение.
+     */
+    fun findByUserIdAndLeadId(userId: Long, leadId: Long): PendingLeadNotification?
 }

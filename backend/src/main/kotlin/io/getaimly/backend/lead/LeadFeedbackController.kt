@@ -11,8 +11,8 @@ data class LeadFeedbackRequest(
 )
 
 data class LeadFeedbackResponse(
-    val leadId:  Long,
-    val rating:  String,
+    val leadId:     Long,
+    val rating:     String,
     // true — следующий лид из очереди уже отправлен в TG (либо очередь пуста)
     val queueEmpty: Boolean,
 )
@@ -34,11 +34,10 @@ class LeadFeedbackController(
      *
      * Body: { "rating": "GOOD" }  или  { "rating": "BAD" }
      *
-     * Пример запроса с сайта:
-     *   fetch('/api/v1/leads/123/feedback', {
-     *     method: 'POST',
-     *     body: JSON.stringify({ rating: 'GOOD' }),
-     *   })
+     * После успешной оценки:
+     *   - рейтинг сохраняется в поле leads.user_rating
+     *   - nudge-сообщение в Telegram автоматически удаляется (если было отправлено)
+     *   - следующий лид из очереди доставляется в Telegram
      */
     @PostMapping("/{leadId}/feedback")
     fun submitFeedback(
@@ -52,7 +51,7 @@ class LeadFeedbackController(
                 return ResponseEntity.badRequest().build()
             }
 
-        val feedback   = feedbackService.submitFeedback(user, leadId, rating)
+        feedbackService.submitFeedback(user, leadId, rating)
         val queueEmpty = pendingRepo.countByUserId(user.id) == 0L
 
         log.info(
@@ -62,7 +61,7 @@ class LeadFeedbackController(
         return ResponseEntity.ok(
             LeadFeedbackResponse(
                 leadId     = leadId,
-                rating     = feedback.rating.name,
+                rating     = rating.name,
                 queueEmpty = queueEmpty,
             )
         )
@@ -71,7 +70,7 @@ class LeadFeedbackController(
     /**
      * GET /api/v1/leads/feedback-status
      *
-     * Возвращает ID первого неоцененного лида (если есть).
+     * Возвращает размер очереди ожидающих уведомлений.
      * Фронтенд использует это при загрузке страницы лидов,
      * чтобы определить — нужно ли показать "оцените предыдущий" блок.
      */
