@@ -616,7 +616,7 @@ export default function LeadsPage() {
             // и именно его бот просит оценить в nudge-сообщении.
             const blocking = result.content
                 .filter(l => l.tgNotifiedAt !== null && l.userRating === null)
-                .sort((a, b) => parseLeadDate(b.tgNotifiedAt!) - parseLeadDate(a.tgNotifiedAt!))
+                .sort((a, b) => parseLeadDate(a.tgNotifiedAt!) - parseLeadDate(b.tgNotifiedAt!))
                 .at(0) ?? null
             setBlockingLeadId(blocking?.id ?? null)
 
