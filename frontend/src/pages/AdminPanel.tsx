@@ -80,6 +80,25 @@ type UserWithSub = AdminUserDto & {
     subExpiresAt: string | null
 }
 
+// ─── Бейдж оценки лида ───────────────────────────────────────────────────────
+
+function RatingBadgeAdmin({ rating, ru }: { rating: string | null; ru: boolean }) {
+    if (!rating) return <span style={{ color: 'var(--c-ink-3)', fontSize: 11 }}>—</span>
+    const isGood = rating === 'GOOD'
+    return (
+        <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 3,
+            fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 100,
+            background: isGood ? 'rgba(16,185,129,.1)' : 'rgba(239,68,68,.08)',
+            color: isGood ? '#059669' : '#dc2626',
+            border: `1px solid ${isGood ? 'rgba(16,185,129,.25)' : 'rgba(239,68,68,.22)'}`,
+            whiteSpace: 'nowrap' as const,
+        }}>
+            {isGood ? '👍' : '👎'} {isGood ? (ru ? 'Хороший' : 'Good') : (ru ? 'Не лид' : 'Not lead')}
+        </span>
+    )
+}
+
 // ─── Модалка деталей пользователя ────────────────────────────────────────────
 
 function LeadStatusBadge({ status }: { status: string }) {
@@ -110,6 +129,117 @@ function parseJsonList<T>(raw: string | null | undefined): T[] {
     }
 }
 
+// ─── Секция «Оценки для AI» — аккордеон с 25 оценёнными лидами ───────────────
+
+function RatedLeadsSection({ ratedLeads, ru }: { ratedLeads: AdminLeadDto[]; ru: boolean }) {
+    const [open, setOpen] = useState(false)
+
+    if (ratedLeads.length === 0) return (
+        <span className={s.detailAiEmpty}>
+            {ru ? 'Оценок пока нет' : 'No ratings yet'}
+        </span>
+    )
+
+    const goodCount = ratedLeads.filter(l => l.userRating === 'GOOD').length
+    const badCount  = ratedLeads.filter(l => l.userRating === 'BAD').length
+
+    return (
+        <div style={{ border: '1px solid var(--c-border)', borderRadius: 10, overflow: 'hidden' }}>
+            {/* Заголовок-аккордеон */}
+            <button
+                onClick={() => setOpen(v => !v)}
+                style={{
+                    width: '100%', display: 'flex', alignItems: 'center',
+                    justifyContent: 'space-between', padding: '10px 14px',
+                    background: 'var(--c-surface)', border: 'none',
+                    cursor: 'pointer', fontFamily: 'var(--font-body)', textAlign: 'left',
+                }}
+            >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--c-ink)' }}>
+                        {ru ? `Всего: ${ratedLeads.length}` : `Total: ${ratedLeads.length}`}
+                    </span>
+                    <span style={{
+                        fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 100,
+                        background: 'rgba(16,185,129,.1)', color: '#059669',
+                        border: '1px solid rgba(16,185,129,.25)',
+                    }}>
+                        👍 {goodCount}
+                    </span>
+                    <span style={{
+                        fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 100,
+                        background: 'rgba(239,68,68,.08)', color: '#dc2626',
+                        border: '1px solid rgba(239,68,68,.22)',
+                    }}>
+                        👎 {badCount}
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--c-ink-3)' }}>
+                        {open ? (ru ? '▲ скрыть' : '▲ collapse') : (ru ? '▼ показать' : '▼ expand')}
+                    </span>
+                </div>
+            </button>
+
+            {open && (
+                <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                        <thead>
+                        <tr style={{ background: 'var(--c-bg)' }}>
+                            <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--c-ink-3)', whiteSpace: 'nowrap' }}>ID</th>
+                            <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--c-ink-3)' }}>{ru ? 'Оценка' : 'Rating'}</th>
+                            <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--c-ink-3)' }}>{ru ? 'Ключ. слово' : 'Keyword'}</th>
+                            <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--c-ink-3)' }}>{ru ? 'Сообщение' : 'Message'}</th>
+                            <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--c-ink-3)', whiteSpace: 'nowrap' }}>{ru ? 'Дата оценки' : 'Rated at'}</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {ratedLeads.map((lead, idx) => (
+                            <tr key={lead.id} style={{ background: idx % 2 === 0 ? 'var(--c-surface)' : 'var(--c-bg)' }}>
+                                <td style={{ padding: '6px 10px', fontFamily: 'monospace', color: 'var(--c-ink-3)', whiteSpace: 'nowrap' }}>
+                                    #{lead.id}
+                                </td>
+                                <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
+                                    <RatingBadgeAdmin rating={lead.userRating} ru={ru} />
+                                </td>
+                                <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
+                                        <span style={{
+                                            fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 100,
+                                            background: 'rgba(245,158,11,.1)', color: '#d97706',
+                                            border: '1px solid rgba(245,158,11,.25)',
+                                        }}>
+                                            {lead.matchedKeyword}
+                                        </span>
+                                </td>
+                                <td style={{ padding: '6px 10px' }}>
+                                    <div style={{
+                                        maxWidth: 280, overflow: 'hidden',
+                                        display: '-webkit-box',
+                                        WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                                        lineHeight: 1.4, color: 'var(--c-ink-2)',
+                                    }}>
+                                        {lead.messageLink
+                                            ? <a href={lead.messageLink} target="_blank" rel="noopener noreferrer"
+                                                 style={{ color: 'var(--c-accent)', textDecoration: 'none' }}>
+                                                {lead.messageText}
+                                            </a>
+                                            : lead.messageText
+                                        }
+                                    </div>
+                                </td>
+                                <td style={{ padding: '6px 10px', color: 'var(--c-ink-3)', whiteSpace: 'nowrap' }}>
+                                    {fmtDate(lead.ratingAt, ru)}
+                                </td>
+                            </tr>
+                        ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </div>
+    )
+}
+
+// ─── Модалка деталей пользователя ────────────────────────────────────────────
+
 function UserDetailModal({
                              userId,
                              lang,
@@ -129,7 +259,6 @@ function UserDetailModal({
 
     useEffect(() => {
         let alive = true
-
         void (async () => {
             try {
                 const data = await adminApi.getUserDetails(userId)
@@ -140,13 +269,9 @@ function UserDetailModal({
                 if (alive) setLoading(false)
             }
         })()
-
-        return () => {
-            alive = false
-        }
+        return () => { alive = false }
     }, [userId])
 
-    // Закрытие по Escape
     useEffect(() => {
         const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
         document.addEventListener('keydown', handler)
@@ -445,30 +570,17 @@ function UserDetailModal({
                                                         {lead.chatTitle || '—'}
                                                     </td>
                                                     <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                                                        {lead.authorUsername
-                                                            ? `@${lead.authorUsername}`
-                                                            : lead.authorName || '—'}
+                                                        {lead.authorUsername ? `@${lead.authorUsername}` : lead.authorName || '—'}
                                                     </td>
                                                     <td>
-                                                        <div style={{
-                                                            fontSize: 11, maxWidth: 200,
-                                                            overflow: 'hidden', display: '-webkit-box',
-                                                            WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-                                                            lineHeight: 1.4,
-                                                        }}>
+                                                        <div style={{ fontSize: 11, maxWidth: 200, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: 1.4 }}>
                                                             {lead.messageLink
-                                                                ? <a href={lead.messageLink} target="_blank"
-                                                                     rel="noopener noreferrer"
-                                                                     className={s.leadLink}>
-                                                                    {lead.messageText}
-                                                                </a>
+                                                                ? <a href={lead.messageLink} target="_blank" rel="noopener noreferrer" className={s.leadLink}>{lead.messageText}</a>
                                                                 : lead.messageText
                                                             }
                                                         </div>
                                                     </td>
-                                                    <td>
-                                                        <span className={s.leadKeywordPill}>{lead.matchedKeyword}</span>
-                                                    </td>
+                                                    <td><span className={s.leadKeywordPill}>{lead.matchedKeyword}</span></td>
                                                     <td><LeadStatusBadge status={lead.status} /></td>
                                                     <td><AiBadge valid={lead.aiValid} ru={ru} /></td>
                                                     <td style={{ fontSize: 11, color: 'var(--c-ink-3)', whiteSpace: 'nowrap' }}>
@@ -481,6 +593,16 @@ function UserDetailModal({
                                     </div>
                                 }
                             </div>
+
+                            {/* ── Оценки для AI (последние 25) ── */}
+                            <div className={s.detailSection}>
+                                <p className={s.detailSectionTitle}>
+                                    🧠 {ru ? 'Оценки для AI (последние 25)' : 'AI Ratings (last 25)'}
+                                    <span>{detail.ratedLeads.length}</span>
+                                </p>
+                                <RatedLeadsSection ratedLeads={detail.ratedLeads} ru={ru} />
+                            </div>
+
                         </div>
                     </>
                 ) : null}
@@ -575,17 +697,10 @@ function UsersTable({
     }
 
     const subsMap = new Map(subs.map(sub => [sub.userId, sub]))
-
     const merged: UserWithSub[] = users.map(u => {
         const sub = subsMap.get(u.id)
-        return {
-            ...u,
-            subStatus:    sub?.status    ?? u.subscriptionStatus ?? null,
-            subPlan:      sub?.plan      ?? u.subscriptionPlan   ?? null,
-            subExpiresAt: sub?.expiresAt ?? null,
-        }
+        return { ...u, subStatus: sub?.status ?? u.subscriptionStatus ?? null, subPlan: sub?.plan ?? u.subscriptionPlan ?? null, subExpiresAt: sub?.expiresAt ?? null }
     })
-
     const sorted = sortUsers(merged as unknown as AdminUserDto[], sortKey, sortDir) as unknown as UserWithSub[]
 
     const inlineInput: React.CSSProperties = {
@@ -619,16 +734,12 @@ function UsersTable({
                         <td>{u.firstName ?? '—'}</td>
                         <td className={s.cellEmail}>{u.email}</td>
                         <td>
-                                <span className={u.role === 'ADMIN' ? s.badgeAdmin : s.badgeUser}>
-                                    {u.role}
-                                </span>
+                            <span className={u.role === 'ADMIN' ? s.badgeAdmin : s.badgeUser}>{u.role}</span>
                         </td>
                         <td className={s.cellNum}>{u.leadsCount}</td>
                         <td className={s.cellDate}>
                             {u.createdAt ? new Date(u.createdAt).toLocaleDateString(ru ? 'ru-RU' : 'en-US') : '—'}
                         </td>
-
-                        {/* ── Тариф + Статус ── */}
                         <td>
                             {editPlanId === u.id ? (
                                 <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -641,26 +752,19 @@ function UsersTable({
                                     <button className={s.actionBtn} onClick={() => handleEditPlan(u.id)} disabled={working === u.id} style={{ padding: '3px 8px', fontSize: 11 }}>
                                         {working === u.id ? '…' : '✔'}
                                     </button>
-                                    <button className={s.actionBtn} onClick={() => setEditPlanId(null)} style={{ padding: '3px 8px', fontSize: 11, background: 'var(--c-surface)' }}>
-                                        ✕
-                                    </button>
+                                    <button className={s.actionBtn} onClick={() => setEditPlanId(null)} style={{ padding: '3px 8px', fontSize: 11, background: 'var(--c-surface)' }}>✕</button>
                                 </div>
                             ) : (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
                                      onClick={() => { setEditPlanId(u.id); setEditPlanValue(u.subPlan || 'START'); setEditStatusValue(u.subStatus || 'ACTIVE') }}>
-                                    {u.subStatus ? (
-                                        <span style={{ fontWeight: 600, fontSize: 12, color: statusColor(u.subStatus) }}>
-                                                {u.subStatus}{u.subPlan ? ` / ${u.subPlan}` : ''}
-                                            </span>
-                                    ) : (
-                                        <span className={s.badgeNone}>—</span>
-                                    )}
+                                    {u.subStatus
+                                        ? <span style={{ fontWeight: 600, fontSize: 12, color: statusColor(u.subStatus) }}>{u.subStatus}{u.subPlan ? ` / ${u.subPlan}` : ''}</span>
+                                        : <span className={s.badgeNone}>—</span>
+                                    }
                                     <span style={{ fontSize: 10, color: 'var(--c-ink-3)' }}>✎</span>
                                 </div>
                             )}
                         </td>
-
-                        {/* ── Срок ── */}
                         <td>
                             {editExpiryId === u.id ? (
                                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
@@ -669,53 +773,38 @@ function UsersTable({
                                     <button className={s.actionBtn} onClick={() => handleEditExpiry(u.id, u.subPlan)} disabled={working === u.id} style={{ padding: '3px 8px', fontSize: 11 }}>
                                         {working === u.id ? '…' : '✔'}
                                     </button>
-                                    <button className={s.actionBtn} onClick={() => setEditExpiryId(null)} style={{ padding: '3px 8px', fontSize: 11, background: 'var(--c-surface)' }}>
-                                        ✕
-                                    </button>
+                                    <button className={s.actionBtn} onClick={() => setEditExpiryId(null)} style={{ padding: '3px 8px', fontSize: 11, background: 'var(--c-surface)' }}>✕</button>
                                 </div>
                             ) : (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
                                      onClick={() => { setEditExpiryId(u.id); setEditExpiryDays('30') }}>
-                                        <span style={{ fontSize: 12 }}>
-                                            {u.subExpiresAt ? new Date(u.subExpiresAt).toLocaleDateString(ru ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
-                                        </span>
+                                    <span style={{ fontSize: 12 }}>
+                                        {u.subExpiresAt ? new Date(u.subExpiresAt).toLocaleDateString(ru ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                                    </span>
                                     <span style={{ fontSize: 10, color: 'var(--c-ink-3)' }}>✎</span>
                                 </div>
                             )}
                         </td>
-
-                        {/* ── Telegram ── */}
                         <td>
                             {u.telegramId
                                 ? <span className={s.badgeTg}>✓ {u.telegramUsername ? `@${u.telegramUsername}` : u.telegramId}</span>
                                 : <span className={s.badgeNone}>—</span>
                             }
                         </td>
-
-                        {/* ── Действия ── */}
                         <td>
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                                {/* Детали */}
-                                <button
-                                    className={s.actionBtn}
-                                    onClick={() => onOpenDetails(u.id)}
-                                    style={{ background: 'var(--c-accent-soft)', color: 'var(--c-accent)', borderColor: 'rgba(99,102,241,.3)', fontWeight: 600 }}
-                                >
+                                <button className={s.actionBtn} onClick={() => onOpenDetails(u.id)}
+                                        style={{ background: 'var(--c-accent-soft)', color: 'var(--c-accent)', borderColor: 'rgba(99,102,241,.3)', fontWeight: 600 }}>
                                     {ru ? 'Детали' : 'Details'}
                                 </button>
-                                {/* Роль */}
                                 <button className={s.actionBtn} onClick={() => handleToggleRole(u)} disabled={changing === u.id}>
                                     {changing === u.id ? '...' : u.role === 'ADMIN'
                                         ? (ru ? 'Снять ADMIN' : 'Remove ADMIN')
                                         : (ru ? 'ADMIN' : 'Make ADMIN')}
                                 </button>
                                 {u.subStatus && u.subStatus !== 'INACTIVE' && (
-                                    <button
-                                        className={s.actionBtn}
-                                        onClick={() => handleRevoke(u.id)}
-                                        disabled={working === u.id}
-                                        style={{ color: '#ef4444', borderColor: 'rgba(239,68,68,.3)', background: 'rgba(239,68,68,.06)' }}
-                                    >
+                                    <button className={s.actionBtn} onClick={() => handleRevoke(u.id)} disabled={working === u.id}
+                                            style={{ color: '#ef4444', borderColor: 'rgba(239,68,68,.3)', background: 'rgba(239,68,68,.06)' }}>
                                         {working === u.id ? '…' : ru ? 'Отозвать' : 'Revoke'}
                                     </button>
                                 )}
@@ -740,12 +829,12 @@ function LeadsTab({ lang }: { lang: Lang }) {
     const [totalPages,   setTotalPages]   = useState(1)
     const [totalCount,   setTotalCount]   = useState(0)
     const [page,         setPage]         = useState(0)
+    const [ratingBusy,   setRatingBusy]   = useState<Set<number>>(new Set())
 
-    // Фильтры
-    const [filterUser,   setFilterUser]   = useState('')
-    const [filterStatus, setFilterStatus] = useState('')
-    const [appliedUser,  setAppliedUser]  = useState<number | undefined>(undefined)
-    const [appliedStatus,setAppliedStatus]= useState<string | undefined>(undefined)
+    const [filterUser,    setFilterUser]    = useState('')
+    const [filterStatus,  setFilterStatus]  = useState('')
+    const [appliedUser,   setAppliedUser]   = useState<number | undefined>(undefined)
+    const [appliedStatus, setAppliedStatus] = useState<string | undefined>(undefined)
 
     const PAGE_SIZE = 50
 
@@ -753,12 +842,7 @@ function LeadsTab({ lang }: { lang: Lang }) {
         setLoading(true)
         setError('')
         try {
-            const res = await adminApi.getAllLeads({
-                userId: userId,
-                status: status || undefined,
-                page:   pg,
-                size:   PAGE_SIZE,
-            })
+            const res = await adminApi.getAllLeads({ userId, status: status || undefined, page: pg, size: PAGE_SIZE })
             setLeads(res.content)
             setTotalPages(res.totalPages)
             setTotalCount(res.totalElements)
@@ -774,29 +858,32 @@ function LeadsTab({ lang }: { lang: Lang }) {
     const handleApply = () => {
         const uid = filterUser.trim() ? Number(filterUser.trim()) : undefined
         const st  = filterStatus || undefined
-        setAppliedUser(uid)
-        setAppliedStatus(st)
-        setPage(0)
+        setAppliedUser(uid); setAppliedStatus(st); setPage(0)
     }
 
     const handleClear = () => {
-        setFilterUser('')
-        setFilterStatus('')
-        setAppliedUser(undefined)
-        setAppliedStatus(undefined)
-        setPage(0)
+        setFilterUser(''); setFilterStatus(''); setAppliedUser(undefined); setAppliedStatus(undefined); setPage(0)
     }
 
-    const handlePage = (pg: number) => {
-        setPage(pg)
-        load(pg, appliedUser, appliedStatus)
-    }
+    const handlePage = (pg: number) => { setPage(pg); load(pg, appliedUser, appliedStatus) }
 
     const hasFilter = !!filterUser.trim() || !!filterStatus
 
+    // Смена оценки лида администратором
+    const changeRating = async (leadId: number, rating: 'GOOD' | 'BAD' | null) => {
+        setRatingBusy(prev => new Set(prev).add(leadId))
+        try {
+            const updated = await adminApi.setLeadRating(leadId, rating)
+            setLeads(prev => prev.map(l => l.id === updated.id ? updated : l))
+        } catch (e: unknown) {
+            alert(e instanceof Error ? e.message : 'Ошибка изменения оценки')
+        } finally {
+            setRatingBusy(prev => { const s = new Set(prev); s.delete(leadId); return s })
+        }
+    }
+
     return (
         <div className={s.leadsTab}>
-            {/* Заголовок */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
                 <h2 className={s.tabTitle}>
                     {ru ? 'Все лиды' : 'All Leads'}
@@ -807,7 +894,6 @@ function LeadsTab({ lang }: { lang: Lang }) {
                 </button>
             </div>
 
-            {/* Фильтры */}
             <div className={s.leadsFilterBar}>
                 <span className={s.leadsFilterLabel}>{ru ? 'Фильтр:' : 'Filter:'}</span>
                 <input
@@ -821,9 +907,7 @@ function LeadsTab({ lang }: { lang: Lang }) {
                 />
                 <select className={s.leadsFilterSelect} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
                     <option value="">{ru ? 'Все статусы' : 'All statuses'}</option>
-                    {LEAD_STATUSES.map(st => (
-                        <option key={st} value={st}>{st}</option>
-                    ))}
+                    {LEAD_STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
                 </select>
                 <button className={s.grantBtn} onClick={handleApply} style={{ height: 36, padding: '0 16px' }}>
                     {ru ? 'Применить' : 'Apply'}
@@ -842,10 +926,8 @@ function LeadsTab({ lang }: { lang: Lang }) {
                 )}
             </div>
 
-            {/* Ошибка */}
             {error && <div className={s.formError}>{error}</div>}
 
-            {/* Таблица */}
             {loading && leads.length === 0 ? (
                 <div className={s.loading}>{ru ? 'Загрузка...' : 'Loading...'}</div>
             ) : leads.length === 0 ? (
@@ -867,88 +949,113 @@ function LeadsTab({ lang }: { lang: Lang }) {
                             <th>{ru ? 'Ключ. слово' : 'Keyword'}</th>
                             <th>{ru ? 'Статус' : 'Status'}</th>
                             <th>AI</th>
+                            <th>{ru ? 'Оценка' : 'Rating'}</th>
                             <th>{ru ? 'Дата' : 'Date'}</th>
                         </tr>
                         </thead>
                         <tbody>
-                        {leads.map(lead => (
-                            <tr key={lead.id}>
-                                <td style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--c-ink-3)', whiteSpace: 'nowrap' }}>
-                                    #{lead.id}
-                                </td>
-                                <td>
-                                    <div className={s.leadUserCell} title={lead.userEmail}>
-                                            <span style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--c-ink-3)', marginRight: 4 }}>
-                                                #{lead.userId}
-                                            </span>
-                                        {lead.userEmail}
-                                    </div>
-                                </td>
-                                <td style={{ fontSize: 12, maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {lead.chatTitle || lead.chatLink || '—'}
-                                </td>
-                                <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
-                                    {lead.authorUsername
-                                        ? `@${lead.authorUsername}`
-                                        : lead.authorName || '—'}
-                                </td>
-                                <td>
-                                    <div className={s.leadMsgText}>
-                                        {lead.messageLink
-                                            ? <a href={lead.messageLink} target="_blank" rel="noopener noreferrer" className={s.leadLink}>
-                                                {lead.messageText}
-                                            </a>
-                                            : lead.messageText
-                                        }
-                                    </div>
-                                </td>
-                                <td><span className={s.leadKeywordPill}>{lead.matchedKeyword}</span></td>
-                                <td><LeadStatusBadge status={lead.status} /></td>
-                                <td><AiBadge valid={lead.aiValid} ru={ru} /></td>
-                                <td className={s.cellDate}>{fmtDate(lead.foundAt, ru)}</td>
-                            </tr>
-                        ))}
+                        {leads.map(lead => {
+                            const busy = ratingBusy.has(lead.id)
+                            return (
+                                <tr key={lead.id}>
+                                    <td style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--c-ink-3)', whiteSpace: 'nowrap' }}>#{lead.id}</td>
+                                    <td>
+                                        <div className={s.leadUserCell} title={lead.userEmail}>
+                                            <span style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--c-ink-3)', marginRight: 4 }}>#{lead.userId}</span>
+                                            {lead.userEmail}
+                                        </div>
+                                    </td>
+                                    <td style={{ fontSize: 12, maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {lead.chatTitle || lead.chatLink || '—'}
+                                    </td>
+                                    <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                                        {lead.authorUsername ? `@${lead.authorUsername}` : lead.authorName || '—'}
+                                    </td>
+                                    <td>
+                                        <div className={s.leadMsgText}>
+                                            {lead.messageLink
+                                                ? <a href={lead.messageLink} target="_blank" rel="noopener noreferrer" className={s.leadLink}>{lead.messageText}</a>
+                                                : lead.messageText
+                                            }
+                                        </div>
+                                    </td>
+                                    <td><span className={s.leadKeywordPill}>{lead.matchedKeyword}</span></td>
+                                    <td><LeadStatusBadge status={lead.status} /></td>
+                                    <td><AiBadge valid={lead.aiValid} ru={ru} /></td>
+                                    <td>
+                                        {/* Текущая оценка + кнопки смены */}
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'nowrap' }}>
+                                            <RatingBadgeAdmin rating={lead.userRating ?? null} ru={ru} />
+                                            <div style={{ display: 'flex', gap: 2, marginLeft: 4 }}>
+                                                <button
+                                                    disabled={busy || lead.userRating === 'GOOD'}
+                                                    onClick={() => changeRating(lead.id, 'GOOD')}
+                                                    title={ru ? 'Отметить хорошим' : 'Mark as good'}
+                                                    style={{
+                                                        padding: '2px 5px', fontSize: 11, borderRadius: 5, cursor: busy || lead.userRating === 'GOOD' ? 'default' : 'pointer',
+                                                        border: lead.userRating === 'GOOD' ? '1px solid rgba(16,185,129,.5)' : '1px solid var(--c-border)',
+                                                        background: lead.userRating === 'GOOD' ? 'rgba(16,185,129,.15)' : 'var(--c-surface)',
+                                                        color: '#059669', fontFamily: 'var(--font-body)',
+                                                        opacity: busy ? 0.5 : 1, transition: 'all .15s',
+                                                    }}
+                                                >👍</button>
+                                                <button
+                                                    disabled={busy || lead.userRating === 'BAD'}
+                                                    onClick={() => changeRating(lead.id, 'BAD')}
+                                                    title={ru ? 'Отметить не лидом' : 'Mark as not lead'}
+                                                    style={{
+                                                        padding: '2px 5px', fontSize: 11, borderRadius: 5, cursor: busy || lead.userRating === 'BAD' ? 'default' : 'pointer',
+                                                        border: lead.userRating === 'BAD' ? '1px solid rgba(239,68,68,.5)' : '1px solid var(--c-border)',
+                                                        background: lead.userRating === 'BAD' ? 'rgba(239,68,68,.12)' : 'var(--c-surface)',
+                                                        color: '#dc2626', fontFamily: 'var(--font-body)',
+                                                        opacity: busy ? 0.5 : 1, transition: 'all .15s',
+                                                    }}
+                                                >👎</button>
+                                                {lead.userRating !== null && lead.userRating !== undefined && (
+                                                    <button
+                                                        disabled={busy}
+                                                        onClick={() => changeRating(lead.id, null)}
+                                                        title={ru ? 'Сбросить оценку' : 'Clear rating'}
+                                                        style={{
+                                                            padding: '2px 5px', fontSize: 10, borderRadius: 5, cursor: busy ? 'default' : 'pointer',
+                                                            border: '1px solid var(--c-border)', background: 'var(--c-surface)',
+                                                            color: 'var(--c-ink-3)', fontFamily: 'var(--font-body)',
+                                                            opacity: busy ? 0.5 : 1, transition: 'all .15s',
+                                                        }}
+                                                    >✕</button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td className={s.cellDate}>{fmtDate(lead.foundAt, ru)}</td>
+                                </tr>
+                            )
+                        })}
                         </tbody>
                     </table>
                 </div>
             )}
 
-            {/* Пагинация */}
             {totalPages > 1 && (
                 <div className={s.pagination}>
                     <button className={s.pageBtn} onClick={() => handlePage(0)} disabled={page === 0}>«</button>
                     <button className={s.pageBtn} onClick={() => handlePage(page - 1)} disabled={page === 0}>‹</button>
-
                     {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
-                        // показываем страницы вокруг текущей
                         let pg: number
-                        if (totalPages <= 7) {
-                            pg = i
-                        } else if (page < 4) {
-                            pg = i
-                        } else if (page > totalPages - 4) {
-                            pg = totalPages - 7 + i
-                        } else {
-                            pg = page - 3 + i
-                        }
+                        if (totalPages <= 7) pg = i
+                        else if (page < 4) pg = i
+                        else if (page > totalPages - 4) pg = totalPages - 7 + i
+                        else pg = page - 3 + i
                         return (
-                            <button
-                                key={pg}
-                                className={`${s.pageBtn} ${pg === page ? s.pageBtnActive : ''}`}
-                                onClick={() => handlePage(pg)}
-                            >
+                            <button key={pg} className={`${s.pageBtn} ${pg === page ? s.pageBtnActive : ''}`} onClick={() => handlePage(pg)}>
                                 {pg + 1}
                             </button>
                         )
                     })}
-
                     <button className={s.pageBtn} onClick={() => handlePage(page + 1)} disabled={page >= totalPages - 1}>›</button>
                     <button className={s.pageBtn} onClick={() => handlePage(totalPages - 1)} disabled={page >= totalPages - 1}>»</button>
-
                     <span className={s.pageInfo}>
-                        {ru
-                            ? `стр. ${page + 1} из ${totalPages} (${totalCount} лидов)`
-                            : `page ${page + 1} of ${totalPages} (${totalCount} leads)`}
+                        {ru ? `стр. ${page + 1} из ${totalPages} (${totalCount} лидов)` : `page ${page + 1} of ${totalPages} (${totalCount} leads)`}
                     </span>
                 </div>
             )}
@@ -957,30 +1064,10 @@ function LeadsTab({ lang }: { lang: Lang }) {
 }
 
 // ─── Userbot ──────────────────────────────────────────────────────────────────
-interface UserbotSessionStats {
-    sessionId:  number
-    phone:      string
-    chatCount:  number
-    leadsCount: number
-    online:     boolean
-}
 
-interface UserbotStats {
-    status:      string
-    sessions:    number
-    totalChats:  number
-    totalUsers:  number
-    totalLeads:  number
-    perSession?: UserbotSessionStats[]
-}
-
-interface UserbotUserInfo {
-    userId:     number
-    email:      string
-    leadsCount: number
-    chats:      string[]
-    keywords:   string[]
-}
+interface UserbotSessionStats { sessionId: number; phone: string; chatCount: number; leadsCount: number; online: boolean }
+interface UserbotStats { status: string; sessions: number; totalChats: number; totalUsers: number; totalLeads: number; perSession?: UserbotSessionStats[] }
+interface UserbotUserInfo { userId: number; email: string; leadsCount: number; chats: string[]; keywords: string[] }
 
 function UserbotTab({ lang }: { lang: Lang }) {
     const ru   = lang === 'ru'
@@ -1032,11 +1119,7 @@ function UserbotTab({ lang }: { lang: Lang }) {
         if (!confirmed) return
         setDeletingSession(sessionId); setDeleteError('')
         try {
-            const res = await fetch(`${BASE}/api/v1/admin/userbot/sessions/delete`, {
-                method: 'POST', credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sessionId }),
-            })
+            const res = await fetch(`${BASE}/api/v1/admin/userbot/sessions/delete`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId }) })
             const data = await res.json()
             if (!res.ok) throw new Error(data.error ?? `Ошибка ${res.status}`)
             setTimeout(load, 600)
@@ -1051,60 +1134,36 @@ function UserbotTab({ lang }: { lang: Lang }) {
         if (!phone.trim()) return
         setRegLoading(true); setRegError('')
         try {
-            const res = await fetch(`${BASE}/api/v1/admin/userbot/sessions/register`, {
-                method: 'POST', credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ phone: phone.trim(), apiID: parseInt(apiID, 10), apiHash: apiHash.trim() }),
-            })
+            const res = await fetch(`${BASE}/api/v1/admin/userbot/sessions/register`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: phone.trim(), apiID: parseInt(apiID, 10), apiHash: apiHash.trim() }) })
             const data = await res.json()
             if (!res.ok) throw new Error(data.error ?? `Ошибка ${res.status}`)
             setTempId(data.tempId); setStep('code')
-        } catch (e: unknown) {
-            setRegError(e instanceof Error ? e.message : 'Ошибка')
-        } finally {
-            setRegLoading(false)
-        }
+        } catch (e: unknown) { setRegError(e instanceof Error ? e.message : 'Ошибка') }
+        finally { setRegLoading(false) }
     }
 
     const handleConfirmCode = async () => {
         if (!code.trim()) return
         setRegLoading(true); setRegError('')
         try {
-            const res = await fetch(`${BASE}/api/v1/admin/userbot/sessions/confirm`, {
-                method: 'POST', credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tempId, code: code.trim(), password: password.trim() || undefined }),
-            })
+            const res = await fetch(`${BASE}/api/v1/admin/userbot/sessions/confirm`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tempId, code: code.trim(), password: password.trim() || undefined }) })
             const data = await res.json()
             if (!res.ok) throw new Error(data.error ?? `Ошибка ${res.status}`)
-            setRegSuccess(ru
-                ? `Сессия активирована! Телефон: ${data.phone}, ID: ${data.sessionId}`
-                : `Session activated! Phone: ${data.phone}, ID: ${data.sessionId}`)
+            setRegSuccess(ru ? `Сессия активирована! Телефон: ${data.phone}, ID: ${data.sessionId}` : `Session activated! Phone: ${data.phone}, ID: ${data.sessionId}`)
             setStep('done')
             setTimeout(load, 1500)
-        } catch (e: unknown) {
-            setRegError(e instanceof Error ? e.message : 'Ошибка')
-        } finally {
-            setRegLoading(false)
-        }
+        } catch (e: unknown) { setRegError(e instanceof Error ? e.message : 'Ошибка') }
+        finally { setRegLoading(false) }
     }
 
-    const resetWizard = () => {
-        setStep('idle'); setPhone(''); setCode(''); setPassword('')
-        setTempId(''); setRegError(''); setRegSuccess('')
-    }
+    const resetWizard = () => { setStep('idle'); setPhone(''); setCode(''); setPassword(''); setTempId(''); setRegError(''); setRegSuccess('') }
 
-    const filteredUsers = userSearch.trim()
-        ? users.filter(u =>
-            u.email.toLowerCase().includes(userSearch.toLowerCase()) ||
-            String(u.userId).includes(userSearch))
-        : users
+    const filteredUsers = userSearch.trim() ? users.filter(u => u.email.toLowerCase().includes(userSearch.toLowerCase()) || String(u.userId).includes(userSearch)) : users
 
     if (loading) return <div className={s.loading}>{ru ? 'Загрузка...' : 'Loading...'}</div>
     if (error)   return <div className={s.formError}>{error}</div>
 
     const isUp = stats?.status === 'UP'
-
     const statCards = [
         { label: ru ? 'Статус' : 'Status', value: isUp ? 'UP' : 'DOWN', color: isUp ? '#10b981' : '#ef4444', isText: true },
         { label: ru ? 'Аккаунтов' : 'Accounts', value: stats?.sessions ?? 0, color: undefined, isText: false },
@@ -1119,7 +1178,6 @@ function UserbotTab({ lang }: { lang: Lang }) {
                 <h2 className={s.tabTitle} style={{ margin: 0 }}>{ru ? 'Userbot сервис' : 'Userbot Service'}</h2>
                 <button className={s.grantBtn} onClick={load} style={{ padding: '7px 16px' }}>{ru ? 'Обновить' : 'Refresh'}</button>
             </div>
-
             <div className={s.statsGrid}>
                 {statCards.map(item => (
                     <div key={item.label} className={s.statCard}>
@@ -1128,15 +1186,9 @@ function UserbotTab({ lang }: { lang: Lang }) {
                     </div>
                 ))}
             </div>
-
             <div className={s.subCard} style={{ marginTop: 20 }}>
                 <h3 className={s.subCardTitle} style={{ marginBottom: 12 }}>{ru ? '➕ Добавить аккаунт юзербота' : '➕ Add userbot account'}</h3>
-
-                {step === 'idle' && (
-                    <button className={s.grantBtn} onClick={() => setStep('phone')} style={{ padding: '8px 20px' }}>
-                        {ru ? 'Добавить аккаунт' : 'Add account'}
-                    </button>
-                )}
+                {step === 'idle' && <button className={s.grantBtn} onClick={() => setStep('phone')} style={{ padding: '8px 20px' }}>{ru ? 'Добавить аккаунт' : 'Add account'}</button>}
                 {step === 'phone' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 420 }}>
                         <div style={{ background: 'rgba(99,102,241,.08)', border: '1px solid rgba(99,102,241,.2)', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: 'var(--c-ink-2)', lineHeight: 1.7 }}>
@@ -1176,16 +1228,11 @@ function UserbotTab({ lang }: { lang: Lang }) {
                 )}
                 {step === 'done' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        <div style={{ background: 'rgba(16,185,129,.08)', border: '1px solid rgba(16,185,129,.2)', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#10b981' }}>
-                            {regSuccess}
-                        </div>
-                        <button className={s.actionBtn} onClick={resetWizard} style={{ width: 'fit-content' }}>
-                            {ru ? 'Добавить ещё' : 'Add another'}
-                        </button>
+                        <div style={{ background: 'rgba(16,185,129,.08)', border: '1px solid rgba(16,185,129,.2)', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#10b981' }}>{regSuccess}</div>
+                        <button className={s.actionBtn} onClick={resetWizard} style={{ width: 'fit-content' }}>{ru ? 'Добавить ещё' : 'Add another'}</button>
                     </div>
                 )}
             </div>
-
             {(stats?.perSession?.length ?? 0) > 0 && (
                 <>
                     <h3 className={s.subCardTitle} style={{ marginTop: 24 }}>{ru ? 'Аккаунты в пуле' : 'Pool accounts'}</h3>
@@ -1193,12 +1240,8 @@ function UserbotTab({ lang }: { lang: Lang }) {
                     <div className={s.tableWrapper}>
                         <table className={s.usersTable}>
                             <thead><tr>
-                                <th>ID</th>
-                                <th>{ru ? 'Телефон' : 'Phone'}</th>
-                                <th>{ru ? 'Чатов' : 'Chats'}</th>
-                                <th>{ru ? 'Лидов' : 'Leads'}</th>
-                                <th>{ru ? 'Статус' : 'Status'}</th>
-                                <th>{ru ? 'Действие' : 'Action'}</th>
+                                <th>ID</th><th>{ru ? 'Телефон' : 'Phone'}</th><th>{ru ? 'Чатов' : 'Chats'}</th>
+                                <th>{ru ? 'Лидов' : 'Leads'}</th><th>{ru ? 'Статус' : 'Status'}</th><th>{ru ? 'Действие' : 'Action'}</th>
                             </tr></thead>
                             <tbody>
                             {stats!.perSession!.map(sess => (
@@ -1207,11 +1250,7 @@ function UserbotTab({ lang }: { lang: Lang }) {
                                     <td style={{ fontFamily: 'monospace', fontSize: 13 }}>{sess.phone}</td>
                                     <td className={s.cellNum}>{sess.chatCount}</td>
                                     <td className={s.cellNum}>{sess.leadsCount ?? '—'}</td>
-                                    <td>
-                                            <span style={{ color: sess.online ? '#10b981' : 'var(--c-ink-3)', fontSize: 12, fontWeight: 600 }}>
-                                                {sess.online ? (ru ? 'в сети' : 'Online') : (ru ? 'не в сети' : 'Offline')}
-                                            </span>
-                                    </td>
+                                    <td><span style={{ color: sess.online ? '#10b981' : 'var(--c-ink-3)', fontSize: 12, fontWeight: 600 }}>{sess.online ? (ru ? 'в сети' : 'Online') : (ru ? 'не в сети' : 'Offline')}</span></td>
                                     <td>
                                         <button onClick={() => handleDeleteSession(sess.sessionId, sess.phone)} disabled={deletingSession === sess.sessionId}
                                                 style={{ padding: '4px 10px', fontSize: 11, fontWeight: 600, borderRadius: 6, border: '1px solid rgba(239,68,68,.3)', background: 'rgba(239,68,68,.06)', color: '#ef4444', cursor: deletingSession === sess.sessionId ? 'default' : 'pointer', fontFamily: 'var(--font-body)', transition: 'all .15s', opacity: deletingSession === sess.sessionId ? .5 : 1 }}>
@@ -1225,7 +1264,6 @@ function UserbotTab({ lang }: { lang: Lang }) {
                     </div>
                 </>
             )}
-
             {users.length > 0 && (
                 <>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 24, flexWrap: 'wrap' }}>
@@ -1233,26 +1271,13 @@ function UserbotTab({ lang }: { lang: Lang }) {
                             {ru ? 'Активные пользователи' : 'Active users'}
                             <span className={s.count} style={{ marginLeft: 8 }}>{filteredUsers.length}</span>
                         </h3>
-                        <input
-                            placeholder={ru ? 'Поиск по email или ID...' : 'Search by email or ID...'}
-                            value={userSearch} onChange={e => setUserSearch(e.target.value)}
-                            style={{ flex: 1, maxWidth: 260, padding: '6px 10px', fontSize: 12, borderRadius: 7, border: '1px solid var(--c-border)', background: 'var(--c-surface)', color: 'var(--c-ink)', fontFamily: 'var(--font-body)', outline: 'none' }}
-                        />
-                        {userSearch.trim() && (
-                            <button onClick={() => setUserSearch('')} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--c-border)', background: 'none', color: 'var(--c-ink-3)', cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
-                                {ru ? 'Сбросить' : 'Clear'}
-                            </button>
-                        )}
+                        <input placeholder={ru ? 'Поиск по email или ID...' : 'Search by email or ID...'} value={userSearch} onChange={e => setUserSearch(e.target.value)}
+                               style={{ flex: 1, maxWidth: 260, padding: '6px 10px', fontSize: 12, borderRadius: 7, border: '1px solid var(--c-border)', background: 'var(--c-surface)', color: 'var(--c-ink)', fontFamily: 'var(--font-body)', outline: 'none' }} />
+                        {userSearch.trim() && <button onClick={() => setUserSearch('')} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--c-border)', background: 'none', color: 'var(--c-ink-3)', cursor: 'pointer', fontFamily: 'var(--font-body)' }}>{ru ? 'Сбросить' : 'Clear'}</button>}
                     </div>
                     <div className={s.tableWrapper}>
                         <table className={s.usersTable}>
-                            <thead><tr>
-                                <th>ID</th><th>Email</th>
-                                <th>{ru ? 'Чатов' : 'Chats'}</th>
-                                <th>{ru ? 'Ключ. слов' : 'Keywords'}</th>
-                                <th>{ru ? 'Лиды' : 'Leads'}</th>
-                                <th>{ru ? 'Детали' : 'Details'}</th>
-                            </tr></thead>
+                            <thead><tr><th>ID</th><th>Email</th><th>{ru ? 'Чатов' : 'Chats'}</th><th>{ru ? 'Ключ. слов' : 'Keywords'}</th><th>{ru ? 'Лиды' : 'Leads'}</th><th>{ru ? 'Детали' : 'Details'}</th></tr></thead>
                             <tbody>
                             {filteredUsers.map(u => (
                                 <>
@@ -1275,29 +1300,18 @@ function UserbotTab({ lang }: { lang: Lang }) {
                                             <td colSpan={6} style={{ padding: '0 0 12px 0' }}>
                                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, padding: '12px 16px', background: 'var(--c-bg)', borderRadius: 10, margin: '0 14px' }}>
                                                     <div>
-                                                        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: 'var(--c-ink-3)', marginBottom: 8 }}>
-                                                            {ru ? 'Чаты' : 'Chats'} ({u.chats.length})
-                                                        </div>
-                                                        {u.chats.length === 0
-                                                            ? <span style={{ fontSize: 12, color: 'var(--c-ink-3)' }}>—</span>
+                                                        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: 'var(--c-ink-3)', marginBottom: 8 }}>{ru ? 'Чаты' : 'Chats'} ({u.chats.length})</div>
+                                                        {u.chats.length === 0 ? <span style={{ fontSize: 12, color: 'var(--c-ink-3)' }}>—</span>
                                                             : <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                                                {u.chats.map(c => (
-                                                                    <a key={c} href={c.startsWith('http') ? c : `https://t.me/${c.replace('@', '')}`} target="_blank" rel="noopener noreferrer"
-                                                                       style={{ fontSize: 12, color: 'var(--c-accent)', textDecoration: 'none', fontFamily: 'monospace' }}>{c}</a>
-                                                                ))}
+                                                                {u.chats.map(c => <a key={c} href={c.startsWith('http') ? c : `https://t.me/${c.replace('@', '')}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: 'var(--c-accent)', textDecoration: 'none', fontFamily: 'monospace' }}>{c}</a>)}
                                                             </div>
                                                         }
                                                     </div>
                                                     <div>
-                                                        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: 'var(--c-ink-3)', marginBottom: 8 }}>
-                                                            {ru ? 'Ключевые слова' : 'Keywords'} ({u.keywords.length})
-                                                        </div>
-                                                        {u.keywords.length === 0
-                                                            ? <span style={{ fontSize: 12, color: 'var(--c-ink-3)' }}>—</span>
+                                                        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: 'var(--c-ink-3)', marginBottom: 8 }}>{ru ? 'Ключевые слова' : 'Keywords'} ({u.keywords.length})</div>
+                                                        {u.keywords.length === 0 ? <span style={{ fontSize: 12, color: 'var(--c-ink-3)' }}>—</span>
                                                             : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                                                                {u.keywords.map(kw => (
-                                                                    <span key={kw} style={{ fontSize: 11, background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 6, padding: '3px 8px', color: 'var(--c-ink-2)' }}>{kw}</span>
-                                                                ))}
+                                                                {u.keywords.map(kw => <span key={kw} style={{ fontSize: 11, background: 'var(--c-surface)', border: '1px solid var(--c-border)', borderRadius: 6, padding: '3px 8px', color: 'var(--c-ink-2)' }}>{kw}</span>)}
                                                             </div>
                                                         }
                                                     </div>
@@ -1317,33 +1331,23 @@ function UserbotTab({ lang }: { lang: Lang }) {
                     </div>
                 </>
             )}
-
-            {!isUp && (
-                <div className={s.subCard} style={{ borderColor: 'rgba(239,68,68,.2)', marginTop: 20 }}>
-                    <p style={{ margin: 0, fontSize: 13, color: 'var(--c-ink-3)', lineHeight: 1.7 }}>
-                        {ru ? 'Go-сервис недоступен. Проверьте что userbot запущен.' : 'Go service unavailable. Make sure userbot is running.'}
-                    </p>
-                </div>
-            )}
         </div>
     )
 }
 
 // ─── Уведомления ─────────────────────────────────────────────────────────────
+
 function NotificationsTab({ lang }: { lang: Lang }) {
-    const [title,       setTitle]       = useState('')
-    const [body,        setBody]        = useState('')
+    const [title, setTitle]             = useState('')
+    const [body, setBody]               = useState('')
     const [scheduledAt, setScheduledAt] = useState('')
-    const [sending,     setSending]     = useState(false)
-    const [error,       setError]       = useState<string | null>(null)
-    const [success,     setSuccess]     = useState(false)
-    const [history,     setHistory]     = useState<NotificationDto[]>([])
+    const [sending, setSending]         = useState(false)
+    const [error, setError]             = useState<string | null>(null)
+    const [success, setSuccess]         = useState(false)
+    const [history, setHistory]         = useState<NotificationDto[]>([])
     const ru = lang === 'ru'
 
-    const loadHistory = useCallback(() => {
-        notificationsApi.getAllAdmin().then(setHistory).catch(() => {})
-    }, [])
-
+    const loadHistory = useCallback(() => { notificationsApi.getAllAdmin().then(setHistory).catch(() => {}) }, [])
     useEffect(() => { loadHistory() }, [loadHistory])
     useEffect(() => { if (success) loadHistory() }, [success, loadHistory])
 
@@ -1356,9 +1360,7 @@ function NotificationsTab({ lang }: { lang: Lang }) {
             setTimeout(() => setSuccess(false), 3000)
         } catch (e: unknown) {
             setError(e instanceof Error ? e.message : 'Ошибка')
-        } finally {
-            setSending(false)
-        }
+        } finally { setSending(false) }
     }
 
     return (
@@ -1392,9 +1394,7 @@ function NotificationsTab({ lang }: { lang: Lang }) {
                             <div key={n.id} className={s.historyItem}>
                                 <div className={s.historyHead}>
                                     <span className={s.historyTitle}>{n.title}</span>
-                                    <span className={n.sent ? s.statusSent : s.statusPending}>
-                                        {n.sent ? (ru ? 'Отправлено' : 'Sent') : (ru ? 'Ожидает' : 'Pending')}
-                                    </span>
+                                    <span className={n.sent ? s.statusSent : s.statusPending}>{n.sent ? (ru ? 'Отправлено' : 'Sent') : (ru ? 'Ожидает' : 'Pending')}</span>
                                 </div>
                                 <div className={s.historyBody}>{n.body}</div>
                                 <div className={s.historyDate}>{new Date(n.scheduledAt).toLocaleString(ru ? 'ru-RU' : 'en-US')}</div>
@@ -1408,6 +1408,7 @@ function NotificationsTab({ lang }: { lang: Lang }) {
 }
 
 // ─── Главный компонент ────────────────────────────────────────────────────────
+
 export default function AdminPanel({ lang, setLang }: Props) {
     const { user, loading } = useAuthContext()
     const navigate = useNavigate()
@@ -1423,8 +1424,6 @@ export default function AdminPanel({ lang, setLang }: Props) {
     const [grantLoading, setGrantLoading] = useState(false)
     const [grantMsg,     setGrantMsg]     = useState<Msg | null>(null)
     const [sidebarOpen,  setSidebarOpen]  = useState(false)
-
-    // Модалка деталей
     const [detailUserId, setDetailUserId] = useState<number | null>(null)
 
     useEffect(() => {
@@ -1464,10 +1463,7 @@ export default function AdminPanel({ lang, setLang }: Props) {
 
     const ru = lang === 'ru'
 
-    const handleTabChange = (tab: Tab) => {
-        setActiveTab(tab)
-        setSidebarOpen(false)
-    }
+    const handleTabChange = (tab: Tab) => { setActiveTab(tab); setSidebarOpen(false) }
 
     const handleGrant = async () => {
         const userId = Number(grantUserId)
@@ -1490,14 +1486,8 @@ export default function AdminPanel({ lang, setLang }: Props) {
 
     return (
         <div className={s.root}>
-            {/* Детали пользователя — модалка */}
             {detailUserId !== null && (
-                <UserDetailModal
-                    key={detailUserId}
-                    userId={detailUserId}
-                    lang={lang}
-                    onClose={() => setDetailUserId(null)}
-                />
+                <UserDetailModal key={detailUserId} userId={detailUserId} lang={lang} onClose={() => setDetailUserId(null)} />
             )}
 
             <header className={s.header}>
@@ -1506,7 +1496,6 @@ export default function AdminPanel({ lang, setLang }: Props) {
                     <span className={s.logoText}>AIMLY</span>
                     <span className={s.adminTag}>Admin</span>
                 </a>
-
                 <button
                     className={`${s.burger} ${sidebarOpen ? s.burgerOpen : ''}`}
                     onClick={() => setSidebarOpen(v => !v)}
@@ -1515,13 +1504,10 @@ export default function AdminPanel({ lang, setLang }: Props) {
                 >
                     <span /><span /><span />
                 </button>
-
                 <div className={s.headerRight}>
                     <div className={s.langSwitch}>
                         {(['ru', 'en'] as Lang[]).map(lng => (
-                            <button key={lng} className={`${s.langBtn} ${lang === lng ? s.langActive : ''}`} onClick={() => setLang(lng)}>
-                                {lng.toUpperCase()}
-                            </button>
+                            <button key={lng} className={`${s.langBtn} ${lang === lng ? s.langActive : ''}`} onClick={() => setLang(lng)}>{lng.toUpperCase()}</button>
                         ))}
                     </div>
                     <button className={s.backBtn} onClick={() => navigate('/dashboard')}>
@@ -1537,11 +1523,7 @@ export default function AdminPanel({ lang, setLang }: Props) {
                 <aside className={`${s.sidebar} ${sidebarOpen ? s.sidebarOpen : ''}`}>
                     <nav className={s.nav}>
                         {TABS.map(tab => (
-                            <button
-                                key={tab.id}
-                                className={`${s.navItem} ${activeTab === tab.id ? s.navItemActive : ''}`}
-                                onClick={() => handleTabChange(tab.id)}
-                            >
+                            <button key={tab.id} className={`${s.navItem} ${activeTab === tab.id ? s.navItemActive : ''}`} onClick={() => handleTabChange(tab.id)}>
                                 {tab.label[lang]}
                             </button>
                         ))}
@@ -1568,8 +1550,6 @@ export default function AdminPanel({ lang, setLang }: Props) {
                                     {(usersLoading || subsLoading) ? (ru ? 'Загрузка...' : 'Loading...') : (ru ? 'Обновить' : 'Refresh')}
                                 </button>
                             </div>
-
-                            {/* Форма выдачи подписки */}
                             <div className={s.subCard}>
                                 <h3 className={s.subCardTitle}>{ru ? 'Выдать / продлить подписку' : 'Grant / Extend Subscription'}</h3>
                                 <div className={s.formRow}>
@@ -1587,15 +1567,11 @@ export default function AdminPanel({ lang, setLang }: Props) {
                                 </div>
                                 {grantMsg && <div className={grantMsg.ok ? s.formSuccess : s.formError}>{grantMsg.text}</div>}
                             </div>
-
                             {usersLoading && users.length === 0 ? (
                                 <div className={s.loading}>...</div>
                             ) : (
                                 <UsersTable
-                                    users={users}
-                                    subs={subs}
-                                    lang={lang}
-                                    currentUserId={user.id}
+                                    users={users} subs={subs} lang={lang} currentUserId={user.id}
                                     onRoleChange={(id, role) => setUsers(prev => prev.map(u => u.id === id ? { ...u, role } : u))}
                                     onSubChange={fetchSubs}
                                     onOpenDetails={setDetailUserId}

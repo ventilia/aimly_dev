@@ -24,8 +24,10 @@ class AiService(
     private val log = LoggerFactory.getLogger(AiService::class.java)
     private val restTemplate = RestTemplate()
 
-    private val MAIN_MODEL   = "llama-3.1-8b-instant"
-    private val EXPAND_MODEL = "llama-3.3-70b-versatile"
+    // ─── 1. Обновлённые константы моделей ────────────────────────────────────────
+    private val MAIN_MODEL   = "llama-3.3-70b-versatile"   // ← умная модель для валидации лидов
+    private val EXPAND_MODEL = "llama-3.3-70b-versatile"   // ← та же для расширения ключевых слов
+    private val FAST_MODEL   = "llama-3.1-8b-instant"      // ← быстрая для простых задач
     private val GROQ_URL     = "https://api.groq.com/openai/v1/chat/completions"
 
     private val apiKeys: List<String> = apiKeyRaw
@@ -68,7 +70,7 @@ class AiService(
         val keyword:                String,
         val contextMessages:        List<String>,
         val recentLeads:            List<RecentLead>      = emptyList(),
-        val feedbackExamples:       List<FeedbackExample> = emptyList(),   // ← НОВЫЙ
+        val feedbackExamples:       List<FeedbackExample> = emptyList(),
         val businessContext:        String?               = null,
         val respondToServiceOffers: Boolean               = false,
         val senderUsername:         String?               = null,
@@ -92,7 +94,7 @@ class AiService(
         keyword:                String,
         contextMessages:        List<String>          = emptyList(),
         recentLeads:            List<RecentLead>      = emptyList(),
-        feedbackExamples:       List<FeedbackExample> = emptyList(),   // ← НОВЫЙ
+        feedbackExamples:       List<FeedbackExample> = emptyList(),
         businessContext:        String?               = null,
         respondToServiceOffers: Boolean               = false,
         senderUsername:         String?               = null,
@@ -104,7 +106,6 @@ class AiService(
             return
         }
 
-        // Pre-фильтр: сообщения от ботов не валидируем — сразу отклоняем
         if (isBotSender(senderUsername)) {
             log.info("validateAsync: пропускаем сообщение от бота '{}'", senderUsername)
             callback(ValidationResult(valid = false, reason = "Сообщение от бота", confidence = "high"))
@@ -128,6 +129,7 @@ class AiService(
         }
     }
 
+    // ─── 2. filterRelevantContext: FAST_MODEL вместо MAIN_MODEL ─────────────────
     fun filterRelevantContext(messageText: String, rawContext: List<String>): List<String> {
         if (apiKey.isBlank() || rawContext.isEmpty()) return rawContext
 
@@ -148,7 +150,7 @@ $contextList
 """.trimIndent()
 
             val body = mapOf(
-                "model" to MAIN_MODEL,
+                "model" to FAST_MODEL,  // ← изменено
                 "messages" to listOf(
                     mapOf("role" to "system", "content" to "Отвечай только JSON. Никаких пояснений."),
                     mapOf("role" to "user", "content" to prompt),
@@ -368,6 +370,7 @@ Return ONLY JSON, no extra text:
         }
     }
 
+    // ─── 3. validateSearchQuery: FAST_MODEL вместо MAIN_MODEL ────────────────────
     fun validateSearchQuery(input: String): String? {
         val trimmed = input.trim()
 
@@ -403,7 +406,7 @@ Return ONLY JSON, no extra text:
 """.trimIndent()
 
             val body = mapOf(
-                "model" to MAIN_MODEL,
+                "model" to FAST_MODEL,  // ← изменено
                 "messages" to listOf(
                     mapOf("role" to "system", "content" to "Отвечай только JSON. Никаких пояснений."),
                     mapOf("role" to "user", "content" to prompt),
@@ -438,6 +441,7 @@ Return ONLY JSON, no extra text:
         }
     }
 
+    // ─── 4. extractCityFromContext: FAST_MODEL вместо MAIN_MODEL ─────────────────
     private fun extractCityFromContext(context: String): String? {
         if (apiKey.isBlank()) return null
         return try {
@@ -448,7 +452,7 @@ Return ONLY JSON, no extra text:
 Ответь строго JSON: {"city": "Киев"} или {"city": ""}
 """.trimIndent()
             val body = mapOf(
-                "model" to MAIN_MODEL,
+                "model" to FAST_MODEL,  // ← изменено
                 "messages" to listOf(
                     mapOf("role" to "system", "content" to "Отвечай только JSON. Никаких пояснений."),
                     mapOf("role" to "user", "content" to prompt),
@@ -573,186 +577,172 @@ Return ONLY JSON, no extra text:
         }
     }
 
-    // ─── Основной вызов валидации ─────────────────────────────────────────────────
-
+    // ─── 5. ПОЛНОСТЬЮ ЗАМЕНЁННАЯ ФУНКЦИЯ callGroq ────────────────────────────────
     private fun callGroq(
         messageText:            String,
         keyword:                String,
         contextMessages:        List<String>,
         recentLeads:            List<RecentLead>      = emptyList(),
-        feedbackExamples:       List<FeedbackExample> = emptyList(),   // ← НОВЫЙ
+        feedbackExamples:       List<FeedbackExample> = emptyList(),
         businessContext:        String?               = null,
         respondToServiceOffers: Boolean               = false,
     ): ValidationResult {
-
-        val messageShort = messageText.take(900)
+        val messageShort = messageText.take(1200)
 
         val contextBlock = if (contextMessages.isNotEmpty()) {
-            val ctx = contextMessages.take(2).joinToString("\n") { "  - \"${it.take(100)}\"" }
-            "\nКонтекст чата:\n$ctx"
+            val ctx = contextMessages.take(3).joinToString("\n") { "  - \"${it.take(120)}\"" }
+            """
+Контекст чата (предыдущие сообщения):
+$ctx"""
         } else ""
 
-        // ── Персональные оценки пользователя ──────────────────────────────────────
-        // Вставляем перед leadsBlock, чтобы было выше по приоритету.
-        // Примеры по тому же keyword идут первыми (уже отсортированы в getFeedbackExamplesForPrompt).
-        // Не добавляем блок если примеров нет — не тратим токены.
+        // ── Блок оценок пользователя — НАИВЫСШИЙ ПРИОРИТЕТ ──────────────────────
         val feedbackBlock = if (feedbackExamples.isNotEmpty()) {
-            val lines = feedbackExamples.joinToString("\n") { ex ->
-                val icon = if (ex.rating == LeadRating.GOOD) "✅ ХОРОШИЙ" else "❌ НЕ ЛИД"
-                val kwNote = if (ex.matchedKeyword != keyword) " [kw:${ex.matchedKeyword}]" else ""
-                "  $icon$kwNote: \"${ex.messageSnippet.take(150)}\""
+            val goodExamples = feedbackExamples.filter { it.rating == LeadRating.GOOD }
+            val badExamples  = feedbackExamples.filter { it.rating == LeadRating.BAD }
+            val lines = buildString {
+                if (goodExamples.isNotEmpty()) {
+                    append("ХОРОШИЕ лиды — этот пользователь ПРИНЯЛ такие сообщения (valid=true):\n")
+                    goodExamples.take(12).forEach { ex ->
+                        val kwNote = if (ex.matchedKeyword != keyword) " [kw: ${ex.matchedKeyword}]" else ""
+                        append("  ✅$kwNote \"${ex.messageSnippet.take(200)}\"\n")
+                    }
+                }
+                if (badExamples.isNotEmpty()) {
+                    if (goodExamples.isNotEmpty()) append("\n")
+                    append("НЕ ЛИДЫ — этот пользователь ОТКЛОНИЛ такие сообщения (valid=false):\n")
+                    badExamples.take(12).forEach { ex ->
+                        val kwNote = if (ex.matchedKeyword != keyword) " [kw: ${ex.matchedKeyword}]" else ""
+                        append("  ❌$kwNote \"${ex.messageSnippet.take(200)}\"\n")
+                    }
+                }
             }
-            "\nПримеры оценок этого пользователя (учитывай при анализе):\n$lines"
+            """
+═══════════════════════════════════════════════════════════
+ПЕРСОНАЛЬНЫЕ ОЦЕНКИ ПОЛЬЗОВАТЕЛЯ — ПРИОРИТЕТ №1
+Если новое сообщение ПОХОЖЕ на примеры ниже — следуй оценке пользователя.
+Схожесть по смыслу, стилю или намерению важнее общих правил.
+═══════════════════════════════════════════════════════════
+$lines═══════════════════════════════════════════════════════════"""
         } else ""
-        // ──────────────────────────────────────────────────────────────────────────
 
         val leadsBlock = if (recentLeads.isNotEmpty()) {
             val leads = recentLeads.take(3).joinToString("\n") { l ->
-                "  - @${l.authorUsername}: \"${l.messageText.take(60)}\""
+                "  - @${l.authorUsername}: \"${l.messageText.take(80)}\""
             }
-            "\nНедавние лиды (дубль = тот же автор + та же услуга + то же сообщение):\n$leads"
+            """
+Недавние лиды (дубль = тот же автор + та же услуга + то же сообщение):
+$leads"""
         } else ""
 
         val businessBlock = if (!businessContext.isNullOrBlank()) {
-            "\nБизнес владельца (клиентов ищем для него):\n${businessContext.take(250)}"
+            """
+Бизнес владельца (ищем клиентов для него):
+${businessContext.take(350)}"""
         } else ""
 
         val serviceOffersRule = if (respondToServiceOffers) {
-            "РЕЖИМ: принимать офферы. valid=true если автор предлагает свои услуги и ищет клиентов.\n\n"
+            "РЕЖИМ: принимать офферы. valid=true если автор предлагает свои услуги и ищет клиентов.\n"
         } else {
             """
 ЗАДАЧА: определить, является ли сообщение реальным запросом КЛИЕНТА на услугу/исполнителя.
 Ищем людей, которым НУЖНА услуга — не тех, кто её ПРЕДЛАГАЕТ.
-
+ФИЛОСОФИЯ ФИЛЬТРАЦИИ: лучше пропустить сомнительный лид, чем потерять реальный.
+При неоднозначности — склоняйся к valid=true. Отклоняй только очевидные офферы.
 ГЛАВНЫЙ ТЕСТ — кто субъект действия:
 • Автор говорит что ОН ДЕЛАЕТ / ПРЕДЛАГАЕТ / УМЕЕТ / ИЩЕТ РАБОТУ → ОФФЕР → valid=false
 • Автор говорит что ЕМУ НУЖНО / ОН ИЩЕТ ИСПОЛНИТЕЛЯ / СПРАШИВАЕТ → ЛИД → valid=true
-
-ОФФЕР — valid=false НЕМЕДЛЕННО при наличии ХОТЯ БЫ ОДНОГО признака:
+• Неясно кто субъект? → valid=true (не теряем потенциального клиента)
+ОФФЕР — valid=false только при ЯВНОМ наличии признаков:
 1. САМОПРЕЗЕНТАЦИЯ СПЕЦИАЛИСТА:
-   - "я [профессия]": "я дизайнер", "я таргетолог", "я smm-менеджер", "меня зовут X и я Y"
-   - "начинающий [профессия]", "опытный [профессия]", "профессиональный [профессия]"
-
+- "я [профессия]": "я дизайнер", "я таргетолог", "я smm-менеджер"
+- "начинающий/опытный/профессиональный [профессия]" + описание своих услуг
+- "меня зовут X и я Y" с предложением услуг
 2. АВТОР ИЩЕТ КЛИЕНТОВ ИЛИ РАБОТУ (не исполнителя!):
-   - "ищу проекты", "ищу заказы", "ищу клиентов", "ищу первые проекты", "ищу работу"
-   - "рассматриваю задачи/предложения/заявки"
-   - "в поисках заказов", "открыт к сотрудничеству"
-   - КЛЮЧЕВОЕ: "ищу [заказы/проекты/работу/клиентов]" = ОФФЕР; "ищу [специалиста/исполнителя/подрядчика]" = ЛИД
-
+- "ищу проекты", "ищу заказы", "ищу клиентов", "ищу первые проекты", "ищу работу"
+- "рассматриваю задачи/предложения/заявки", "в поисках заказов"
+- КЛЮЧЕВОЕ: "ищу [заказы/проекты/работу/клиентов]" = ОФФЕР
+"ищу [специалиста/исполнителя/подрядчика]" = ЛИД
 3. ПРОДАЮЩИЙ ПОСТ / РЕКЛАМА УСЛУГ:
-   - Риторический вопрос в 2-м лице + предложение своих услуг:
-     "Тяжело вести блог?" / "ИЩЕШЬ дизайнера?" / "Нужен сайт?" — и затем "я делаю/помогу"
-   - Перечисление СВОИХ услуг (нумерованные списки, буллеты, эмодзи-списки)
-   - Пакеты/тарифы/прайс на свои услуги
-   - Секции "ОБО МНЕ", "МОИ КЕЙСЫ", "МОЁ ПОРТФОЛИО", "МОЙ ОПЫТ"
-   - Риторический оффер с обращением на "ты": "Давай откровенно, ИЩЕШЬ X?"
-
-4. ГЛАГОЛЫ 1-ГО ЛИЦА, ОПИСЫВАЮЩИЕ СВОЮ ДЕЯТЕЛЬНОСТЬ:
-   - "занимаюсь", "выполняю", "делаю", "работаю с", "монтирую", "создаю", "веду"
-   - "помогаю", "разрабатываю", "оформляю", "настраиваю", "продвигаю"
-
+- Риторический вопрос на "ты" + предложение своих услуг: "ИЩЕШЬ дизайнера? Я помогу"
+- Перечисление СВОИХ услуг (нумерованные списки, буллеты, тарифы/пакеты)
+- Секции "ОБО МНЕ", "МОИ КЕЙСЫ", "МОЁ ПОРТФОЛИО"
+4. ГЛАГОЛЫ 1-ГО ЛИЦА своей деятельности (в контексте предложения услуг):
+- "занимаюсь", "выполняю", "делаю", "работаю с", "создаю", "разрабатываю"
+- Только если это явно оффер, не просто описание задачи
 5. ПОРТФОЛИО / ССЫЛКИ НА СВОИ РАБОТЫ:
-   - "портфолио:", "мои работы:", "примеры работ:"
-   - Ссылки на Behance, Дизайнганг, Яндекс.Диск, Google Drive, GitHub с работами
-   - "@username_portfolio" и аналогичные portfolio-каналы
-
-6. ХЕШТЕГИ — СТРОГОЕ ПРАВИЛО ДЛЯ #помогу:
-   - #помогу + [профессия/услуга] = ОФФЕР (примеры: "#помогу #дизайн", "#помогу #таргет", "#помогу #монтаж")
-   - #помогу БЕЗ упоминания услуги = нейтрально, смотреть контекст
-   - Тематические хештеги (#дизайн, #smm, #маркетинг) сами по себе = нейтрально хорошо
-   - Хештеги-профессии (#дизайнер, #таргетолог) + описание своих услуг = ОФФЕР
-
-7. ИНФОРМАЦИОННЫЙ КОНТЕНТ (не запрос и не оффер):
-   - Новости, статьи, факты о технологиях/компаниях/событиях
-   - Мнения, рассуждения, обсуждение профессиональных тем
-   - Случайные реплики в чате, не связанные с поиском исполнителя
-   → valid=false (это не лид)
-
-ЛИД — valid=true:
-• Личный запрос на исполнителя: "ищу специалиста", "нужен человек", "посоветуйте кого-нибудь"
-• Вопрос сообществу: "кто занимается X?", "есть кто делает Y?", "порекомендуйте Z"
-• Описание своей ЗАДАЧИ/ПРОБЛЕМЫ без предложения своих услуг и без поиска работы для себя
-• "нужен [специалист/услуга]" — сильный сигнал лида, если автор не представляет себя как исполнитель
-• "ищу подрядчика", "ищу исполнителя", "ищу разработчика" — автор ищет ДРУГОГО человека
-
-НЕЙТРАЛЬНО (само по себе не решает, смотреть контекст):
-• "Пиши мне" / "напиши в лс"
-• Хештеги темы (#дизайн, #маркетинг) без описания своих услуг
+- "портфолио:", "мои работы:", ссылки Behance/GitHub с работами
+6. ХЕШТЕГИ:
+- #помогу + [конкретная услуга/профессия] = ОФФЕР
+- #помогу без услуги = нейтрально
+- Тематические хештеги (#дизайн, #smm) сами по себе = нейтрально
+7. ИНФОРМАЦИОННЫЙ КОНТЕНТ:
+- Новости, статьи, мнения, обсуждения без запроса на исполнителя
+→ valid=false
+ЛИД — valid=true (при наличии ХОТЯ БЫ ОДНОГО признака):
+• Личный запрос: "ищу специалиста", "нужен человек", "посоветуйте кого-нибудь"
+• Вопрос сообществу: "кто занимается X?", "есть кто делает Y?"
+• Задача/проблема без предложения своих услуг
+• "нужен [специалист/услуга]" — сильный сигнал лида
+• "ищу подрядчика/исполнителя/разработчика" — автор ищет ДРУГОГО
+НЕЙТРАЛЬНО (само по себе не решает):
+• "Пиши мне" / "напиши в лс" — смотреть контекст
+• Хештеги темы без описания своих услуг
 • Упоминание города или платформы
-• #помогу без указания конкретной услуги/профессии
-
 КЛЮЧЕВОЕ РАЗЛИЧИЕ:
-✅ "Ищу разработчика для своего проекта" = ЛИД (автор ищет ДРУГОГО)
-❌ "Ищу проекты/заказы/работу для себя" = ОФФЕР (автор ищет РАБОТУ ДЛЯ СЕБЯ)
+✅ "Ищу разработчика для своего проекта" = ЛИД
+❌ "Ищу проекты/заказы для себя" = ОФФЕР
 ✅ "ИЩЕШЬ дизайнера? Я помогу" = ОФФЕР (риторический вопрос + предложение себя)
-✅ "#помогу #дизайн Сделаю лендинг за 2 дня" = ОФФЕР (#помогу + услуга)
-✅ "#помогу советом, как настроить таргет?" = ЛИД (автор просит помощи, не предлагает)
-
 ПРИМЕРЫ:
-[ОФФЕР] "всем привет, я Ксюша — начинающий графический дизайнер! сейчас в экстренном порядке ищу первые проекты и рассматриваю небольшие оплачиваемые задачи. готова браться за любые предложения. контакты: @ksetsunai"
-→ {"valid":false,"reason":"Самопрезентация специалиста: 'я дизайнер' + 'ищу первые проекты' — автор ищет работу для себя","confidence":"high"}
-
-[ОФФЕР] "📣Давай откровенно, ИЩЕШЬ дизайнера карточек WB? Повышение кликабельности. Работаю с крупными поставщиками. Портфолио: @designdlyawb. Для связи: @mikaelcdesign"
-→ {"valid":false,"reason":"Продающий пост: риторический вопрос-оффер + 'работаю' + портфолио — специалист рекламирует услуги","confidence":"high"}
-
-[ОФФЕР] "Тяжело вести блог?🥺 А что если делегировать: SMM под ключ, Reels от идеи до монтажа. Мои услуги🤳 1️⃣Стратегия 2️⃣Reels ведение 3️⃣SMM. ОБО МНЕ: опыт 3 года. Пиши @username"
-→ {"valid":false,"reason":"Продающий пост SMM-специалиста: риторический вопрос + пакеты услуг + ОБО МНЕ","confidence":"high"}
-
-[ОФФЕР] "#помогу #таргет #таргетолог После 200+ инфобиз-проектов... Если вам нужна реклама от специалиста — пишите мне @alexmeta_manager"
-→ {"valid":false,"reason":"#помогу + профессия + описание опыта + CTA — оффер таргетолога","confidence":"high"}
-
-[ОФФЕР] "Xiaomi показала обновлённую бионическую руку для робота CyberOne. Рука уменьшена на 60%..."
-→ {"valid":false,"reason":"Информационная новость о технологиях — не запрос на услугу","confidence":"high"}
-
-[ОФФЕР] "дипсик на подобную задачу сказал делать лстм"
-→ {"valid":false,"reason":"Случайная реплика в чате — не запрос на услугу","confidence":"high"}
-
-[ОФФЕР] "Привет, меня зовут Маша и я рилсмейкер. Оказываю услуги по продвижению reels. Пиши @mashaageeva"
-→ {"valid":false,"reason":"Самопрезентация специалиста — автор предлагает свои услуги","confidence":"high"}
-
-[ОФФЕР] "#помогу #монтаж Занимаюсь монтажем вертикальных видео. Портфолио: disk.yandex.ru/..."
-→ {"valid":false,"reason":"#помогу + услуга + 'занимаюсь' + портфолио — оффер монтажёра","confidence":"high"}
-
-[ОФФЕР] "Делаю сайты под ключ на WordPress. Работаю с малым бизнесом. Примеры: behance.net/..."
-→ {"valid":false,"reason":"'делаю' + 'работаю с' + ссылка-портфолио — классический оффер разработчика","confidence":"high"}
-
-[ЛИД] "Ребята, ищу SMM-специалиста для магазина одежды. Нужно вести инст, делать рилсы. Пишите в лс"
-→ {"valid":true,"reason":"Владелец бизнеса ищет SMM-специалиста для своего магазина — конкретный запрос заказчика","confidence":"high"}
-
+[ОФФЕР] "всем привет, я Ксюша — начинающий графический дизайнер! сейчас ищу первые проекты"
+→ {"valid":false,"reason":"Самопрезентация: 'я дизайнер' + 'ищу первые проекты' — ищет работу","confidence":"high"}
+[ОФФЕР] "📣Давай откровенно, ИЩЕШЬ дизайнера? Работаю с крупными поставщиками. Портфолио: @designdlyawb"
+→ {"valid":false,"reason":"Продающий пост: риторический оффер + 'работаю' + портфолио","confidence":"high"}
+[ОФФЕР] "Тяжело вести блог? SMM под ключ, Reels от идеи до монтажа. ОБО МНЕ: опыт 3 года."
+→ {"valid":false,"reason":"Продающий пост SMM-специалиста с пакетами услуг","confidence":"high"}
+[ОФФЕР] "Делаю сайты на WordPress. Работаю с малым бизнесом. Примеры: behance.net/..."
+→ {"valid":false,"reason":"'делаю' + 'работаю с' + ссылка-портфолио — оффер разработчика","confidence":"high"}
+[ЛИД] "Ребята, ищу SMM-специалиста для магазина одежды. Нужно вести инст, делать рилсы."
+→ {"valid":true,"reason":"Владелец бизнеса ищет SMM-специалиста — конкретный запрос заказчика","confidence":"high"}
 [ЛИД] "Нужен контент-план для салона красоты, кто делает? Бюджет до 15к"
-→ {"valid":true,"reason":"Владелец салона ищет специалиста по контент-плану с бюджетом","confidence":"high"}
-
+→ {"valid":true,"reason":"Ищет специалиста по контент-плану с бюджетом","confidence":"high"}
 [ЛИД] "Посоветуйте таргетолога, нужно запустить рекламу для интернет-магазина"
-→ {"valid":true,"reason":"Запрос на рекомендацию таргетолога — владелец бизнеса ищет специалиста","confidence":"high"}
-
-[ЛИД] "#помогу советом, как лучше настроить пиксель ВК? Не могу разобраться с событиями"
-→ {"valid":true,"reason":"Автор просит помощи/совета, не предлагает услуги — запрос от клиента","confidence":"medium"}
+→ {"valid":true,"reason":"Запрос на рекомендацию таргетолога","confidence":"high"}
+[ЛИД] "ищу програмиста"
+→ {"valid":true,"reason":"Краткий прямой запрос на поиск специалиста","confidence":"high"}
+[ЛИД] "есть кто занимается версткой? нужно лендинг сделать"
+→ {"valid":true,"reason":"Вопрос сообществу + конкретная задача","confidence":"high"}
 """
         }
 
         val prompt = """
-${serviceOffersRule}Ключевое слово поиска: "$keyword"$contextBlock$feedbackBlock$leadsBlock$businessBlock
-
-Сообщение:
+${serviceOffersRule}$feedbackBlock
+Ключевое слово поиска: "$keyword"$contextBlock$leadsBlock$businessBlock
+Сообщение для анализа:
 "$messageShort"
-
 Ответь строго JSON без текста вне JSON:
-{"valid":true/false,"reason":"одно предложение","confidence":"low/medium/high"}
+{"valid":true/false,"reason":"одно предложение на русском","confidence":"low/medium/high"}
 """.trimIndent()
 
         val body = mapOf(
             "model" to MAIN_MODEL,
             "messages" to listOf(
-                mapOf("role" to "system", "content" to "Фильтруешь лиды в Telegram. Отвечай только JSON."),
+                mapOf(
+                    "role"    to "system",
+                    "content" to "Ты — эксперт по квалификации лидов в Telegram. " +
+                            "Твоя задача — определить, является ли сообщение запросом потенциального клиента. " +
+                            "Персональным оценкам пользователя — МАКСИМАЛЬНЫЙ ПРИОРИТЕТ. " +
+                            "При сомнениях склоняйся к valid=true. " +
+                            "Отвечай ТОЛЬКО JSON, никакого текста вне JSON."
+                ),
                 mapOf("role" to "user", "content" to prompt),
             ),
-            "max_tokens" to 150,
+            "max_tokens"  to 250,
             "temperature" to 0.0,
         )
 
         val content = postToGroqWithFallback(body)?.choices?.firstOrNull()?.message?.content
             ?: throw RuntimeException("пустой ответ от groq")
-
         return parseResult(content)
     }
 

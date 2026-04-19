@@ -103,6 +103,8 @@ export interface AdminLeadDto {
     aiValid:        boolean | null
     aiReason:       string | null
     foundAt:        string
+    userRating: string | null
+    ratingAt:   string | null
 }
 
 export interface AdminChatSearchResultDto {
@@ -147,6 +149,7 @@ export interface AdminUserDetailDto {
     chats:                      AdminChatDto[]
     keywords:                   AdminKeywordDto[]
     recentLeads:                AdminLeadDto[]
+    ratedLeads: AdminLeadDto[]
     leadsNew:                   number
     leadsViewed:                number
     leadsReplied:               number
@@ -307,6 +310,13 @@ export const adminApi = {
     getUsers(): Promise<AdminUserDto[]> {
         return request('/api/v1/admin/users')
     },
+
+   setLeadRating(leadId: number, rating: 'GOOD' | 'BAD' | null): Promise<AdminLeadDto> {
+     return request(`/api/v1/admin/leads/${leadId}/rating`, {
+       method: 'PATCH',
+       body: JSON.stringify({ rating }),
+     })
+   },
     getUser(id: number): Promise<AdminUserDto> {
         return request(`/api/v1/admin/users/${id}`)
     },

@@ -5,6 +5,7 @@ import io.getaimly.backend.auth.ForbiddenException
 import io.getaimly.backend.auth.NotFoundException
 import io.getaimly.backend.lead.ChatSubscriptionRepository
 import io.getaimly.backend.lead.KeywordRepository
+import io.getaimly.backend.lead.LeadRating
 import io.getaimly.backend.lead.LeadRepository
 import io.getaimly.backend.lead.LeadStatus
 import io.getaimly.backend.user.Role
@@ -65,6 +66,8 @@ data class AdminUserDetailDto(
     val keywords: List<AdminKeywordDto>,
     // Последние лиды (до 10)
     val recentLeads: List<AdminLeadDto>,
+    // Последние оценённые лиды (до 25) — для секции «Оценки для AI»
+    val ratedLeads: List<AdminLeadDto>,
     // Статистика лидов
     val leadsNew: Long,
     val leadsViewed: Long,
@@ -102,6 +105,9 @@ data class AdminLeadDto(
     val aiValid: Boolean?,
     val aiReason: String?,
     val foundAt: String,
+    // Оценка пользователя — null если не оценён
+    val userRating: String?,
+    val ratingAt: String?,
 )
 
 // ─── DTO для страницы всех лидов ─────────────────────────────────────────────
@@ -115,6 +121,11 @@ data class AdminLeadPageDto(
 )
 
 data class SetRoleRequest(val role: String)
+
+data class SetLeadRatingRequest(
+    // "GOOD", "BAD" или null для сброса оценки
+    val rating: String?,
+)
 
 @RestController
 @RequestMapping("/api/v1/admin")
@@ -191,6 +202,12 @@ class AdminController(
             pageable = PageRequest.of(0, 10),
         ).content.map { it.toAdminDto(target.email) }
 
+        // Последние 25 оценённых лидов для секции «Оценки для AI»
+        val ratedLeads = leadRepository.findRecentRatedByUserId(
+            userId   = target.id,
+            pageable = PageRequest.of(0, 25),
+        ).map { it.toAdminDto(target.email) }
+
         val leadsNew     = leadRepository.countByUserIdAndStatus(target.id, LeadStatus.NEW)
         val leadsViewed  = leadRepository.countByUserIdAndStatus(target.id, LeadStatus.VIEWED)
         val leadsReplied = leadRepository.countByUserIdAndStatus(target.id, LeadStatus.REPLIED)
@@ -221,6 +238,7 @@ class AdminController(
             chats                   = chats,
             keywords                = keywords,
             recentLeads             = recentLeads,
+            ratedLeads              = ratedLeads,
             leadsNew                = leadsNew,
             leadsViewed             = leadsViewed,
             leadsReplied            = leadsReplied,
@@ -264,7 +282,6 @@ class AdminController(
             }
         }
 
-        // Подгружаем email пользователей одним запросом (кеш по id)
         val userEmailCache = mutableMapOf<Long, String>()
 
         val content = result.content.map { lead ->
@@ -283,6 +300,34 @@ class AdminController(
                 size          = result.size,
             )
         )
+    }
+
+    // ─── Изменение оценки лида (только для Admin) ─────────────────────────────
+
+    @PatchMapping("/leads/{id}/rating")
+    fun setLeadRating(
+        @AuthenticationPrincipal user: User,
+        @PathVariable id: Long,
+        @RequestBody req: SetLeadRatingRequest,
+    ): ResponseEntity<AdminLeadDto> {
+        requireAdmin(user)
+
+        val lead = leadRepository.findById(id)
+            .orElseThrow { NotFoundException("лид #$id не найден") }
+
+        val newRating = when {
+            req.rating == null -> null
+            else -> runCatching { LeadRating.valueOf(req.rating.uppercase()) }
+                .getOrElse { throw BadRequestException("неверная оценка: ${req.rating}. Допустимы: GOOD, BAD, null") }
+        }
+
+        lead.userRating = newRating
+        lead.ratingAt   = if (newRating != null) LocalDateTime.now() else null
+        leadRepository.save(lead)
+
+        val userEmail = userRepository.findById(lead.user.id).map { it.email }.orElse("unknown")
+
+        return ResponseEntity.ok(lead.toAdminDto(userEmail))
     }
 
     // ─── Изменение роли ───────────────────────────────────────────────────────
@@ -350,5 +395,7 @@ class AdminController(
         aiValid         = aiValid,
         aiReason        = aiReason,
         foundAt         = foundAt.toString(),
+        userRating      = userRating?.name,
+        ratingAt        = ratingAt?.toString(),
     )
 }

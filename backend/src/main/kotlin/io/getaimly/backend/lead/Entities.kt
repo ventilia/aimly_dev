@@ -44,7 +44,6 @@ class ChatSubscription(
 )
 
 
-
 @Entity
 @Table(
     name = "keywords",
@@ -80,7 +79,6 @@ class Keyword(
         return (listOf(keyword) + fromVariants).distinct()
     }
 }
-
 
 
 @Entity
@@ -145,15 +143,6 @@ class Lead(
 
     @Column(name = "rating_at")
     var ratingAt: LocalDateTime? = null,
-
-    // Резервная копия ID nudge-сообщения в Telegram.
-    // Основное место хранения — pending_lead_notifications.nudge_tg_message_id.
-    // Дублируется сюда чтобы гарантировать удаление nudge даже если pending-запись
-    // уже была удалена к моменту оценки (race condition: оценка пришла одновременно
-    // из бота и с фронта).
-    // Очищается (null) в submitFeedback сразу после чтения, до сохранения лида.
-    @Column(name = "nudge_tg_message_id")
-    var nudgeTgMessageId: Int? = null,
 
     // Источник лида: LIVE (бот поймал в реальном времени) или MANUAL_EXPORT (ручной импорт файла)
     @Enumerated(EnumType.STRING)

@@ -11,10 +11,6 @@ import java.time.LocalDateTime
 
 enum class LeadRating { GOOD, BAD }
 
-// Сущность LeadFeedback и LeadFeedbackRepository удалены — оценки теперь хранятся
-// прямо в полях Lead.userRating и Lead.ratingAt (см. V30__lead_rating_inline.sql).
-// Таблица lead_feedbacks удалена миграцией V31__drop_lead_feedbacks.sql.
-
 @Entity
 @Table(
     name = "pending_lead_notifications",
@@ -49,12 +45,6 @@ class PendingLeadNotification(
 
     @Column(name = "author_name", nullable = false, length = 200)
     val authorName: String = "",
-
-    // nudge_tg_message_id хранится здесь для удобства поиска,
-    // но дублируется и в leads.nudge_tg_message_id — чтобы удалить сообщение
-    // даже если pending-запись уже была удалена.
-    @Column(name = "nudge_tg_message_id")
-    var nudgeTgMessageId: Int? = null,
 
     @Column(name = "created_at", nullable = false, updatable = false)
     val createdAt: LocalDateTime = LocalDateTime.now(),

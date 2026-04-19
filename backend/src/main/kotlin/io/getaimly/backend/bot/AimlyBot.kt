@@ -4,7 +4,6 @@ import io.getaimly.backend.ai.AiService
 import io.getaimly.backend.auth.AuthService
 import io.getaimly.backend.lead.ChatSearchService
 import io.getaimly.backend.lead.ChatSubscriptionRepository
-import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage
 import io.getaimly.backend.lead.KeywordRepository
 import io.getaimly.backend.lead.LeadFeedbackService
 import io.getaimly.backend.lead.LeadRating
@@ -50,7 +49,6 @@ class AimlyBot(
     private val chatSearchService:      ChatSearchService,
     private val referralService:        ReferralService,
     private val feedbackService:        LeadFeedbackService,
-    // feedbackRepo удалён — больше не используется в AimlyBot
     private val pendingRepo:            PendingLeadNotificationRepository,
 ) : SpringLongPollingBot, LongPollingSingleThreadUpdateConsumer {
 
@@ -83,7 +81,6 @@ class AimlyBot(
         leadRepository         = leadRepository,
         subscriptionRepository = subscriptionRepository,
         leadService            = leadService,
-        // feedbackRepo удалён из конструктора
     )
 
     private val chatsHandler = BotChatsHandler(
@@ -410,16 +407,6 @@ class AimlyBot(
 
     /**
      * Сохраняет оценку и обновляет клавиатуру сообщения с лидом.
-     *
-     * После оценки показываем:
-     *   - строку «✅ Оценено: <оценка>» как информационную (noop)
-     *   - строку «🟡 Прочитан» — индикатор того, что лид авто-помечен VIEWED (noop)
-     *   - кнопку «↩️ Изменить → <противоположная оценка>» — активную
-     *
-     * Авто-пометка статуса происходит внутри [LeadFeedbackService.submitFeedback]:
-     * при первичной оценке лид переводится NEW → VIEWED. Строка «🟡 Прочитан»
-     * в клавиатуре даёт пользователю мгновенный визуальный сигнал об этом —
-     * не нужно открывать список лидов.
      */
     private fun handleFeedback(
         chatId:   Long,
@@ -439,7 +426,6 @@ class AimlyBot(
             LeadRating.BAD  -> "👎 Не лид"
         }
 
-        // Кнопка смены оценки — противоположная текущей
         val (changeLabel, changeCb) = when (rating) {
             LeadRating.GOOD -> "↩️ Изменить → 👎 Не лид"      to "feedback:bad:$leadId"
             LeadRating.BAD  -> "↩️ Изменить → 👍 Хороший лид" to "feedback:good:$leadId"
@@ -451,23 +437,16 @@ class AimlyBot(
 
             feedbackService.submitFeedback(user, leadId, rating)
 
-            // deliverNextFromQueue вызывается внутри submitFeedback —
-            // следующий лид уже отправлен к моменту когда читаем countByUserId.
             val queueAfter = pendingRepo.countByUserId(user.id)
 
             val statusRows = mutableListOf<InlineKeyboardRow>()
-            // Строка 1: информация о текущей оценке (не нажимаемая)
             statusRows.add(row(btn("✅ Оценено: $ratingLabel", "noop")))
-            // Строка 2: статус «Прочитан» — отображаем только если лид был NEW
-            // и теперь авто-переведён в VIEWED. Даёт мгновенный визуальный сигнал.
             if (leadWasNew) {
                 statusRows.add(row(btn("🟡 Прочитан", "noop")))
             }
-            // Строка 3: кнопка смены оценки на противоположную
             statusRows.add(row(btn(changeLabel, changeCb)))
 
             if (queueAfter > 0) {
-                // Есть ещё лиды в очереди — приглашаем в меню
                 statusRows.add(row(btn("📬 Следующий лид →", "menu:leads")))
             } else {
                 statusRows.add(row(
@@ -497,14 +476,6 @@ class AimlyBot(
 
     // ─── Уведомление о новом лиде (с кнопками оценки) ────────────────────────
 
-    /**
-     * Отправляет уведомление о новом LIVE-лиде с кнопками 👍/👎.
-     * Для лидов из ручного экспорта (MANUAL_EXPORT) — не вызывается.
-     *
-     * Изменения:
-     *  - Добавлен номер лида (#leadId) в заголовок сообщения.
-     *  - Добавлена строка о важности оценки — пользователь понимает зачем нажимать кнопки.
-     */
     fun notifyNewLead(
         telegramChatId: Long,
         leadId: Long,
@@ -534,13 +505,11 @@ class AimlyBot(
                 .build()))
         }
 
-        // Кнопки оценки — обязательная строка
         rows.add(row(
             btn("👍 Хороший лид", "feedback:good:$leadId"),
             btn("👎 Не лид",      "feedback:bad:$leadId"),
         ))
 
-        // Навигация
         rows.add(row(
             btn("Подробнее", "lead:open:$leadId"),
             btn("Все лиды",  "menu:leads"),
@@ -551,13 +520,11 @@ class AimlyBot(
                 SendMessage.builder()
                     .chatId(telegramChatId.toString())
                     .text(
-                        // Задача 4: добавлен номер лида в заголовок
                         "Лид #$leadId  [мониторинг]\n\n" +
                                 "Чат: $chatTitle\n" +
                                 "Ключевое слово: «$keyword»" +
                                 authorLine + "\n\n" +
                                 preview + "\n\n" +
-                                // Задача 3: важность оценки — коротко, не навязчиво
                                 "💡 Оцените лид — ИИ учится фильтровать точнее."
                     )
                     .replyMarkup(InlineKeyboardMarkup(rows))
@@ -574,9 +541,6 @@ class AimlyBot(
     /**
      * Лёгкое уведомление — напоминает оценить уже показанный [pendingLeadId],
      * пока новые лиды стоят в очереди.
-     *
-     * Возвращает ID отправленного сообщения (для последующего удаления),
-     * либо null если отправка не удалась.
      */
     fun notifyLeadPending(
         telegramChatId: Long,
@@ -584,7 +548,7 @@ class AimlyBot(
         queueSize:      Long,
         messagePreview: String = "",
         matchedKeyword: String = "",
-    ): Int? {
+    ) {
         val queueLine = when {
             queueSize == 1L -> "Пришёл новый лид — оцените предыдущий, чтобы получить его."
             queueSize == 2L -> "Пришло ещё 2 новых лида. Оцените предыдущий — они придут по очереди."
@@ -613,8 +577,8 @@ class AimlyBot(
             }
         }
 
-        return runCatching {
-            val sent = telegramClient.execute(
+        runCatching {
+            telegramClient.execute(
                 SendMessage.builder()
                     .chatId(telegramChatId.toString())
                     .text(text)
@@ -627,30 +591,9 @@ class AimlyBot(
                     )))
                     .build()
             )
-            log.info("[BOT][NOTIFY] Nudge отправлен: tgChatId=$telegramChatId pendingLeadId=$pendingLeadId queueSize=$queueSize msgId=${sent.messageId}")
-            sent.messageId
-        }.getOrElse {
-            log.warn("[BOT][NOTIFY] Ошибка отправки nudge: tgChatId=$telegramChatId причина=${it.message}")
-            null
-        }
-    }
-
-    /**
-     * Удаляет сообщение из Telegram-чата.
-     * Используется для удаления nudge-сообщений после оценки лида.
-     * Ошибки (сообщение уже удалено, нет прав) логируются в DEBUG и игнорируются.
-     */
-    fun deleteMessage(telegramChatId: Long, messageId: Int) {
-        runCatching {
-            telegramClient.execute(
-                DeleteMessage.builder()
-                    .chatId(telegramChatId.toString())
-                    .messageId(messageId)
-                    .build()
-            )
-            log.debug("[BOT] deleteMessage: chatId=$telegramChatId msgId=$messageId")
+            log.info("[BOT][NOTIFY] Nudge отправлен: tgChatId=$telegramChatId pendingLeadId=$pendingLeadId queueSize=$queueSize")
         }.onFailure {
-            log.debug("[BOT] deleteMessage failed (вероятно уже удалено): chatId=$telegramChatId msgId=$messageId — ${it.message}")
+            log.warn("[BOT][NOTIFY] Ошибка отправки nudge: tgChatId=$telegramChatId причина=${it.message}")
         }
     }
 

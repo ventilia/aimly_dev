@@ -5,16 +5,14 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="a461964d-f6a3-4e0b-a3fa-4fab913d5a3e" name="Changes" comment="оценки лидов3 (фронт)">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/admin/Admincontroller.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/admin/Admincontroller.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/ai/Aiservice.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/ai/Aiservice.kt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/AimlyBot.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/AimlyBot.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/Botleadshandler.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/bot/Botleadshandler.kt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/Entities.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/Entities.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/LeadFeedbackController.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/LeadFeedbackController.kt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/LeadFeedbackEntities.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/LeadFeedbackEntities.kt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/LeadFeedbackService.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/LeadFeedbackService.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/Leadservice.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/Leadservice.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/Repositories.kt" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/main/kotlin/io/getaimly/backend/lead/Repositories.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/dashboard/LeadsPage.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/dashboard/LeadsPage.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/src/api/auth.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/api/auth.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/src/pages/AdminPanel.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/pages/AdminPanel.tsx" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -159,6 +157,7 @@
       <workItem from="1775740679431" duration="955000" />
       <workItem from="1775755095290" duration="3000" />
       <workItem from="1775771408551" duration="613000" />
+      <workItem from="1776594557596" duration="739000" />
     </task>
     <task id="LOCAL-00008" summary="push. beta">
       <option name="closed" value="true" />

@@ -400,6 +400,8 @@ interface BlockingBannerProps {
     onScrollTo: (leadId: number) => void
 }
 
+// FIX: key={lead.id} снаружи гарантирует ремонт при смене blockingLeadId,
+// что сбрасывает локальный rating state к lead.userRating нового лида.
 function BlockingBanner({ lead, queueSize, onRate, onScrollTo }: BlockingBannerProps) {
     const [rating, setRating]     = useState<'GOOD' | 'BAD' | null>(lead.userRating)
     const [submitting, setSubmit] = useState(false)
@@ -507,11 +509,6 @@ function BlockingBanner({ lead, queueSize, onRate, onScrollTo }: BlockingBannerP
 }
 
 // ─── Оверлей заблокированного лида ───────────────────────────────────────────
-//
-// Дизайн: полупрозрачная подложка поверх карточки.
-// Намеренно НЕ используем backdropFilter/blur — он создаёт артефакты
-// на тёмных темах и конфликтует с CSS-переменными цветов.
-// Вместо этого — тонированный фон с border-top для визуального разделения.
 
 interface LockedOverlayProps {
     onScrollToBlocking: () => void
@@ -526,8 +523,6 @@ function LockedOverlay({ onScrollToBlocking }: LockedOverlayProps) {
                 position:        'absolute',
                 inset:           0,
                 borderRadius:    'inherit',
-                // Используем полупрозрачный фон без blur — корректно работает
-                // во всех темах без артефактов CSS-переменных в rgba()
                 background:      'color-mix(in srgb, var(--c-surface) 88%, transparent)',
                 display:         'flex',
                 flexDirection:   'column',
@@ -536,7 +531,6 @@ function LockedOverlay({ onScrollToBlocking }: LockedOverlayProps) {
                 gap:             8,
                 zIndex:          2,
                 cursor:          'pointer',
-                // Тонкая полоска сверху для визуального отделения от карточки выше
                 borderTop:       '1px solid var(--c-border)',
                 transition:      'background .15s',
             }}
@@ -589,9 +583,6 @@ export default function LeadsPage() {
     const [queueSize,  setQueueSize]  = useState(0)
 
     // blockingLeadId — ID лида, которому нужна оценка прямо сейчас.
-    // Хранится отдельно, чтобы не пересчитывать из списка после оценки
-    // (иначе при смене userRating лид перестаёт быть «блокирующим» и
-    //  все заблокированные лиды одновременно теряют оверлей).
     const [blockingLeadId, setBlockingLeadId] = useState<number | null>(null)
 
     const cardRefs = useRef<Record<number, HTMLDivElement | null>>({})
@@ -610,13 +601,11 @@ export default function LeadsPage() {
             setQueueSize(status.queueSize)
             dispatchLeadsCountChanged(result.newCount)
 
-            // Определяем блокирующий лид из свежих данных сервера.
-            // Блокирующий — последний по tgNotifiedAt среди тех, что были отправлены
-            // в TG, но ещё не оценены. «Последний» — потому что он самый свежий
-            // и именно его бот просит оценить в nudge-сообщении.
+            // FIX: берём САМЫЙ СВЕЖИЙ неоценённый (DESC по tgNotifiedAt).
+            // Именно его бот последним просил оценить в nudge-сообщении.
             const blocking = result.content
                 .filter(l => l.tgNotifiedAt !== null && l.userRating === null)
-                .sort((a, b) => parseLeadDate(a.tgNotifiedAt!) - parseLeadDate(b.tgNotifiedAt!))
+                .sort((a, b) => parseLeadDate(b.tgNotifiedAt!) - parseLeadDate(a.tgNotifiedAt!))
                 .at(0) ?? null
             setBlockingLeadId(blocking?.id ?? null)
 
@@ -680,14 +669,12 @@ export default function LeadsPage() {
         const prevRating = ratings[leadId] ?? null
         const isFirstRating = prevRating === null
 
-        // Оптимистично обновляем локальное состояние рейтинга
         setRatings(prev => ({ ...prev, [leadId]: rating }))
         setRatingBusy(prev => new Set(prev).add(leadId))
 
         try {
             const res = await feedbackApi.submit(leadId, rating)
 
-            // Обновляем данные лида в списке
             setData(prev => {
                 if (!prev) return prev
                 return {
@@ -700,18 +687,13 @@ export default function LeadsPage() {
                 }
             })
 
-            // Обновляем очередь только при первичной оценке блокирующего лида.
-            // При повторной оценке (смена GOOD→BAD) очередь не двигается —
-            // бэкенд это тоже проверяет (isChange).
+            // Обновляем очередь только при первичной оценке блокирующего лида
             if (isFirstRating && leadId === blockingLeadId) {
                 if (res.queueEmpty) {
                     setQueueSize(0)
-                    // Очередь опустела — блокирующего лида больше нет
                     setBlockingLeadId(null)
                 } else {
-                    // В очереди ещё есть лиды — один из них стал новым блокирующим.
-                    // Перезагружаем список чтобы узнать какой именно (бэкенд уже
-                    // доставил его в TG и проставил tgNotifiedAt).
+                    // Перезагружаем — бэкенд уже доставил следующий лид в TG
                     const [freshPage, freshStatus] = await Promise.all([
                         leadsApi.list({ status: filter || undefined, page, size: 20 }),
                         feedbackApi.getStatus(),
@@ -720,18 +702,16 @@ export default function LeadsPage() {
                     setData(freshPage)
                     dispatchLeadsCountChanged(freshPage.newCount)
 
-                    // Находим нового блокирующего
+                    // FIX: новый блокирующий — самый СВЕЖИЙ неоценённый (DESC)
                     const newBlocking = freshPage.content
                         .filter(l => l.tgNotifiedAt !== null && l.userRating === null)
                         .sort((a, b) => parseLeadDate(b.tgNotifiedAt!) - parseLeadDate(a.tgNotifiedAt!))
                         .at(0) ?? null
                     setBlockingLeadId(newBlocking?.id ?? null)
 
-                    // Синхронизируем рейтинги из свежих данных
                     setRatings(prev => {
                         const next = { ...prev }
                         freshPage.content.forEach(l => {
-                            // Не затираем только что выставленный рейтинг
                             if (l.id !== leadId) {
                                 next[l.id] = l.userRating ?? null
                             }
@@ -741,7 +721,6 @@ export default function LeadsPage() {
                 }
             }
         } catch {
-            // Откатываем рейтинг при ошибке
             setRatings(prev => ({ ...prev, [leadId]: prevRating }))
         } finally {
             setRatingBusy(prev => { const s = new Set(prev); s.delete(leadId); return s })
@@ -790,12 +769,10 @@ export default function LeadsPage() {
         filter === '' ? lead.status !== 'IGNORED' : true
     )
 
-    // Лид из списка для отображения в баннере (нужны данные автора и текст)
     const blockingLead = blockingLeadId !== null
         ? (visibleContent.find(l => l.id === blockingLeadId) ?? null)
         : null
 
-    // Временная метка блокирующего лида для определения «заблокированных очередью»
     const blockingLeadFoundAtMs = blockingLead
         ? parseLeadDate(blockingLead.foundAt)
         : null
@@ -886,9 +863,14 @@ export default function LeadsPage() {
             {/* Баннер «оценки улучшают AI» */}
             <RatingHintBanner />
 
-            {/* Баннер блокирующего лида — показываем только если есть очередь */}
-            {blockingLead && queueSize > 0 && (
+            {/* Баннер блокирующего лида.
+                FIX: key={blockingLead.id} — React ремонтирует компонент при смене
+                blockingLeadId, сбрасывая локальный state rating к userRating нового лида.
+                Показываем баннер когда есть блокирующий лид (независимо от queueSize,
+                т.к. queueSize может обновиться чуть позже после reload). */}
+            {blockingLead && (
                 <BlockingBanner
+                    key={blockingLead.id}
                     lead={blockingLead}
                     queueSize={queueSize}
                     onRate={submitRating}
@@ -921,19 +903,14 @@ export default function LeadsPage() {
                                 : (lead.userRating ?? null)
                             const ratingLoading = ratingBusy.has(lead.id)
 
-                            // «Блокирующий» лид — тот, который сейчас ждёт оценки.
                             const isBlocking = lead.id === blockingLeadId && currentRating === null
 
-                            // «Заблокированный очередью» лид — ещё не доставлен (tgNotifiedAt == null),
-                            // появился позже блокирующего (foundAt > blockingLead.foundAt),
-                            // и ещё не оценён.
-                            // Показываем оверлей замка пока blockingLead не оценён.
                             const isLockedByQueue = (() => {
                                 if (blockingLeadFoundAtMs === null) return false
                                 if (blockingLeadId === null) return false
-                                if (lead.tgNotifiedAt !== null) return false  // уже доставлен — не блокируем
-                                if (currentRating !== null) return false       // оценён — не блокируем
-                                if (lead.id === blockingLeadId) return false   // сам блокирующий — не блокируем
+                                if (lead.tgNotifiedAt !== null) return false
+                                if (currentRating !== null) return false
+                                if (lead.id === blockingLeadId) return false
                                 return parseLeadDate(lead.foundAt) > blockingLeadFoundAtMs
                             })()
 
@@ -953,7 +930,6 @@ export default function LeadsPage() {
                                         overflow:  isLockedByQueue ? 'hidden' : undefined,
                                     }}
                                 >
-                                    {/* Оверлей замка для лидов в очереди */}
                                     {isLockedByQueue && (
                                         <LockedOverlay
                                             onScrollToBlocking={() => blockingLead && scrollToLead(blockingLead.id)}
@@ -1129,7 +1105,7 @@ export default function LeadsPage() {
                                                 </div>
                                             )}
 
-                                            {/* Кнопки оценки — показываем для всех лидов кроме архива */}
+                                            {/* Кнопки оценки */}
                                             {!isArchived && (
                                                 <FeedbackButtons
                                                     leadId={lead.id}
